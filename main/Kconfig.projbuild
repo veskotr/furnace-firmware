@@ -1,0 +1,13 @@
+menu "Log Destinations"
+    config LOG_DEST_MESURED_TEMP
+        string "Mesured temperature log destination"
+        default "FILE"
+
+    config LOG_DEST_SET_TEMP
+        string "Set temperature log destination"
+        default "FILE"
+
+    config LOG_DEST_ALL
+        string "Default destination for all logs"        
+        default "CONSOLE"
+endmenu

@@ -10,7 +10,9 @@ typedef struct
     const char *message;
 } log_message_t;
 
+
 void logger_init(void);
 void logger_send(const char *tag, const char *message);
+
 
 #endif

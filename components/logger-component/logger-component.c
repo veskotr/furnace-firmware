@@ -33,3 +33,4 @@ void logger_send(const char *tag, const char *message)
     log_message_t msg = {.tag = tag, .message = message};
     xQueueSend(logger_queue, &msg, 0); // Non-blocking
 }
+
