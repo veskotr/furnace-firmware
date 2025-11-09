@@ -1,4 +1,4 @@
-menu "Log Destinations"
+menu "Log Configuration"
     config LOG_DEST_MESURED_TEMP
         string "Mesured temperature log destination"
         default "FILE"
@@ -10,4 +10,71 @@ menu "Log Destinations"
     config LOG_DEST_ALL
         string "Default destination for all logs"        
         default "CONSOLE"
+    
+    config LOG_QUEUE_SIZE
+        int "Logger Queue Size"
+        default 16
+    
+    config LOG_MAX_MESSAGE_LENGTH
+        int "Maximum Log Message Length"
+        default 265
+endmenu
+menu "SPI Master Configuration"
+
+config SPI_BUS_MISO
+    int "SPI MISO Pin"
+    default 12
+
+config SPI_BUS_MOSI
+    int "SPI MOSI Pin"
+    default 13
+
+config SPI_BUS_SCK
+    int "SPI SCK Pin"
+    default 14
+
+config SPI_MAX_NUM_SLAVES
+    int "Number of SPI Slaves"
+    default 1
+    range 1 9
+
+menu "Slave Devices Configuration"
+
+config SPI_SLAVE1_CS
+    int "Slave 1 CS Pin"
+    default 15
+
+config SPI_SLAVE2_CS
+    int "Slave 2 CS Pin"
+    default 4
+
+config SPI_SLAVE3_CS
+    int "Slave 3 CS Pin"
+    default 5
+    
+config SPI_SLAVE4_CS
+    int "Slave 4 CS Pin"
+    default 16
+    
+config SPI_SLAVE5_CS
+    int "Slave 5 CS Pin"
+    default 17
+    
+config SPI_SLAVE6_CS
+    int "Slave 6 CS Pin"
+    default 18
+    
+config SPI_SLAVE7_CS
+    int "Slave 7 CS Pin"
+    default 19
+    
+config SPI_SLAVE8_CS
+    int "Slave 8 CS Pin"
+    default 21
+    
+config SPI_SLAVE9_CS
+    int "Slave 9 CS Pin"
+    default 22
+    
+endmenu
 endmenu
