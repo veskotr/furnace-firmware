@@ -1,4 +1,4 @@
-#include "logger-component.h"
+#include "logger_component.h"
 #include "esp_log.h"
 
 #include "freertos/task.h"

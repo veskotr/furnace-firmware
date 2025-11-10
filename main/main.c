@@ -1,6 +1,6 @@
 
-#include "logger-component.h"
-#include "spi-master-component.h"
+#include "logger_component.h"
+#include "spi_master_component.h"
 
 void app_main(void)
 {

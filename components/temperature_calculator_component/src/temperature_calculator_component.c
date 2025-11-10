@@ -1,5 +1,5 @@
-#include "temperature-calculator-component.h"
-#include "logger-component.h"
+#include "temperature_calculator_component.h"
+#include "logger_component.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"

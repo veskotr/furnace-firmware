@@ -1,4 +1,4 @@
-#include "spi-master-component.h"
+#include "spi_master_component.h"
 #include "driver/spi_master.h"
 #include "sdkconfig.h"
 
@@ -47,8 +47,8 @@ static const SpiConfig_t spi_config = {
     .mosi_io = CONFIG_SPI_BUS_MOSI,
     .sclk_io = CONFIG_SPI_BUS_SCK,
     .max_transfer_size = 32,
-    .clock_speed_hz = 5000,
-    .mode = 1,
+    .clock_speed_hz = CONFIG_SPI_CLOCK_SPEED_HZ,
+    .mode = CONFIG_SPI_BUS_MODE,
     .queue_size = 1};
 // ----------------------------
 // Helpers
@@ -96,7 +96,7 @@ esp_err_t init_spi(uint8_t number_of_slaves)
     };
 
     ret = spi_bus_initialize(HSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    
+
     if (ret != ESP_OK)
     {
         logger_send_error(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));

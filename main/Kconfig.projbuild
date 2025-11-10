@@ -38,6 +38,19 @@ config SPI_MAX_NUM_SLAVES
     default 1
     range 1 9
 
+config SPI_CLOCK_SPEED_HZ
+    int "SPI Clock Speed (Hz)"
+    default 50000
+
+config SPI_TRANSACTION_TIMEOUT_MS
+    int "SPI Transaction Timeout (ms)"
+    default 1000
+
+config SPI_BUS_MODE
+    int "SPI Bus Mode (0-3)"
+    default 0
+    range 0 3
+
 menu "Slave Devices Configuration"
 
 config SPI_SLAVE1_CS

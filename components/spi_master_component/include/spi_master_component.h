@@ -3,7 +3,7 @@
 
 #include "esp_err.h"
 #include <inttypes.h>
-#include "logger-component.h"
+#include "logger_component.h"
 
 esp_err_t init_spi(uint8_t number_of_slaves);
 
