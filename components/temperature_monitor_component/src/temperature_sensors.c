@@ -2,6 +2,7 @@
 #include "logger_component.h"
 #include "spi_master_component.h"
 #include "max31865_registers.h"
+#include <math.h>
 
 const max31865_registers_t max31865_registers = {
     .config_register_read_address = 0x00,

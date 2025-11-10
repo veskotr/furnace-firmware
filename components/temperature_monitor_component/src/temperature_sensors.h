@@ -27,6 +27,6 @@ static esp_err_t read_temp_sensors_data(float *data_buffer);
 
 static esp_err_t read_temperature_sensor(uint8_t sensor_index, float *temperature);
 
-static esp_err_t process_temperature_data(uint16_t sensor_data, float *temperature);
+static float process_temperature_data(uint16_t sensor_data);
 
 #endif // TEMPERATURE_SENSORS_H
