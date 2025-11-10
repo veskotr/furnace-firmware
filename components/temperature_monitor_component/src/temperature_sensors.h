@@ -16,13 +16,14 @@ typedef struct
 
 } temp_monitor_t;
 
+
 extern temp_monitor_t temp_monitor;
 
 static esp_err_t init_temp_sensors(void);
 
-static esp_err_t init_temp_sensor(uint8_t sensor_index);
+static esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config);
 
-static esp_err_t read_temp_sensors_data(uint16_t *data_buffer, size_t *buffer_len);
+static esp_err_t read_temp_sensors_data(float *data_buffer);
 
 static esp_err_t read_temperature_sensor(uint8_t sensor_index, float *temperature);
 
