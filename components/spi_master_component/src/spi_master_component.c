@@ -99,7 +99,7 @@ esp_err_t init_spi(uint8_t number_of_slaves)
 
     if (ret != ESP_OK)
     {
-        logger_send_error(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
+        LOGGER_LOG_ERROR(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -108,7 +108,7 @@ esp_err_t init_spi(uint8_t number_of_slaves)
         ret = add_spi_slave(i);
         if (ret != ESP_OK)
         {
-            logger_send_error(TAG, "Failed to add SPI slave %d: %s", i, esp_err_to_name(ret));
+            LOGGER_LOG_ERROR(TAG, "Failed to add SPI slave %d: %s", i, esp_err_to_name(ret));
             return ret;
         }
     }
@@ -130,6 +130,7 @@ esp_err_t spi_transfer(int slave_index, uint8_t *tx, uint8_t *rx, size_t len)
         .length = len * 8,
         .tx_buffer = tx,
         .rx_buffer = rx};
+        
     esp_err_t ret = spi_device_transmit(spi_slaves[slave_index], &t);
 
     xSemaphoreGive(spi_mutex);

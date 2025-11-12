@@ -1,15 +1,11 @@
 menu "Log Configuration"
-    config LOG_DEST_MESURED_TEMP
-        string "Mesured temperature log destination"
-        default "FILE"
-
-    config LOG_DEST_SET_TEMP
-        string "Set temperature log destination"
-        default "FILE"
-
-    config LOG_DEST_ALL
-        string "Default destination for all logs"        
-        default "CONSOLE"
+    config LOG_ENABLE
+        bool "Enable Logger"
+        default y
+    config LOG_LEVEL
+        int "Logger Level"
+        default 4
+        range 0 4
     
     config LOG_QUEUE_SIZE
         int "Logger Queue Size"
@@ -19,6 +15,7 @@ menu "Log Configuration"
         int "Maximum Log Message Length"
         default 265
 endmenu
+
 menu "SPI Master Configuration"
 
 config SPI_BUS_MISO
@@ -90,4 +87,12 @@ config SPI_SLAVE9_CS
     default 22
     
 endmenu
+endmenu
+
+menu "Temperature Sensors Config"
+    config TEMP_SENSORS_MAX_SENSORS
+        int "Max number of supported sensors"
+        default 9
+        
+    
 endmenu

@@ -2,31 +2,16 @@
 #define TEMPERATURE_SENSORS_H
 
 #include "esp_err.h"
-#include "esp_event.h"
 #include <inttypes.h>
+#include "temperature_monitor_component.h"
 
 // Component tag
 static const char *TAG = "TEMP_MONITOR";
 
-typedef struct
-{
-    uint8_t number_of_attatched_sensors;
-    esp_event_loop_handle_t temperature_event_loop_handle;
-    esp_event_loop_handle_t coordinator_event_loop_handle;
-
-} temp_monitor_t;
-
-
-extern temp_monitor_t temp_monitor;
-
 static esp_err_t init_temp_sensors(void);
 
-static esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config);
+static esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer);
 
-static esp_err_t read_temp_sensors_data(float *data_buffer);
-
-static esp_err_t read_temperature_sensor(uint8_t sensor_index, float *temperature);
-
-static float process_temperature_data(uint16_t sensor_data);
+// static esp_err_t get_
 
 #endif // TEMPERATURE_SENSORS_H
