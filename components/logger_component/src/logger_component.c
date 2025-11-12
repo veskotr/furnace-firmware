@@ -52,9 +52,6 @@ static void logger_task(void *args)
             case LOG_LEVEL_DEBUG:
                 ESP_LOGD(msg.tag, "%s", msg.message);
                 break;
-            case LOG_LEVEL_VERBOSE:
-                ESP_LOGV(msg.tag, "%s", msg.message);
-                break;
             default:
                 ESP_LOGI(msg.tag, "%s", msg.message);
                 break;
