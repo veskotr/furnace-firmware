@@ -3,7 +3,7 @@
 
 #include "esp_err.h"
 
-extern bool processor_running = false;
+extern volatile bool processor_running = false;
 
 esp_err_t start_temp_processor_task(void);
 
