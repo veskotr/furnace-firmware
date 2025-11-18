@@ -15,11 +15,9 @@ ESP_EVENT_DEFINE_BASE(TEMP_MONITOR_EVENT);
 // Task handle
 static TaskHandle_t temp_monitor_task_handle;
 
-temp_monitor_t temp_monitor = {0};
-
 static temp_sample_t temp_sample = {0};
 
-static const TempMonitorConfig_t temp_monitor_config = {
+const TempMonitorConfig_t temp_monitor_config = {
     .task_name = "TEMP_MONITOR_TASK",
     .stack_size = 4096,
     .task_priority = 5};
@@ -39,23 +37,24 @@ static void temp_monitor_task(void *args)
     TickType_t last_wake = xTaskGetTickCount();
     CHECK_ERR_LOG(post_temp_monitor_event(TEMP_MONITOR_READY, NULL, 0), "Failed to post TEMP_MONITOR_READY event");
 
+    static const uint8_t max_bad_samples = (CONFIG_TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT * CONFIG_TEMP_SENSORS_SAMPLING_FREQ_HZ) / 100;
     static uint8_t samples_collected = 0;
+    static uint8_t bad_samples_collected = 0;
+
     static const uint8_t samples_per_scond = CONFIG_TEMP_SENSORS_SAMPLING_FREQ_HZ;
     static const uint8_t delay_between_samples = 1000 / samples_per_scond;
     const TickType_t period = pdMS_TO_TICKS(delay_between_samples);
 
     while (monitor_running)
     {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
         esp_err_t ret;
 
         // Read temperature sensors data
         for (uint8_t retry = 0; retry < CONFIG_TEMP_SENSOR_MAX_READ_RETRIES; retry++)
         {
-            ret = read_temp_sensors_data(temp_sample.sensors);
+            ret = read_temp_sensors_data(&temp_sample);
 
-            if (ret == ESP_OK)
+            if (ret == ESP_OK && temp_sample.valid)
             {
                 break;
             }
@@ -65,7 +64,12 @@ static void temp_monitor_task(void *args)
             vTaskDelay(pdMS_TO_TICKS(CONFIG_TEMP_SENSOR_RETRY_DELAY_MS));
         }
 
-        if (ret != ESP_OK )
+        if (!temp_sample.valid)
+        {
+            bad_samples_collected++;
+        }
+
+        if (ret != ESP_OK)
         {
             post_temp_monitor_error(map_esp_err_to_temp_monitor_error(ret), ret);
             LOGGER_LOG_ERROR(TAG, "Failed to get temperatures after retries: %s",
@@ -79,8 +83,23 @@ static void temp_monitor_task(void *args)
         samples_collected++;
         if (samples_collected >= samples_per_scond)
         {
+            if (bad_samples_collected >= max_bad_samples)
+            {
+                LOGGER_LOG_ERROR(TAG, "Too many bad samples collected (%d/%d)",
+                                 bad_samples_collected,
+                                 max_bad_samples);
+                post_temp_monitor_event(TEMP_MONITOR_ERROR_OCCURRED, &temp_sample, sizeof(temp_sample));
+            }
+            else
+            {
+                LOGGER_LOG_INFO(TAG, "Samples collected: %d, Bad samples: %d",
+                                samples_collected,
+                                bad_samples_collected);
+                xEventGroupSetBits(temp_processor_event_group, TEMP_READY_EVENT_BIT);
+            }
+
             samples_collected = 0;
-            xEventGroupSetBits(temp_processor_event_group, TEMP_READY_EVENT_BIT);
+            bad_samples_collected = 0;
         }
 
         vTaskDelayUntil(&last_wake, period);

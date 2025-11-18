@@ -25,7 +25,8 @@ typedef struct{
 } process_temperature_data_t;
 
 typedef enum {
-    PROCESS_TEMPERATURE_EVENT_DATA = 0
+    PROCESS_TEMPERATURE_EVENT_DATA = 0,
+    PROCESS_TEMPERATURE_EVENT_ERROR
 } process_temperature_event_t;
 
 #endif // TEMPERATURE_PROCESSOR_TYPES_H

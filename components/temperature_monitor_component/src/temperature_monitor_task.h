@@ -7,8 +7,6 @@
 
 volatile extern bool monitor_running;
 
-extern temp_monitor_t temp_monitor;
-
 esp_err_t start_temperature_monitor_task(void);
 
 esp_err_t stop_temperature_monitor_task(void);

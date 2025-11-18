@@ -98,6 +98,11 @@ menu "Temperature Sensors Config"
         int "Temperature Sampling Frequency (Hz)"
         default 20
 
+    config TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT
+        int "Maximum Bad Samples Per Batch (%)"
+        default 30
+
+
     config TEMP_SENSORS_RING_BUFFER_SIZE
         int "Ring Buffer Size"
         default 32

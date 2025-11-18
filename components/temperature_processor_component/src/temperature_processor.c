@@ -25,14 +25,29 @@ process_temperature_error_t process_temperature_samples(temp_sample_t *input_sam
         return (process_temperature_error_t){.error_type = PROCESS_TEMPERATURE_ERROR_INVALID_DATA, .sensor_index = 0};
     }
 
+    float min = FLT_MAX;
+    float max = FLT_MIN;
     for (size_t i = 0; i < number_of_samples; i++)
     {
         result = process_temperature_data(&input_samples[i], &temperatures_buffer[i]);
+        if (temperatures_buffer[i] < min)
+            min = temperatures_buffer[i];
+        if (temperatures_buffer[i] > max)
+            max = temperatures_buffer[i];
         if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)
         {
             LOGGER_LOG_WARN(TAG, "Error processing temperature sample %d: error type %d", i, result.error_type);
         }
     }
+
+    LOGGER_LOG_INFO(TAG, "Temperature samples range: %.2f°C - %.2f°C", min, max);
+    if (max-min > CONFIG_TEMP_DELTA_THRESHOLD)
+    {
+        result.error_type = PROCESS_TEMPERATURE_THRESHOLD_EXCEEDED;
+        LOGGER_LOG_WARN(TAG, "Temperature delta %.2f°C exceeds threshold %.2f°C", max-min, CONFIG_TEMP_DELTA_THRESHOLD);
+        return result;
+    }
+    
 
     // Calculate overall average temperature
     *output_temperature = average_float_array(temperatures_buffer, number_of_samples);

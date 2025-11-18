@@ -1,9 +1,7 @@
-#ifndef COORDINATOR_COMONENT_H
-#define COORDINATOR_COMONENT_H
+#ifndef COORDINATOR_COMPONENT_H
+#define COORDINATOR_COMPONENT_H
 
 #include "esp_err.h"
-#include "esp_event.h"
-#include <inttypes.h>
 #include "core_types.h"
 
 esp_err_t init_coordinator();
@@ -16,4 +14,4 @@ esp_err_t resume_coordinator(void);
 
 esp_err_t stop_coordinator(void);
 
-#endif // COORDINATOR_COMONENT_H
+#endif // COORDINATOR_COMPONENT_H

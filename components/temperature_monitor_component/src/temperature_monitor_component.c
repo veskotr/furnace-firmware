@@ -16,20 +16,10 @@ static const char *TAG = TEMP_MONITOR_LOG;
 
 EventGroupHandle_t temp_processor_event_group = NULL;
 
+temp_monitor_t temp_monitor = {0};
+
 // Monitor running flag
 volatile bool monitor_running = false;
-
-static void coordinator_event_handler(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data)
-{
-    if (id == COORDINATOR_EVENT_MEASURE_TEMPERATURE)
-    {
-
-        if (monitor_running)
-        {
-            // Handle coordinator events
-        }
-    }
-}
 
 // ----------------------------
 // Public API
@@ -55,6 +45,7 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
     }
 
     CHECK_ERR_LOG_RET(init_spi(config->number_of_attached_sensors), "Failed to initialize SPI");
+    
 
     CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(), 
                            shutdown_spi(),
