@@ -1,8 +1,5 @@
 #include "temperature_processor_component.h"
 #include "logger_component.h"
-#include "sdkconfig.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "esp_event.h"
 #include "temperature_processor_task.h"
 #include "utils.h"
@@ -13,9 +10,7 @@ static const char *TAG = TEMP_PROCESSOR_LOG_TAG;
 volatile bool processor_running = false;
 
 // Event loop handle
-static esp_event_loop_handle_t temp_processor_event_loop = NULL;
-
-// Component running flag
+esp_event_loop_handle_t temp_processor_event_loop = NULL;
 
 // ----------------------------
 // Public API

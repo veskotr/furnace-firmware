@@ -1,5 +1,6 @@
 #ifndef TEMPERATURE_MONITOR_INTERNAL_TYPES_H
 #define TEMPERATURE_MONITOR_INTERNAL_TYPES_H
+
 #include "esp_event.h"
 #include <inttypes.h>
 #include "sdkconfig.h"
@@ -24,7 +25,5 @@ typedef struct
     uint32_t stack_size;
     UBaseType_t task_priority;
 } TempMonitorConfig_t;
-
-static const TempMonitorConfig_t temp_monitor_config;
 
 #endif // TEMPERATURE_MONITOR_INTERNAL_TYPES_H

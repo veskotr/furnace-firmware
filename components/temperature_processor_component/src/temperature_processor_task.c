@@ -1,6 +1,4 @@
-
 #include "temperature_processor_task.h"
-#include "esp_event.h"
 #include "temperature_processor_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -32,6 +30,8 @@ static const TempProcessorConfig_t temp_processor_config = {
 // Task handle
 static TaskHandle_t temp_processor_task_handle = NULL;
 
+static esp_err_t post_temp_processor_event(process_temperature_event_t event_type, void *event_data, size_t event_data_size);
+
 // ----------------------------
 // Task
 // ----------------------------
@@ -59,11 +59,13 @@ static void temp_process_task(void *args)
         if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)
         {
             LOGGER_LOG_WARN(TAG, "Temperature processing encountered errors: type %d", result.error_type);
+            CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_ERROR, &result, sizeof(result)), "Failed to post temp process error");
         }
         else
         {
             LOGGER_LOG_INFO(TAG, "Processed average temperature: %.2f C", average_temperature);
         }
+        CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_DATA, &average_temperature, sizeof(float)), "Failed to post temp process data");
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature processor task exiting");
@@ -101,6 +103,21 @@ esp_err_t stop_temp_processor_task(void)
 
     vTaskDelete(temp_processor_task_handle);
     temp_processor_task_handle = NULL;
+
+    return ESP_OK;
+}
+
+static esp_err_t post_temp_processor_event(process_temperature_event_t event_type, void *event_data, size_t event_data_size)
+{
+
+    CHECK_ERR_LOG_RET(esp_event_post_to(
+                          temp_processor_event_loop,
+                          PROCESS_TEMPERATURE_EVENT,
+                          event_type,
+                          event_data,
+                          event_data_size,
+                          portMAX_DELAY),
+                      "Failed to post temperature processor event");
 
     return ESP_OK;
 }

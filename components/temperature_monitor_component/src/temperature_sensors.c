@@ -7,6 +7,7 @@
 #include <float.h>
 #include "utils.h"
 #include "temperature_monitor_log.h"
+
 static const char *TAG = TEMP_MONITOR_LOG;
 
 const max31865_registers_t max31865_registers = {
@@ -62,11 +63,17 @@ esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
     return ESP_OK;
 }
 
-esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer)
+esp_err_t read_temp_sensors_data(temp_sample_t *temp_sample_to_fill)
 {
+    temp_sensor_t *data_buffer = temp_sample_to_fill->sensors;
     for (size_t i = 0; i < temp_monitor.number_of_attached_sensors; i++)
     {
         CHECK_ERR_LOG_RET_FMT(read_temp_sensor(i, &data_buffer[i]), "Failed to read temperature sensor %d data", i);
+        if (!(&data_buffer[i].valid))
+        {
+            temp_sample_to_fill->valid = false;
+        }
+        
     }
 
     return ESP_OK;

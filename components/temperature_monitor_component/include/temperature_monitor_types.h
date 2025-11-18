@@ -20,6 +20,7 @@ typedef enum
     TEMP_MONITOR_ERR_SENSOR_READ,
     TEMP_MONITOR_ERR_SENSOR_FAULT,
     TEMP_MONITOR_ERR_SPI,
+    TEMP_MONITOR_ERR_TOO_MANY_BAD_SAMPLES,
     TEMP_MONITOR_ERR_UNKNOWN
 } temp_monitor_error_t;
 
@@ -67,6 +68,7 @@ typedef struct
     temp_sensor_t sensors[CONFIG_TEMP_SENSORS_MAX_SENSORS];
     uint8_t number_of_attached_sensors;
     uint32_t timestamp_ms;
+    bool valid;
 } temp_sample_t;
 
 #endif // TEMPERATURE_MONITOR_TYPES_H
