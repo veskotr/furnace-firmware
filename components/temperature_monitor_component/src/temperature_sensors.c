@@ -34,9 +34,10 @@ static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t *fault_byte
 
 static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags_t *fault_flags);
 
-static esp_err_t init_temp_sensors(void)
+static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data);
+
+esp_err_t init_temp_sensors(void)
 {
-    esp_err_t ret;
     uint8_t config_value = 0;
     config_value |= (1 << 7); // Vbias ON
     config_value |= (1 << 4); // 3-wire RTD
@@ -51,7 +52,7 @@ static esp_err_t init_temp_sensors(void)
     return ESP_OK;
 }
 
-static esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
+esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
 {
     // send config register via SPI
     uint8_t tx_buff[2] = {
@@ -61,7 +62,7 @@ static esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
     return ESP_OK;
 }
 
-static esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer)
+esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer)
 {
     for (size_t i = 0; i < temp_monitor.number_of_attached_sensors; i++)
     {
@@ -80,6 +81,7 @@ static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t *data)
     data->sensor_fault.raw_fault_byte = 0;
     data->sensor_fault.faults = (max31865_fault_flags_t){0};
     data->valid = true;
+    data->sensor_fault.type = SENSOR_ERR_NONE;
 
     // Read 2 bytes (MSB + LSB)
     CHECK_ERR_LOG_RET_FMT(spi_transfer(sensor_index, tx_data, rx_data, sizeof(tx_data)),
@@ -94,6 +96,8 @@ static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t *data)
         CHECK_ERR_LOG_RET_FMT(handle_max31865_fault(sensor_index, &data->sensor_fault.raw_fault_byte, &data->sensor_fault.faults),
                               "Failed to handle fault for sensor %d",
                               sensor_index);
+        data->sensor_fault.type = classify_sensor_fault(data);
+        
         data->valid = false;
         return ESP_OK;
     }
@@ -162,3 +166,25 @@ static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags
 
     return ESP_OK;
 }
+
+// Classify sensor error based on internal sensor data
+static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data)
+{
+    if (sensor_data->sensor_fault.raw_fault_byte == 0)
+    {
+        return SENSOR_ERR_NONE;
+    }
+    else if (sensor_data->sensor_fault.faults.rtdin_force_open || sensor_data->sensor_fault.faults.refin_force_open || sensor_data->sensor_fault.faults.refin_force_closed)
+    {
+        return SENSOR_ERR_RTD_FAULT;
+    }
+    else if (sensor_data->sensor_fault.faults.over_under_voltage)
+    {
+        return SENSOR_ERR_COMMUNICATION;
+    }
+    else
+    {
+        return SENSOR_ERR_UNKNOWN;
+    }
+}
+

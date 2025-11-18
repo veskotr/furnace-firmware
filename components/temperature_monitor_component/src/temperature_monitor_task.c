@@ -24,8 +24,6 @@ static const TempMonitorConfig_t temp_monitor_config = {
     .stack_size = 4096,
     .task_priority = 5};
 
-static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data);
-
 static esp_err_t post_temp_monitor_error(temp_monitor_error_t type, esp_err_t esp_err_code);
 
 static esp_err_t post_temp_monitor_event(temp_monitor_event_t event_type, void *event_data, size_t event_data_size);
@@ -67,7 +65,7 @@ static void temp_monitor_task(void *args)
             vTaskDelay(pdMS_TO_TICKS(CONFIG_TEMP_SENSOR_RETRY_DELAY_MS));
         }
 
-        if (ret != ESP_OK)
+        if (ret != ESP_OK )
         {
             post_temp_monitor_error(map_esp_err_to_temp_monitor_error(ret), ret);
             LOGGER_LOG_ERROR(TAG, "Failed to get temperatures after retries: %s",
@@ -134,27 +132,6 @@ esp_err_t stop_temperature_monitor_task(void)
     }
 
     return ESP_OK;
-}
-
-// Classify sensor error based on internal sensor data
-static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data)
-{
-    if (sensor_data->sensor_fault.raw_fault_byte == 0)
-    {
-        return SENSOR_ERR_NONE;
-    }
-    else if (sensor_data->sensor_fault.faults.rtdin_force_open || sensor_data->sensor_fault.faults.refin_force_open || sensor_data->sensor_fault.faults.refin_force_closed)
-    {
-        return SENSOR_ERR_RTD_FAULT;
-    }
-    else if (sensor_data->sensor_fault.faults.over_under_voltage)
-    {
-        return SENSOR_ERR_COMMUNICATION;
-    }
-    else
-    {
-        return SENSOR_ERR_UNKNOWN;
-    }
 }
 
 // Post temperature monitor error event

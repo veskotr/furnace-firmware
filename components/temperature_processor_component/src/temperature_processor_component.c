@@ -10,19 +10,20 @@
 
 static const char *TAG = TEMP_PROCESSOR_LOG_TAG;
 
+volatile bool processor_running = false;
 
 // Event loop handle
 static esp_event_loop_handle_t temp_processor_event_loop = NULL;
 
 // Component running flag
 
-
 // ----------------------------
 // Public API
 // ----------------------------
 esp_err_t init_temp_processor(esp_event_loop_handle_t loop_handle)
 {
-    if (processor_running) {
+    if (processor_running)
+    {
         return ESP_OK;
     }
 
@@ -30,11 +31,14 @@ esp_err_t init_temp_processor(esp_event_loop_handle_t loop_handle)
     processor_running = true;
 
     CHECK_ERR_LOG_RET(start_temp_processor_task(), "Failed to start temperature processor task");
+
+    return ESP_OK;
 }
 
 esp_err_t shutdown_temp_processor(void)
 {
-    if (!processor_running) {
+    if (!processor_running)
+    {
         return ESP_OK;
     }
 

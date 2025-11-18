@@ -5,7 +5,7 @@
 #include "temperature_monitor_types.h"
 #include "temperature_monitor_internal_types.h"
 
-static bool monitor_running;
+volatile extern bool monitor_running;
 
 extern temp_monitor_t temp_monitor;
 

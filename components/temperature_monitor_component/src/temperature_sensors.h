@@ -8,9 +8,9 @@
 
 // Component tag
 
-static esp_err_t init_temp_sensors(void);
+esp_err_t init_temp_sensors(void);
 
-static esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer);
+esp_err_t read_temp_sensors_data(temp_sensor_t *data_buffer);
 
 // static esp_err_t get_
 

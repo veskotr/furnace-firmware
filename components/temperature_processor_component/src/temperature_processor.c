@@ -35,7 +35,9 @@ process_temperature_error_t process_temperature_samples(temp_sample_t *input_sam
     }
 
     // Calculate overall average temperature
-    float sum = 0.0f;
+    *output_temperature = average_float_array(temperatures_buffer, number_of_samples);
+
+    return result;
 }
 
 static process_temperature_error_t process_temperature_data(temp_sample_t *input_temperatures, float *output_temperature)
@@ -50,9 +52,6 @@ static process_temperature_error_t process_temperature_data(temp_sample_t *input
 
     // Check for anomalies
     result = check_temperature_anomalies(input_temperatures);
-
-    size_t start_index = 0;
-    size_t end_index = input_temperatures->number_of_attached_sensors - 1;
 
     // Calculate average temperature
     *output_temperature = calculate_average_temperature(input_temperatures);

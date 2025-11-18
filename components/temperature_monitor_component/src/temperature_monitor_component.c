@@ -17,7 +17,7 @@ static const char *TAG = TEMP_MONITOR_LOG;
 EventGroupHandle_t temp_processor_event_group = NULL;
 
 // Monitor running flag
-static bool monitor_running = false;
+volatile bool monitor_running = false;
 
 static void coordinator_event_handler(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data)
 {

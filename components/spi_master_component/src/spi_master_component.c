@@ -16,15 +16,31 @@ static uint8_t _number_of_slaves;
 // Chip select pins for slaves
 static int cs_pins[CONFIG_SPI_MAX_NUM_SLAVES] = {
     CONFIG_SPI_SLAVE1_CS,
+#if CONFIG_SPI_MAX_NUM_SLAVES > 1
     CONFIG_SPI_SLAVE2_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 2
     CONFIG_SPI_SLAVE3_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 3
     CONFIG_SPI_SLAVE4_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 4
     CONFIG_SPI_SLAVE5_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 5
     CONFIG_SPI_SLAVE6_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 6
     CONFIG_SPI_SLAVE7_CS,
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 7
     CONFIG_SPI_SLAVE8_CS,
-    CONFIG_SPI_SLAVE9_CS};
-
+#endif
+#if CONFIG_SPI_MAX_NUM_SLAVES > 8
+    CONFIG_SPI_SLAVE9_CS,
+#endif
+};
 // Component initialized flag
 static bool spi_initialized = false;
 
@@ -130,7 +146,7 @@ esp_err_t spi_transfer(int slave_index, uint8_t *tx, uint8_t *rx, size_t len)
         .length = len * 8,
         .tx_buffer = tx,
         .rx_buffer = rx};
-        
+
     esp_err_t ret = spi_device_transmit(spi_slaves[slave_index], &t);
 
     xSemaphoreGive(spi_mutex);
