@@ -6,29 +6,27 @@
 #include "esp_event.h"
 #include "spi_master_component.h"
 #include "core_types.h"
-#include "temperature_sensors.h"
 #include "temperature_monitor_internal_types.h"
 #include "temperature_monitor_task.h"
+#include "temperature_monitor_types.h"
+#include "utils.h"
+#include "temperature_monitor_log.h"
+
+static const char *TAG = TEMP_MONITOR_LOG;
+
+EventGroupHandle_t temp_processor_event_group = NULL;
 
 // Monitor running flag
-static bool monitor_running = false;
-
-ESP_EVENT_DEFINE_BASE(MEASURED_TEMPERATURE_EVENT);
-ESP_EVENT_DEFINE_BASE(TEMP_MEASURE_ERROR_EVENT);
-
-static const TempMonitorConfig_t temp_monitor_config = {
-    .task_name = "TEMP_MONITOR_TASK",
-    .stack_size = 4096,
-    .task_priority = 5};
+volatile bool monitor_running = false;
 
 static void coordinator_event_handler(void *handler_arg, esp_event_base_t base, int32_t id, void *event_data)
 {
     if (id == COORDINATOR_EVENT_MEASURE_TEMPERATURE)
     {
 
-        if (monitor_running && temp_monitor_task_handle)
+        if (monitor_running)
         {
-            xTaskNotifyGive(temp_monitor_task_handle);
+            // Handle coordinator events
         }
     }
 }
@@ -46,44 +44,22 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
     temp_monitor.number_of_attached_sensors = config->number_of_attached_sensors;
     temp_monitor.temperature_event_loop_handle = config->temperature_events_loop_handle;
     temp_monitor.coordinator_event_loop_handle = config->coordinator_events_loop_handle;
-    temp_sensors_array.number_of_attached_sensors = config->number_of_attached_sensors;
 
     logger_init();
 
-    esp_err_t ret = init_spi(config->number_of_attached_sensors);
-    if (ret != ESP_OK)
+    temp_processor_event_group = xEventGroupCreate();
+    if (temp_processor_event_group == NULL)
     {
-        LOGGER_LOG_ERROR(TAG, "Failed to initialize SPI: %s", esp_err_to_name(ret));
-        return ret;
+        LOGGER_LOG_ERROR("TEMP_MONITOR", "Failed to create temperature processor event group");
+        return ESP_FAIL;
     }
 
-    monitor_running = true;
+    CHECK_ERR_LOG_RET(init_spi(config->number_of_attached_sensors), "Failed to initialize SPI");
 
-    ret = xTaskCreate(
-              temp_monitor_task,
-              temp_monitor_config.task_name,
-              temp_monitor_config.stack_size,
-              NULL,
-              temp_monitor_config.task_priority,
-              &temp_monitor_task_handle) == pdPASS
-              ? ESP_OK
-              : ESP_FAIL;
+    CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(), 
+                           shutdown_spi(),
+                           "Failed to start temperature monitor task");
 
-    if (ret != ESP_OK)
-    {
-        LOGGER_LOG_ERROR(TAG, "Failed to create temperature monitor task");
-        shutdown_spi();
-        monitor_running = false;
-        return ret;
-    }
-
-    ret = esp_event_handler_instance_register_with(
-        temp_monitor.coordinator_event_loop_handle,
-        COORDINATOR_EVENTS,
-        ESP_EVENT_ANY_ID,
-        coordinator_event_handler,
-        NULL,
-        NULL);
     return ESP_OK;
 }
 
@@ -96,11 +72,12 @@ esp_err_t shutdown_temp_monitor_controller(void)
 
     monitor_running = false;
 
-    if (temp_monitor_task_handle)
-    {
-        vTaskDelete(temp_monitor_task_handle);
-        temp_monitor_task_handle = NULL;
-    }
+    CHECK_ERR_LOG_RET(stop_temperature_monitor_task(), "Failed to stop temperature monitor task");
+
+    CHECK_ERR_LOG_RET(shutdown_spi(), "Failed to shutdown SPI");
+
+    vEventGroupDelete(temp_processor_event_group);
+    temp_processor_event_group = NULL;
 
     return ESP_OK;
 }

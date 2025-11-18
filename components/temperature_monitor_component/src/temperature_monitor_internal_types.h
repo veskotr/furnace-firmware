@@ -2,6 +2,7 @@
 #define TEMPERATURE_MONITOR_INTERNAL_TYPES_H
 #include "esp_event.h"
 #include <inttypes.h>
+#include "sdkconfig.h"
 
 
 typedef struct

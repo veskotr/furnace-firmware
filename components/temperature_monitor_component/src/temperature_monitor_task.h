@@ -2,15 +2,15 @@
 #define TEMPERATURE_MONITOR_TASK_H
 
 #include "temperature_monitor_component.h"
+#include "temperature_monitor_types.h"
+#include "temperature_monitor_internal_types.h"
 
-#include "freertos/task.h"
-// Task handle
-extern TaskHandle_t temp_monitor_task_handle;
+volatile extern bool monitor_running;
 
-extern temp_sensors_array_t temp_sensors_array;
+extern temp_monitor_t temp_monitor;
 
-static bool monitor_running;
+esp_err_t start_temperature_monitor_task(void);
 
-static void temp_monitor_task(void *args);
+esp_err_t stop_temperature_monitor_task(void);
 
 #endif // TEMPERATURE_MONITOR_TASK_H
