@@ -2,6 +2,8 @@
 #include "coordinator_component_log.h"
 #include "utils.h"
 #include "temperature_profile_controller.h"
+#include "pid_component.h"
+#include "heater_controller_component.h"
 
 static const char *TAG = COORDINATOR_COMPONENT_LOG;
 
@@ -25,6 +27,7 @@ static void coordinator_task(void *args)
     static uint32_t elapsed_time = 0;
     static uint32_t last_wake_time = 0;
     static uint32_t current_time = 0;
+    static uint32_t last_update_duration = 0;
 
     while (coordinator_running)
     {
@@ -32,7 +35,8 @@ static void coordinator_task(void *args)
         if (!profile_paused)
         {
             current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            elapsed_time += (current_time - last_wake_time);
+            last_update_duration = current_time - last_wake_time;
+            elapsed_time += last_update_duration;
             last_wake_time = current_time;
         }
         float target_temperature;
@@ -50,8 +54,10 @@ static void coordinator_task(void *args)
             continue;
         }
         // Calculate power output based on current and target temperature
+        float power_output = pid_controller_compute(coordinator_current_temperature, target_temperature, last_update_duration);
 
         // Turn on/off heaters based on power output
+        set_heater_target_power_level(power_output);
 
         LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C", coordinator_current_temperature);
     }

@@ -175,3 +175,19 @@ menu "PID Controller Configuration"
         default 100
         range 0 100
 endmenu
+
+menu "Heater Controller"
+    config HEATER_CONTROLLER_GPIO
+        int "GPIO Pin"
+        default 25
+    
+    config HEATER_WINDOW_SIZE_MS
+        int "Heater Window Size (ms)"
+        default 10000
+endmenu
+
+menu "Alarm Controller"
+    config ALARM_CONTROLLER_GPIO
+        int "GPIO Pin"
+        default 26
+endmenu
