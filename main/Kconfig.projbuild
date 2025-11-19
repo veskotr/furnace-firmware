@@ -148,3 +148,30 @@ menu "Coordinator"
         default 5
     
 endmenu
+
+menu "PID Controller Configuration"
+    config PID_KP
+        int "Proportional Coefficient (Kp) percent"
+        default 100
+        range 0 100
+
+    config PID_KI
+        int "Integral Coefficient (Ki) percent"
+        default 10
+        range 0 100
+
+    config PID_KD
+        int "Derivative Coefficient (Kd) percent"
+        default 1
+        range 0 100
+
+    config PID_OUTPUT_MIN
+        int "Minimum Output Limit percent"
+        default 0
+        range 0 100
+
+    config PID_OUTPUT_MAX
+        int "Maximum Output Limit percent"
+        default 100
+        range 0 100
+endmenu
