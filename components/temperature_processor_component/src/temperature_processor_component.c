@@ -9,6 +9,9 @@ static const char *TAG = TEMP_PROCESSOR_LOG_TAG;
 
 volatile bool processor_running = false;
 
+ESP_EVENT_DEFINE_BASE(PROCESS_TEMPERATURE_EVENT);
+
+
 // Event loop handle
 esp_event_loop_handle_t temp_processor_event_loop = NULL;
 

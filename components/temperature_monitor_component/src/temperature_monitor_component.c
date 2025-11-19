@@ -18,9 +18,6 @@ EventGroupHandle_t temp_processor_event_group = NULL;
 
 temp_monitor_t temp_monitor = {0};
 
-// Monitor running flag
-volatile bool monitor_running = false;
-
 // ----------------------------
 // Public API
 // ----------------------------
@@ -33,7 +30,6 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
 
     temp_monitor.number_of_attached_sensors = config->number_of_attached_sensors;
     temp_monitor.temperature_event_loop_handle = config->temperature_events_loop_handle;
-    temp_monitor.coordinator_event_loop_handle = config->coordinator_events_loop_handle;
 
     logger_init();
 
@@ -54,14 +50,12 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
     return ESP_OK;
 }
 
-esp_err_t shutdown_temp_monitor_controller(void)
+esp_err_t shutdown_temp_monitor(void)
 {
     if (!monitor_running)
     {
         return ESP_OK;
     }
-
-    monitor_running = false;
 
     CHECK_ERR_LOG_RET(stop_temperature_monitor_task(), "Failed to stop temperature monitor task");
 

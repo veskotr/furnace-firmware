@@ -13,12 +13,11 @@ typedef struct
 {
     uint8_t number_of_attached_sensors;
     esp_event_loop_handle_t temperature_events_loop_handle;
-    esp_event_loop_handle_t coordinator_events_loop_handle;
 } temp_monitor_config_t;
 
 esp_err_t init_temp_monitor(temp_monitor_config_t *config);
 
-esp_err_t shutdown_temp_monitor_controller(void);
+esp_err_t shutdown_temp_monitor(void);
 
 size_t temp_ring_buffer_pop_all(
     temp_sample_t *out_dest,

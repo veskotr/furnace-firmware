@@ -5,7 +5,7 @@
 #include "temperature_monitor_types.h"
 #include "temperature_monitor_internal_types.h"
 
-volatile extern bool monitor_running;
+extern bool monitor_running;
 
 esp_err_t start_temperature_monitor_task(void);
 
