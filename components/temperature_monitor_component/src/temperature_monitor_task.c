@@ -11,6 +11,8 @@
 
 static const char *TAG = TEMP_MONITOR_LOG;
 
+bool monitor_running = false;
+
 ESP_EVENT_DEFINE_BASE(TEMP_MONITOR_EVENT);
 // Task handle
 static TaskHandle_t temp_monitor_task_handle;
@@ -19,7 +21,7 @@ static temp_sample_t temp_sample = {0};
 
 const TempMonitorConfig_t temp_monitor_config = {
     .task_name = "TEMP_MONITOR_TASK",
-    .stack_size = 4096,
+    .stack_size = 8192,
     .task_priority = 5};
 
 static esp_err_t post_temp_monitor_error(temp_monitor_error_t type, esp_err_t esp_err_code);
@@ -35,7 +37,6 @@ static void temp_monitor_task(void *args)
 {
     LOGGER_LOG_INFO(TAG, "Temperature monitor task started");
     TickType_t last_wake = xTaskGetTickCount();
-    CHECK_ERR_LOG(post_temp_monitor_event(TEMP_MONITOR_READY, NULL, 0), "Failed to post TEMP_MONITOR_READY event");
 
     static const uint8_t max_bad_samples = (CONFIG_TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT * CONFIG_TEMP_SENSORS_SAMPLING_FREQ_HZ) / 100;
     static uint8_t samples_collected = 0;

@@ -24,7 +24,7 @@ typedef struct
 
 static const TempProcessorConfig_t temp_processor_config = {
     .task_name = "TEMP_CALC_TASK",
-    .stack_size = 4096,
+    .stack_size = 8192,
     .task_priority = 5};
 
 // Task handle

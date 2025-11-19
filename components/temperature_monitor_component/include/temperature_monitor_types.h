@@ -10,8 +10,7 @@ ESP_EVENT_DECLARE_BASE(TEMP_MONITOR_EVENT);
 
 typedef enum
 {
-    TEMP_MONITOR_READY = 0,
-    TEMP_MONITOR_ERROR_OCCURRED
+    TEMP_MONITOR_ERROR_OCCURRED = 0
 } temp_monitor_event_t;
 
 typedef enum
@@ -57,9 +56,9 @@ typedef struct
 
 typedef struct
 {
-    uint8_t index;               // Sensor index
-    float temperature_c;         // Last measured temperature
-    bool valid;                  // Whether the data is valid (no fault, good comms)
+    uint8_t index;                    // Sensor index
+    float temperature_c;              // Last measured temperature
+    bool valid;                       // Whether the data is valid (no fault, good comms)
     temp_sensor_fault_t sensor_fault; // Sensor fault information
 } temp_sensor_t;
 
