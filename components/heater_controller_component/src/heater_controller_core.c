@@ -1,10 +1,9 @@
 #include "heater_controller_component.h"
-#include "heater_controller_task.h"
-#include "heater_controller_log.h"
+#include "heater_controller_internal.h"
 #include "utils.h"
 #include "freertos/semphr.h"
 
-static const char *TAG = HEATER_CONTROLLER_LOG_TAG;
+static const char *TAG = "HEATER_CTRL_CORE";
 
 float heater_target_power_level = 0.0f;
 esp_event_loop_handle_t heater_controller_event_loop_handle = NULL;

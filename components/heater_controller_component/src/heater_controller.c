@@ -1,11 +1,10 @@
-#include "heater_controller.h"
 #include "sdkconfig.h"
 #include "gpio_master_driver.h"
 #include "utils.h"
-#include "heater_controller_log.h"
+#include "heater_controller_internal.h"
 #include "hal/gpio_types.h"
 
-static const char *TAG = HEATER_CONTROLLER_LOG_TAG;
+static const char *TAG = "HEATER_CTRL";
 static const int heater_gpio_pull_up = 0;
 static const int heater_gpio_pull_down = 1;
 

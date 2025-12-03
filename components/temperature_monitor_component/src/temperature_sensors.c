@@ -1,14 +1,12 @@
-#include "temperature_sensors.h"
-#include "temperature_monitor_internal_types.h"
+#include "temperature_monitor_internal.h"
 #include "logger_component.h"
 #include "spi_master_component.h"
 #include "max31865_registers.h"
 #include <math.h>
 #include <float.h>
 #include "utils.h"
-#include "temperature_monitor_log.h"
 
-static const char *TAG = TEMP_MONITOR_LOG;
+static const char *TAG = "TEMP_SENSORS";
 
 const max31865_registers_t max31865_registers = {
     .config_register_read_address = 0x00,
@@ -37,15 +35,16 @@ static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags
 
 static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data);
 
-esp_err_t init_temp_sensors(void)
+esp_err_t init_temp_sensors(temp_monitor_context_t *ctx)
 {
+    //TODO Externalize config
     uint8_t config_value = 0;
     config_value |= (1 << 7); // Vbias ON
     config_value |= (1 << 4); // 3-wire RTD
     config_value |= (1 << 1); // Auto conversion mode
     config_value |= (0 << 1); // Filter 50Hz
 
-    for (size_t i = 0; i < temp_monitor.number_of_attached_sensors; i++)
+    for (size_t i = 0; i < ctx->number_of_attached_sensors; i++)
     {
         CHECK_ERR_LOG_RET_FMT(init_temp_sensor(i, config_value), "Failed to initialize temperature sensor %d", i);
     }
@@ -63,10 +62,10 @@ esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
     return ESP_OK;
 }
 
-esp_err_t read_temp_sensors_data(temp_sample_t *temp_sample_to_fill)
+esp_err_t read_temp_sensors_data(temp_monitor_context_t *ctx, temp_sample_t *temp_sample_to_fill)
 {
     temp_sensor_t *data_buffer = temp_sample_to_fill->sensors;
-    for (size_t i = 0; i < temp_monitor.number_of_attached_sensors; i++)
+    for (size_t i = 0; i < ctx->number_of_attached_sensors; i++)
     {
         CHECK_ERR_LOG_RET_FMT(read_temp_sensor(i, &data_buffer[i]), "Failed to read temperature sensor %d data", i);
         if (!(data_buffer[i].valid))

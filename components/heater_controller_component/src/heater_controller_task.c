@@ -1,13 +1,11 @@
-#include "heater_controller_task.h"
-#include "heater_controller_log.h"
-#include "heater_controller.h"
+#include "heater_controller_internal.h"
 #include "utils.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "heater_controller_types.h"
 
-static const char *TAG = HEATER_CONTROLLER_LOG_TAG;
+static const char *TAG = "HEATER_CTRL_TASK";
 
 ESP_EVENT_DEFINE_BASE(HEATER_CONTROLLER_EVENT);
 
@@ -27,7 +25,7 @@ static const HeaterControllerConfig_t heater_controller_config = {
     .stack_size = 4096,
     .task_priority = 5};
 
-static esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void *event_data, size_t event_data_size);
+
 
 void heater_controller_task(void *pvParameters)
 {
@@ -124,25 +122,6 @@ esp_err_t shutdown_heater_controller_task(void)
     shutdown_heater_controller();
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task shut down");
-
-    return ESP_OK;
-}
-
-static esp_err_t post_heater_controller_error(heater_controller_error_t error_code)
-{
-    return post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, &error_code, sizeof(error_code));
-}
-
-static esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void *event_data, size_t event_data_size)
-{
-    CHECK_ERR_LOG_RET(esp_event_post_to(
-                          heater_controller_event_loop_handle,
-                          HEATER_CONTROLLER_EVENT,
-                          event_type,
-                          event_data,
-                          event_data_size,
-                          portMAX_DELAY),
-                      "Failed to post heater controller event");
 
     return ESP_OK;
 }

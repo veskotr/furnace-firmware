@@ -1,32 +1,22 @@
-#include "temperature_monitor_task.h"
+#include "temperature_monitor_internal.h"
 #include "temperature_monitor_component.h"
-#include "temperature_sensors.h"
-#include "temperature_monitor_internal_types.h"
-#include "ring_buffer.h"
 #include "utils.h"
-#include "temperature_monitor_log.h"
 
 #include "esp_event.h"
 #include "logger_component.h"
 
-static const char *TAG = TEMP_MONITOR_LOG;
-
-bool monitor_running = false;
+static const char *TAG = "TEMP_MONITOR_TASK";
 
 ESP_EVENT_DEFINE_BASE(TEMP_MONITOR_EVENT);
-// Task handle
-static TaskHandle_t temp_monitor_task_handle;
-
-static temp_sample_t temp_sample = {0};
 
 const TempMonitorConfig_t temp_monitor_config = {
     .task_name = "TEMP_MONITOR_TASK",
     .stack_size = 8192,
     .task_priority = 5};
 
-static esp_err_t post_temp_monitor_error(temp_monitor_error_t type, esp_err_t esp_err_code);
+static esp_err_t post_temp_monitor_error(temp_monitor_context_t *ctx, temp_monitor_error_t type, esp_err_t esp_err_code);
 
-static esp_err_t post_temp_monitor_event(temp_monitor_event_t event_type, void *event_data, size_t event_data_size);
+static esp_err_t post_temp_monitor_event(temp_monitor_context_t *ctx, temp_monitor_event_t event_type, void *event_data, size_t event_data_size);
 
 static temp_monitor_error_t map_esp_err_to_temp_monitor_error(esp_err_t err);
 
@@ -35,6 +25,8 @@ static temp_monitor_error_t map_esp_err_to_temp_monitor_error(esp_err_t err);
 // ----------------------------
 static void temp_monitor_task(void *args)
 {
+    temp_monitor_context_t *ctx = (temp_monitor_context_t *)args;
+    
     LOGGER_LOG_INFO(TAG, "Temperature monitor task started");
     TickType_t last_wake = xTaskGetTickCount();
 
@@ -46,16 +38,16 @@ static void temp_monitor_task(void *args)
     static const uint8_t delay_between_samples = 1000 / samples_per_scond;
     const TickType_t period = pdMS_TO_TICKS(delay_between_samples);
 
-    while (monitor_running)
+    while (ctx->monitor_running)
     {
         esp_err_t ret;
 
         // Read temperature sensors data
         for (uint8_t retry = 0; retry < CONFIG_TEMP_SENSOR_MAX_READ_RETRIES; retry++)
         {
-            ret = read_temp_sensors_data(&temp_sample);
+            ret = read_temp_sensors_data(ctx, &ctx->current_sample);
 
-            if (ret == ESP_OK && temp_sample.valid)
+            if (ret == ESP_OK && ctx->current_sample.valid)
             {
                 break;
             }
@@ -65,20 +57,20 @@ static void temp_monitor_task(void *args)
             vTaskDelay(pdMS_TO_TICKS(CONFIG_TEMP_SENSOR_RETRY_DELAY_MS));
         }
 
-        if (!temp_sample.valid)
+        if (!ctx->current_sample.valid)
         {
             bad_samples_collected++;
         }
 
         if (ret != ESP_OK)
         {
-            post_temp_monitor_error(map_esp_err_to_temp_monitor_error(ret), ret);
+            post_temp_monitor_error(ctx, map_esp_err_to_temp_monitor_error(ret), ret);
             LOGGER_LOG_ERROR(TAG, "Failed to get temperatures after retries: %s",
                              esp_err_to_name(ret));
             continue;
         }
 
-        temp_ring_buffer_push(&temp_sample);
+        temp_ring_buffer_push(&ctx->ring_buffer, &ctx->current_sample);
 
         // Post buffer ready event after samples collected
         samples_collected++;
@@ -89,14 +81,14 @@ static void temp_monitor_task(void *args)
                 LOGGER_LOG_ERROR(TAG, "Too many bad samples collected (%d/%d)",
                                  bad_samples_collected,
                                  max_bad_samples);
-                post_temp_monitor_event(TEMP_MONITOR_ERROR_OCCURRED, &temp_sample, sizeof(temp_sample));
+                post_temp_monitor_event(ctx, TEMP_MONITOR_ERROR_OCCURRED, &ctx->current_sample, sizeof(ctx->current_sample));
             }
             else
             {
                 LOGGER_LOG_INFO(TAG, "Samples collected: %d, Bad samples: %d",
                                 samples_collected,
                                 bad_samples_collected);
-                xEventGroupSetBits(temp_processor_event_group, TEMP_READY_EVENT_BIT);
+                xEventGroupSetBits(ctx->processor_event_group, TEMP_READY_EVENT_BIT);
             }
 
             samples_collected = 0;
@@ -110,22 +102,22 @@ static void temp_monitor_task(void *args)
     vTaskDelete(NULL);
 }
 
-esp_err_t start_temperature_monitor_task(void)
+esp_err_t start_temperature_monitor_task(temp_monitor_context_t *ctx)
 {
-    if (monitor_running)
+    if (ctx->monitor_running)
     {
         return ESP_OK;
     }
 
-    temp_sample.number_of_attached_sensors = temp_monitor.number_of_attached_sensors;
+    ctx->current_sample.number_of_attached_sensors = ctx->number_of_attached_sensors;
 
-    monitor_running = true;
+    ctx->monitor_running = true;
 
-    bool init_temp_ring_buffer_result = temp_ring_buffer_init();
+    bool init_temp_ring_buffer_result = temp_ring_buffer_init(&ctx->ring_buffer);
     if (!init_temp_ring_buffer_result)
     {
         LOGGER_LOG_ERROR(TAG, "Failed to initialize temperature ring buffer");
-        monitor_running = false;
+        ctx->monitor_running = false;
         return ESP_FAIL;
     }
 
@@ -133,50 +125,50 @@ esp_err_t start_temperature_monitor_task(void)
                                temp_monitor_task,
                                temp_monitor_config.task_name,
                                temp_monitor_config.stack_size,
-                               NULL,
+                               ctx,
                                temp_monitor_config.task_priority,
-                               &temp_monitor_task_handle) == pdPASS
+                               &ctx->task_handle) == pdPASS
                                ? ESP_OK
                                : ESP_FAIL,
-                           monitor_running = false,
+                           ctx->monitor_running = false,
                            "Failed to create temperature monitor task");
 
     return ESP_OK;
 }
 
-esp_err_t stop_temperature_monitor_task(void)
+esp_err_t stop_temperature_monitor_task(temp_monitor_context_t *ctx)
 {
-    if (!monitor_running)
+    if (!ctx->monitor_running)
     {
         return ESP_OK;
     }
 
-    monitor_running = false;
+    ctx->monitor_running = false;
 
-    if (temp_monitor_task_handle)
+    if (ctx->task_handle)
     {
-        vTaskDelete(temp_monitor_task_handle);
-        temp_monitor_task_handle = NULL;
+        vTaskDelete(ctx->task_handle);
+        ctx->task_handle = NULL;
     }
 
     return ESP_OK;
 }
 
 // Post temperature monitor error event
-static esp_err_t post_temp_monitor_error(temp_monitor_error_t type, esp_err_t esp_err_code)
+static esp_err_t post_temp_monitor_error(temp_monitor_context_t *ctx, temp_monitor_error_t type, esp_err_t esp_err_code)
 {
     temp_monitor_error_data_t error_data = {
         .type = type,
         .esp_err_code = esp_err_code};
 
-    return post_temp_monitor_event(TEMP_MONITOR_ERROR_OCCURRED, &error_data, sizeof(error_data));
+    return post_temp_monitor_event(ctx, TEMP_MONITOR_ERROR_OCCURRED, &error_data, sizeof(error_data));
 }
 
-static esp_err_t post_temp_monitor_event(temp_monitor_event_t event_type, void *event_data, size_t event_data_size)
+static esp_err_t post_temp_monitor_event(temp_monitor_context_t *ctx, temp_monitor_event_t event_type, void *event_data, size_t event_data_size)
 {
 
     CHECK_ERR_LOG_RET(esp_event_post_to(
-                          temp_monitor.temperature_event_loop_handle,
+                          ctx->temperature_event_loop_handle,
                           TEMP_MONITOR_EVENT,
                           event_type,
                           event_data,
