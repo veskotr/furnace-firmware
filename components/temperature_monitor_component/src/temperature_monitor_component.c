@@ -41,9 +41,10 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
     }
 
     CHECK_ERR_LOG_RET(init_spi(config->number_of_attached_sensors), "Failed to initialize SPI");
-    
 
-    CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(), 
+    CHECK_ERR_LOG_RET(init_temp_sensors(), "Failed to initialize temperature sensors");
+
+    CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(),
                            shutdown_spi(),
                            "Failed to start temperature monitor task");
 

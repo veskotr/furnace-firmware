@@ -121,6 +121,14 @@ esp_err_t start_temperature_monitor_task(void)
 
     monitor_running = true;
 
+    bool init_temp_ring_buffer_result = temp_ring_buffer_init();
+    if (!init_temp_ring_buffer_result)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to initialize temperature ring buffer");
+        monitor_running = false;
+        return ESP_FAIL;
+    }
+
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                temp_monitor_task,
                                temp_monitor_config.task_name,
@@ -161,9 +169,7 @@ static esp_err_t post_temp_monitor_error(temp_monitor_error_t type, esp_err_t es
         .type = type,
         .esp_err_code = esp_err_code};
 
-    CHECK_ERR_LOG_RET(post_temp_monitor_event(TEMP_MONITOR_ERROR_OCCURRED, &error_data, sizeof(error_data)), "Failed to post temperature monitor error event");
-
-    return ESP_OK;
+    return post_temp_monitor_event(TEMP_MONITOR_ERROR_OCCURRED, &error_data, sizeof(error_data));
 }
 
 static esp_err_t post_temp_monitor_event(temp_monitor_event_t event_type, void *event_data, size_t event_data_size)

@@ -9,6 +9,8 @@
 
 static const char *TAG = HEATER_CONTROLLER_LOG_TAG;
 
+ESP_EVENT_DEFINE_BASE(HEATER_CONTROLLER_EVENT);
+
 static TaskHandle_t heater_controller_task_handle = NULL;
 bool heater_controller_task_running = false;
 SemaphoreHandle_t heater_controller_mutex = NULL;
@@ -33,7 +35,7 @@ void heater_controller_task(void *pvParameters)
 
     static const uint32_t heater_window_ms = CONFIG_HEATER_WINDOW_SIZE_MS;
 
-    while (1)
+    while (heater_controller_task_running)
     {
         xSemaphoreTake(heater_controller_mutex, portMAX_DELAY);
         uint32_t on_time = (uint32_t)(heater_target_power_level * heater_window_ms);
@@ -46,7 +48,7 @@ void heater_controller_task(void *pvParameters)
             if (err != ESP_OK)
             {
                 LOGGER_LOG_ERROR(TAG, "Failed to turn heater ON");
-                CHECK_ERR_LOG(post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, HEATER_CONTROLLER_ERR_GPIO, sizeof(HEATER_CONTROLLER_ERR_GPIO)), "Failed to post heater controller error event");
+                CHECK_ERR_LOG(post_heater_controller_error(HEATER_CONTROLLER_ERR_GPIO), "Failed to post heater controller error event");
             }
             vTaskDelay(pdMS_TO_TICKS(on_time));
         }
@@ -124,6 +126,11 @@ esp_err_t shutdown_heater_controller_task(void)
     LOGGER_LOG_INFO(TAG, "Heater Controller Task shut down");
 
     return ESP_OK;
+}
+
+static esp_err_t post_heater_controller_error(heater_controller_error_t error_code)
+{
+    return post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, &error_code, sizeof(error_code));
 }
 
 static esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void *event_data, size_t event_data_size)
