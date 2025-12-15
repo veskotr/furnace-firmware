@@ -3,37 +3,49 @@
 #include <math.h>
 
 static const char *TAG = "TEMP_PROFILE_CONTROLLER";
+typedef struct {
+    float initial_temperature;
+    heating_profile_t *heating_profile;
+} temperature_profile_controller_context_t;
 
-static heating_profile_t *current_profile = NULL;
+static temperature_profile_controller_context_t *g_temp_profile_controller_ctx = NULL;
 
-static float initial_temperature = 0.0f;
-
-profile_controller_error_t load_heating_profile(heating_profile_t *heating_profile, float starting_temperature)
+profile_controller_error_t load_heating_profile(const temp_profile_config_t config)
 {
-    if (heating_profile == NULL || heating_profile->first_node == NULL)
+    if (config.heating_profile == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid heating profile");
         return PROFILE_CONTROLLER_ERROR_INVALID_ARG;
     }
 
-    current_profile = heating_profile;
+    if (g_temp_profile_controller_ctx == NULL)
+    {
+        g_temp_profile_controller_ctx = calloc(1, sizeof(temperature_profile_controller_context_t));
+        if (g_temp_profile_controller_ctx == NULL)
+        {
+            LOGGER_LOG_ERROR(TAG, "Failed to allocate temperature profile controller context");
+            return PROFILE_CONTROLLER_ERROR_UNKNOWN;
+        }
+    }
 
-    initial_temperature = starting_temperature;
+    g_temp_profile_controller_ctx->heating_profile = config.heating_profile;
+
+    g_temp_profile_controller_ctx->initial_temperature = config.initial_temperature;
 
     return PROFILE_CONTROLLER_ERROR_NONE;
 }
 
-profile_controller_error_t get_target_temperature_at_time(uint32_t time_ms, float *temperature)
+profile_controller_error_t get_target_temperature_at_time(const uint32_t time_ms, float *temperature)
 {
-    if (current_profile == NULL)
+    if (g_temp_profile_controller_ctx == NULL || g_temp_profile_controller_ctx->heating_profile == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Heating profile not loaded or invalid argument");
         return PROFILE_CONTROLLER_ERROR_NO_PROFILE_LOADED;
     }
 
-    heating_node_t *node = current_profile->first_node;
+    heating_node_t *node = g_temp_profile_controller_ctx->heating_profile->first_node;
     uint32_t elapsed_time = 0;
-    float start_temp = initial_temperature;
+    float start_temp = g_temp_profile_controller_ctx->initial_temperature;
 
     while (node != NULL)
     {
@@ -71,8 +83,13 @@ profile_controller_error_t get_target_temperature_at_time(uint32_t time_ms, floa
 
 profile_controller_error_t shutdown_profile_controller(void)
 {
-    current_profile = NULL;
-    initial_temperature = 0.0f;
+    if (g_temp_profile_controller_ctx == NULL)
+    {
+        return PROFILE_CONTROLLER_ERROR_NONE;
+    }
+
+    free(g_temp_profile_controller_ctx);
+    g_temp_profile_controller_ctx = NULL;
 
     return PROFILE_CONTROLLER_ERROR_NONE;
 }

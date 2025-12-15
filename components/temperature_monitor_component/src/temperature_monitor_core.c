@@ -38,8 +38,6 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
 
     // Initialize configuration
     g_temp_monitor_ctx->number_of_attached_sensors = config->number_of_attached_sensors;
-    g_temp_monitor_ctx->temperature_event_loop_handle = config->temperature_events_loop_handle;
-    g_temp_monitor_ctx->coordinator_event_loop_handle = config->coordinator_event_loop_handle;
 
     // Create event group
     g_temp_monitor_ctx->processor_event_group = xEventGroupCreate();
@@ -51,13 +49,13 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
         return ESP_FAIL;
     }
 
-    CHECK_ERR_LOG_RET(init_spi(config->number_of_attached_sensors), "Failed to initialize SPI");
-
-    CHECK_ERR_LOG_RET(init_temp_sensors(g_temp_monitor_ctx), "Failed to initialize temperature sensors");
+    CHECK_ERR_LOG_CALL_RET(init_temp_sensors(g_temp_monitor_ctx),
+                           free(g_temp_monitor_ctx),
+                           "Failed to initialize temperature sensors");
 
     CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(g_temp_monitor_ctx),
-                           shutdown_spi(),
-                           "Failed to start temperature monitor task");
+                      free(g_temp_monitor_ctx),
+                      "Failed to start temperature monitor task");
 
     return ESP_OK;
 }
@@ -75,8 +73,6 @@ esp_err_t shutdown_temp_monitor(void)
     }
 
     CHECK_ERR_LOG_RET(stop_temperature_monitor_task(g_temp_monitor_ctx), "Failed to stop temperature monitor task");
-
-    CHECK_ERR_LOG_RET(shutdown_spi(), "Failed to shutdown SPI");
 
     if (g_temp_monitor_ctx->processor_event_group)
     {

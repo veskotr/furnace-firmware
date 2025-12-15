@@ -3,11 +3,8 @@
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "heater_controller_types.h"
 
 static const char *TAG = "HEATER_CTRL_TASK";
-
-ESP_EVENT_DEFINE_BASE(HEATER_CONTROLLER_EVENT);
 
 static TaskHandle_t heater_controller_task_handle = NULL;
 bool heater_controller_task_running = false;
@@ -24,8 +21,6 @@ static const HeaterControllerConfig_t heater_controller_config = {
     .task_name = "HEATER_CTRL_TASK",
     .stack_size = 4096,
     .task_priority = 5};
-
-
 
 void heater_controller_task(void *pvParameters)
 {
@@ -57,7 +52,7 @@ void heater_controller_task(void *pvParameters)
             if (err != ESP_OK)
             {
                 LOGGER_LOG_ERROR(TAG, "Failed to turn heater OFF");
-                CHECK_ERR_LOG(post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, HEATER_CONTROLLER_ERR_GPIO, sizeof(HEATER_CONTROLLER_ERR_GPIO)), "Failed to post heater controller error event");
+                CHECK_ERR_LOG(post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, HEATER_CONTROLLER_ERR_GPIO, sizeof(heater_controller_error_t)), "Failed to post heater controller error event");
             }
             vTaskDelay(pdMS_TO_TICKS(off_time));
         }
@@ -84,6 +79,8 @@ esp_err_t init_heater_controller_task(void)
     }
     xSemaphoreGive(heater_controller_mutex);
 
+    heater_controller_task_running = true;
+
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                heater_controller_task,
                                heater_controller_config.task_name,
@@ -95,8 +92,6 @@ esp_err_t init_heater_controller_task(void)
                                : ESP_FAIL,
                            heater_controller_task_handle = NULL,
                            "Failed to create heater controller task");
-
-    heater_controller_task_running = true;
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task initialized");
 

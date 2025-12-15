@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "esp_event.h"
 #include "freertos/semphr.h"
-#include "heater_controller_types.h"
+#include "event_registry.h"
 
 extern bool heater_controller_task_running;
 extern float heater_target_power_level;
@@ -28,6 +28,10 @@ esp_err_t init_heater_controller(void);
 esp_err_t toggle_heater(bool state);
 esp_err_t shutdown_heater_controller(void);
 
+// ----------------------------
+// Init events
+// ----------------------------
+esp_err_t init_events();
 
 // ----------------------------
 // Event posting functions

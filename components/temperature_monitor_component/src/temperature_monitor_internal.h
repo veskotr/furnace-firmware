@@ -27,8 +27,6 @@ typedef struct
 {
     // Configuration
     uint8_t number_of_attached_sensors;
-    esp_event_loop_handle_t temperature_event_loop_handle;
-    esp_event_loop_handle_t coordinator_event_loop_handle;
     
     // Task management
     bool monitor_running;
@@ -65,10 +63,8 @@ esp_err_t init_temp_sensors(temp_monitor_context_t *ctx);
 
 esp_err_t read_temp_sensors_data(temp_monitor_context_t *ctx, temp_sample_t *temp_sample_to_fill);
 
-bool temp_ring_buffer_init(temp_ring_buffer_t *rb);
+bool temp_ring_buffer_init();
 
 void temp_ring_buffer_push(temp_ring_buffer_t *rb, const temp_sample_t *sample);
-
-size_t temp_ring_buffer_pop_all_internal(temp_ring_buffer_t *rb, temp_sample_t *out_dest, size_t max_out);
 
 #endif // TEMPERATURE_MONITOR_INTERNAL_H

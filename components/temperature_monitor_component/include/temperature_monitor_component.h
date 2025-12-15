@@ -16,8 +16,6 @@ EventGroupHandle_t temp_monitor_get_event_group(void);
 typedef struct
 {
     uint8_t number_of_attached_sensors;
-    esp_event_loop_handle_t temperature_events_loop_handle;
-    esp_event_loop_handle_t coordinator_event_loop_handle;
 } temp_monitor_config_t;
 
 esp_err_t init_temp_monitor(temp_monitor_config_t *config);

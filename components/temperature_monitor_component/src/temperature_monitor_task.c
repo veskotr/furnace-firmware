@@ -1,24 +1,28 @@
 #include "temperature_monitor_internal.h"
 #include "temperature_monitor_component.h"
 #include "utils.h"
-
+#include "event_registry.h"
+#include "event_manager.h"
 #include "esp_event.h"
 #include "logger_component.h"
 
 static const char *TAG = "TEMP_MONITOR_TASK";
-
-ESP_EVENT_DEFINE_BASE(TEMP_MONITOR_EVENT);
 
 const TempMonitorConfig_t temp_monitor_config = {
     .task_name = "TEMP_MONITOR_TASK",
     .stack_size = 8192,
     .task_priority = 5};
 
-static esp_err_t post_temp_monitor_error(temp_monitor_context_t *ctx, temp_monitor_error_t type, esp_err_t esp_err_code);
+// ----------------------------
+// Event Helper Functions
+// ----------------------------
 
-static esp_err_t post_temp_monitor_event(temp_monitor_context_t *ctx, temp_monitor_event_t event_type, void *event_data, size_t event_data_size);
+/**
+ * @brief Post a temperature monitor error event using the event manager
+ */
+static inline esp_err_t post_temperature_error(temp_monitor_error_code_t error_type, esp_err_t esp_error_code);
 
-static temp_monitor_error_t map_esp_err_to_temp_monitor_error(esp_err_t err);
+static temp_monitor_error_code_t map_esp_err_to_temp_monitor_error(esp_err_t err);
 
 // ----------------------------
 // Task
@@ -26,7 +30,7 @@ static temp_monitor_error_t map_esp_err_to_temp_monitor_error(esp_err_t err);
 static void temp_monitor_task(void *args)
 {
     temp_monitor_context_t *ctx = (temp_monitor_context_t *)args;
-    
+
     LOGGER_LOG_INFO(TAG, "Temperature monitor task started");
     TickType_t last_wake = xTaskGetTickCount();
 
@@ -57,17 +61,17 @@ static void temp_monitor_task(void *args)
             vTaskDelay(pdMS_TO_TICKS(CONFIG_TEMP_SENSOR_RETRY_DELAY_MS));
         }
 
+        if (ret != ESP_OK)
+        {
+            post_temperature_error(map_esp_err_to_temp_monitor_error(ret), ret);
+            LOGGER_LOG_ERROR(TAG, "Failed to get temperatures after retries: %s",
+                             esp_err_to_name(ret));
+            ctx->current_sample.valid = false;
+        }
+
         if (!ctx->current_sample.valid)
         {
             bad_samples_collected++;
-        }
-
-        if (ret != ESP_OK)
-        {
-            post_temp_monitor_error(ctx, map_esp_err_to_temp_monitor_error(ret), ret);
-            LOGGER_LOG_ERROR(TAG, "Failed to get temperatures after retries: %s",
-                             esp_err_to_name(ret));
-            continue;
         }
 
         temp_ring_buffer_push(&ctx->ring_buffer, &ctx->current_sample);
@@ -81,7 +85,7 @@ static void temp_monitor_task(void *args)
                 LOGGER_LOG_ERROR(TAG, "Too many bad samples collected (%d/%d)",
                                  bad_samples_collected,
                                  max_bad_samples);
-                post_temp_monitor_event(ctx, TEMP_MONITOR_ERROR_OCCURRED, &ctx->current_sample, sizeof(ctx->current_sample));
+                post_temperature_error(TEMP_MONITOR_ERROR_TOO_MANY_BAD_SAMPLES, ESP_FAIL);
             }
             else
             {
@@ -94,7 +98,7 @@ static void temp_monitor_task(void *args)
             samples_collected = 0;
             bad_samples_collected = 0;
         }
-
+        //TODO Emit heartbeat event
         vTaskDelayUntil(&last_wake, period);
     }
 
@@ -111,8 +115,6 @@ esp_err_t start_temperature_monitor_task(temp_monitor_context_t *ctx)
 
     ctx->current_sample.number_of_attached_sensors = ctx->number_of_attached_sensors;
 
-    ctx->monitor_running = true;
-
     bool init_temp_ring_buffer_result = temp_ring_buffer_init(&ctx->ring_buffer);
     if (!init_temp_ring_buffer_result)
     {
@@ -120,6 +122,8 @@ esp_err_t start_temperature_monitor_task(temp_monitor_context_t *ctx)
         ctx->monitor_running = false;
         return ESP_FAIL;
     }
+
+    ctx->monitor_running = true;
 
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                temp_monitor_task,
@@ -154,42 +158,35 @@ esp_err_t stop_temperature_monitor_task(temp_monitor_context_t *ctx)
     return ESP_OK;
 }
 
-// Post temperature monitor error event
-static esp_err_t post_temp_monitor_error(temp_monitor_context_t *ctx, temp_monitor_error_t type, esp_err_t esp_err_code)
+static inline esp_err_t post_temperature_error(temp_monitor_error_code_t error_type, esp_err_t esp_error_code)
 {
-    temp_monitor_error_data_t error_data = {
-        .type = type,
-        .esp_err_code = esp_err_code};
+    temp_monitor_error_event_t error_event = {
+        .error_code = error_type,
+        .esp_error_code = esp_error_code,
+        .timestamp_ms = xTaskGetTickCount() * portTICK_PERIOD_MS,
+        .sensor_index = UINT8_MAX // Not applicable in this context
+    };
 
-    return post_temp_monitor_event(ctx, TEMP_MONITOR_ERROR_OCCURRED, &error_data, sizeof(error_data));
-}
-
-static esp_err_t post_temp_monitor_event(temp_monitor_context_t *ctx, temp_monitor_event_t event_type, void *event_data, size_t event_data_size)
-{
-
-    CHECK_ERR_LOG_RET(esp_event_post_to(
-                          ctx->temperature_event_loop_handle,
-                          TEMP_MONITOR_EVENT,
-                          event_type,
-                          event_data,
-                          event_data_size,
-                          portMAX_DELAY),
-                      "Failed to post temperature monitor event");
+    CHECK_ERR_LOG_RET(event_manager_post_blocking(TEMP_MONITOR_EVENT,
+                                                  error_type,
+                                                  &error_event,
+                                                  sizeof(error_event)),
+                      "Failed to post temperature monitor error event");
 
     return ESP_OK;
 }
 
 // Map esp_err_t to temp_monitor_error_data_t
-static temp_monitor_error_t map_esp_err_to_temp_monitor_error(esp_err_t err)
+static temp_monitor_error_code_t map_esp_err_to_temp_monitor_error(esp_err_t err)
 {
     switch (err)
     {
     case ESP_ERR_INVALID_ARG:
     case ESP_ERR_INVALID_STATE:
-        return TEMP_MONITOR_ERR_SENSOR_READ;
+        return TEMP_MONITOR_ERROR_SENSOR_READ;
     case ESP_ERR_TIMEOUT:
-        return TEMP_MONITOR_ERR_SPI;
+        return TEMP_MONITOR_ERROR_SPI_FAULT;
     default:
-        return TEMP_MONITOR_ERR_UNKNOWN;
+        return TEMP_MONITOR_ERROR_UNKNOWN;
     }
 }

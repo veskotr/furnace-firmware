@@ -66,6 +66,7 @@ static const SpiConfig_t spi_config = {
     .clock_speed_hz = CONFIG_SPI_CLOCK_SPEED_HZ,
     .mode = CONFIG_SPI_BUS_MODE,
     .queue_size = 1};
+    
 // ----------------------------
 // Helpers
 // ----------------------------

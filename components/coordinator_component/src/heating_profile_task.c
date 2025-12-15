@@ -1,18 +1,11 @@
-#include "heating_profile_task.h"
-#include "coordinator_component_log.h"
 #include "utils.h"
 #include "temperature_profile_controller.h"
 #include "pid_component.h"
 #include "heater_controller_component.h"
 #include "coordinator_component_types.h"
+#include "coordinator_component_internal.h"
 
-static const char *TAG = COORDINATOR_COMPONENT_LOG;
-
-TaskHandle_t coordinator_task_handle = NULL;
-
-static heating_task_state_t heating_task_state = {0};
-
-volatile bool profile_paused = false;
+static const char *TAG = "COORDINATOR_TASK";
 
 typedef struct
 {
@@ -20,8 +13,6 @@ typedef struct
     uint32_t stack_size;
     UBaseType_t task_priority;
 } CoordinatorTaskConfig_t;
-
-bool coordinator_running = false;
 
 static void heating_profile_task(void *args)
 {
@@ -31,37 +22,37 @@ static void heating_profile_task(void *args)
     static uint32_t current_time = 0;
     static uint32_t last_update_duration = 0;
 
-    while (coordinator_running)
+    while (g_coordinator_ctx->is_running)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (!profile_paused)
+        if (!g_coordinator_ctx->is_paused)
         {
             current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
             last_update_duration = current_time - last_wake_time;
-            heating_task_state.current_time_elapsed_ms += last_update_duration;
+            g_coordinator_ctx->heating_task_state.current_time_elapsed_ms += last_update_duration;
             last_wake_time = current_time;
         }
 
-        profile_controller_error_t err = get_target_temperature_at_time(heating_task_state.current_time_elapsed_ms, &heating_task_state.target_temperature);
+        profile_controller_error_t err = get_target_temperature_at_time(g_coordinator_ctx->heating_task_state.current_time_elapsed_ms, &g_coordinator_ctx->heating_task_state.target_temperature);
         LOGGER_LOG_INFO(TAG, "Elapsed Time: %d ms, Target Temperature: %.2f C",
-                        heating_task_state.current_time_elapsed_ms,
-                        heating_task_state.target_temperature);
+                        g_coordinator_ctx->heating_task_state.current_time_elapsed_ms,
+                        g_coordinator_ctx->heating_task_state.target_temperature);
         // TODO: Handle error cases
         if (err != PROFILE_CONTROLLER_ERROR_NONE)
         {
             LOGGER_LOG_WARN(TAG, "Failed to get target temperature at time %d ms, error: %d",
-                            heating_task_state.current_time_elapsed_ms,
+                            g_coordinator_ctx->heating_task_state.current_time_elapsed_ms,
                             err);
             continue;
         }
         // Calculate power output based on current and target temperature
-        float power_output = pid_controller_compute(heating_task_state.target_temperature, coordinator_current_temperature, last_update_duration);
+        float power_output = pid_controller_compute(g_coordinator_ctx->current_temperature, g_coordinator_ctx->heating_task_state.target_temperature, last_update_duration);
 
         // Turn on/off heaters based on power output
         CHECK_ERR_LOG(set_heater_target_power_level(power_output),
                       "Failed to set heater target power level");
 
-        LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C", coordinator_current_temperature);
+        LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C", g_coordinator_ctx->current_temperature);
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task exiting");
@@ -75,28 +66,32 @@ static const CoordinatorTaskConfig_t coordinator_task_config = {
 
 esp_err_t start_heating_profile(const size_t profile_index)
 {
-    if (coordinator_task_handle != NULL && coordinator_running)
+    if (g_coordinator_ctx->task_handle != NULL && g_coordinator_ctx->is_running)
     {
         return ESP_OK;
     }
 
-    if (profile_index < 0 || profile_index >= number_of_profiles)
+    if (profile_index >= g_coordinator_ctx->num_profiles)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid profile index: %d", profile_index);
         return ESP_ERR_INVALID_ARG;
     }
 
-    heating_task_state.profile_index = profile_index;
-    heating_task_state.is_active = true;
-    heating_task_state.is_paused = false;
-    heating_task_state.is_completed = false;
-    heating_task_state.current_time_elapsed_ms = 0;
-    heating_task_state.total_time_ms = coordinator_heating_profiles[profile_index].first_node->duration_ms;
-    heating_task_state.current_temperature = coordinator_current_temperature;
-    heating_task_state.heating_element_on = false;
-    heating_task_state.fan_on = false;
+    g_coordinator_ctx->heating_task_state.profile_index = profile_index;
+    g_coordinator_ctx->heating_task_state.is_active = true;
+    g_coordinator_ctx->heating_task_state.is_paused = false;
+    g_coordinator_ctx->heating_task_state.is_completed = false;
+    g_coordinator_ctx->heating_task_state.current_time_elapsed_ms = 0;
+    g_coordinator_ctx->heating_task_state.total_time_ms = g_coordinator_ctx->heating_profiles[profile_index].first_node->duration_ms;
+    g_coordinator_ctx->heating_task_state.current_temperature = g_coordinator_ctx->current_temperature;
+    g_coordinator_ctx->heating_task_state.heating_element_on = false;
+    g_coordinator_ctx->heating_task_state.fan_on = false;
 
-    profile_controller_error_t err = load_heating_profile(&coordinator_heating_profiles[profile_index], coordinator_current_temperature);
+    temp_profile_config_t temp_profile_config = {
+        .heating_profile = &g_coordinator_ctx->heating_profiles[profile_index],
+        .initial_temperature = g_coordinator_ctx->current_temperature};
+
+    profile_controller_error_t err = load_heating_profile(temp_profile_config);
 
     if (err != PROFILE_CONTROLLER_ERROR_NONE)
     {
@@ -112,12 +107,12 @@ esp_err_t start_heating_profile(const size_t profile_index)
                                coordinator_task_config.stack_size,
                                NULL,
                                coordinator_task_config.task_priority,
-                               &coordinator_task_handle) == pdPASS
+                               &g_coordinator_ctx->task_handle) == pdPASS
                                ? ESP_OK
                                : ESP_FAIL,
-                           coordinator_task_handle = NULL,
+                           g_coordinator_ctx->task_handle = NULL,
                            "Failed to create coordinator task");
-    coordinator_running = true;
+    g_coordinator_ctx->is_running = true;
 
     LOGGER_LOG_INFO(TAG, "Coordinator task initialized");
 
@@ -126,14 +121,13 @@ esp_err_t start_heating_profile(const size_t profile_index)
 
 esp_err_t pause_heating_profile(void)
 {
-    if (!coordinator_running)
+    if (!g_coordinator_ctx->is_running)
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    profile_paused = true;
-    heating_task_state.is_paused = true;
-
+    g_coordinator_ctx->is_paused = true;
+    g_coordinator_ctx->heating_task_state.is_paused = true;
     LOGGER_LOG_INFO(TAG, "Heating profile paused");
 
     return ESP_OK;
@@ -141,13 +135,13 @@ esp_err_t pause_heating_profile(void)
 
 esp_err_t resume_heating_profile(void)
 {
-    if (!coordinator_running)
+    if (!g_coordinator_ctx->is_running)
     {
         return ESP_ERR_INVALID_STATE;
     }
 
-    profile_paused = false;
-    heating_task_state.is_paused = false;
+    g_coordinator_ctx->is_paused = false;
+    g_coordinator_ctx->heating_task_state.is_paused = false;
 
     LOGGER_LOG_INFO(TAG, "Heating profile resumed");
 
@@ -161,7 +155,7 @@ void get_heating_task_state(heating_task_state_t *state_out)
         return;
     }
 
-    *state_out = heating_task_state;
+    *state_out = g_coordinator_ctx->heating_task_state;
 }
 
 void get_current_heating_profile(size_t *profile_index_out)
@@ -171,25 +165,25 @@ void get_current_heating_profile(size_t *profile_index_out)
         return;
     }
 
-    *profile_index_out = heating_task_state.profile_index;
+    *profile_index_out = g_coordinator_ctx->heating_task_state.profile_index;
 }
 
 esp_err_t stop_heating_profile(void)
 {
-    if (!coordinator_running)
+    if (!g_coordinator_ctx->is_running)
     {
         return ESP_OK;
     }
 
-    coordinator_running = false;
+    g_coordinator_ctx->is_running = false;
 
-    if (coordinator_task_handle)
+    if (g_coordinator_ctx->task_handle)
     {
-        vTaskDelete(coordinator_task_handle);
-        coordinator_task_handle = NULL;
+        vTaskDelete(g_coordinator_ctx->task_handle);
+        g_coordinator_ctx->task_handle = NULL;
     }
-    heating_task_state.profile_index = -1;
-    profile_paused = false;
+    g_coordinator_ctx->heating_task_state.profile_index = 0xFFFFFFFF;
+    g_coordinator_ctx->heating_task_state.is_paused = false;
 
     shutdown_profile_controller();
 
