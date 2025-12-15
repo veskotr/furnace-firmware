@@ -1,0 +1,41 @@
+menu "Temperature Sensors"
+
+    config TEMP_SENSORS_MAX_SENSORS
+        int "Max number of sensors"
+        default 9
+
+    config TEMP_SENSORS_SAMPLING_FREQ_HZ
+        int "Sampling frequency (Hz)"
+        default 20
+
+    config TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT
+        int "Max bad samples per batch (%)"
+        default 30
+
+    config TEMP_SENSORS_RING_BUFFER_SIZE
+        int "Ring buffer size"
+        default 32
+
+    menu "Sensor Read Behavior"
+        config TEMP_SENSOR_MAX_READ_RETRIES
+            int "Max read retries"
+            default 3
+
+        config TEMP_SENSOR_RETRY_DELAY_MS
+            int "Retry delay (ms)"
+            default 10
+
+        config TEMP_SENSOR_MAX_TEMPERATURE_C
+            int "Max allowed temperature (°C)"
+            default 220
+
+        config TEMP_DELTA_THRESHOLD
+            int "Delta threshold ±°C"
+            default 2
+
+        config TEMP_SENSORS_HAVE_OUTLIERS_REJECTION
+            bool "Enable outlier rejection"
+            default y
+    endmenu
+
+endmenu

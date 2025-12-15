@@ -6,29 +6,6 @@
 #include <inttypes.h>
 #include "sdkconfig.h"
 
-ESP_EVENT_DECLARE_BASE(TEMP_MONITOR_EVENT);
-
-typedef enum
-{
-    TEMP_MONITOR_ERROR_OCCURRED = 0
-} temp_monitor_event_t;
-
-typedef enum
-{
-    TEMP_MONITOR_ERR_NONE = 0,
-    TEMP_MONITOR_ERR_SENSOR_READ,
-    TEMP_MONITOR_ERR_SENSOR_FAULT,
-    TEMP_MONITOR_ERR_SPI,
-    TEMP_MONITOR_ERR_TOO_MANY_BAD_SAMPLES,
-    TEMP_MONITOR_ERR_UNKNOWN
-} temp_monitor_error_t;
-
-typedef struct
-{
-    temp_monitor_error_t type;
-    esp_err_t esp_err_code;
-} temp_monitor_error_data_t;
-
 typedef enum
 {
     SENSOR_ERR_NONE = 0,

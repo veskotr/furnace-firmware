@@ -1,0 +1,19 @@
+menu "Event Manager"
+    
+    config EVENT_MANAGER_QUEUE_SIZE
+        int "Event queue size"
+        default 32
+    
+    config EVENT_MANAGER_TASK_STACK_SIZE
+        int "Event manager task stack size"
+        default 4096
+
+    config EVENT_MANAGER_TASK_PRIORITY
+        int "Event manager task priority"
+        default 5
+
+    config EVENT_MANAGER_TASK_NAME
+        string "Event manager task name"
+        default "event_manager_task"
+
+endmenu

@@ -66,6 +66,7 @@ static const SpiConfig_t spi_config = {
     .clock_speed_hz = CONFIG_SPI_CLOCK_SPEED_HZ,
     .mode = CONFIG_SPI_BUS_MODE,
     .queue_size = 1};
+    
 // ----------------------------
 // Helpers
 // ----------------------------
@@ -84,8 +85,7 @@ static esp_err_t add_spi_slave(int index)
 // ----------------------------
 esp_err_t init_spi(uint8_t number_of_slaves)
 {
-    if (number_of_slaves < CONFIG_SPI_MAX_NUM_SLAVES)
-
+    if (number_of_slaves > CONFIG_SPI_MAX_NUM_SLAVES)
         return ESP_ERR_INVALID_ARG;
 
     _number_of_slaves = number_of_slaves;

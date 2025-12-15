@@ -3,9 +3,8 @@
 
 #include "esp_err.h"
 #include "esp_event.h"
-#include "temperature_processor_types.h"
 
-esp_err_t init_temp_processor(esp_event_loop_handle_t loop_handle);
+esp_err_t init_temp_processor(void);
 
 esp_err_t shutdown_temp_processor(void);
 

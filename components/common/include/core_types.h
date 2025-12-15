@@ -1,7 +1,11 @@
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
 #include <inttypes.h>
+#include "esp_event.h"
 
+// ===========================================================================
+// HEATING PROFILE TYPES
+// ===========================================================================
 typedef enum
 {
     NODE_TYPE_LOG,
@@ -25,17 +29,5 @@ typedef struct
     char *name;
     heating_node_t *first_node;
 } heating_profile_t;
-
-typedef enum
-{
-    COORDINATOR_EVENT_PROFILE_STARTED,
-    COORDINATOR_EVENT_PROFILE_PAUSED,
-    COORDINATOR_EVENT_PROFILE_RESUMED,
-    COORDINATOR_EVENT_PROFILE_STOPPED,
-    COORDINATOR_EVENT_NODE_STARTED,
-    COORDINATOR_EVENT_NODE_COMPLETED,
-    COORDINATOR_EVENT_MEASURE_TEMPERATURE,
-    COORDINATOR_EVENT_CALCULATE_TARGET_TEMPERATURE
-} coordinator_event_t;
 
 #endif

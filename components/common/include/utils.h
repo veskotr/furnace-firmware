@@ -50,6 +50,7 @@
             return _ret;                                                 \
         }                                                                \
     } while (0)
+
 #define CHECK_ERR_LOG_RET_FMT(expr, fmt, ...)                                      \
     do                                                                             \
     {                                                                              \
@@ -67,6 +68,18 @@
         if (_ret != ESP_OK)                                                        \
         {                                                                          \
             LOGGER_LOG_ERROR(TAG, fmt ": %s", __VA_ARGS__, esp_err_to_name(_ret)); \
+        }                                                                          \
+    } while (0)
+
+#define CHECK_ERR_LOG_CALL_RET_FMT(expr, action, fmt, ...)                         \
+    do                                                                             \
+    {                                                                              \
+        esp_err_t _ret = (expr);                                                   \
+        if (_ret != ESP_OK)                                                        \
+        {                                                                          \
+            LOGGER_LOG_ERROR(TAG, fmt ": %s", __VA_ARGS__, esp_err_to_name(_ret)); \
+            action;                                                                \
+            return _ret;                                                           \
         }                                                                          \
     } while (0)
 #endif // UTILS_H

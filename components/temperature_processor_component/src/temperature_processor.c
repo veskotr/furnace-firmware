@@ -1,12 +1,9 @@
-#include "temperature_processor.h"
+#include "temperature_processor_internal.h"
 #include "logger_component.h"
 #include "sdkconfig.h"
 #include <float.h>
-#include "temperature_processor_log.h"
 
-static float temperatures_buffer[CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE] = {0};
-
-static const char *TAG = TEMP_PROCESSOR_LOG_TAG;
+static const char *TAG = "TEMP_PROCESSOR";
 
 static process_temperature_error_t process_temperature_data(temp_sample_t *input_temperatures, float *output_temperature);
 
@@ -16,7 +13,7 @@ static inline float calculate_average_temperature(temp_sample_t *temperatures);
 
 static inline float average_float_array(const float *array, size_t count);
 
-process_temperature_error_t process_temperature_samples(temp_sample_t *input_samples, size_t number_of_samples, float *output_temperature)
+process_temperature_error_t process_temperature_samples(temp_processor_context_t *ctx, temp_sample_t *input_samples, size_t number_of_samples, float *output_temperature)
 {
     process_temperature_error_t result = {0};
     if (number_of_samples == 0 || input_samples == NULL || output_temperature == NULL)
@@ -27,6 +24,7 @@ process_temperature_error_t process_temperature_samples(temp_sample_t *input_sam
 
     float min = FLT_MAX;
     float max = FLT_MIN;
+    float *temperatures_buffer = ctx->temperatures_buffer;
     for (size_t i = 0; i < number_of_samples; i++)
     {
         result = process_temperature_data(&input_samples[i], &temperatures_buffer[i]);
