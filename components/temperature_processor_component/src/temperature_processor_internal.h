@@ -10,7 +10,7 @@ typedef struct
     // Configuration
     float temperatures_buffer[CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE];
 
-    bool processor_running;
+    volatile bool processor_running;
 
     TaskHandle_t task_handle;
 

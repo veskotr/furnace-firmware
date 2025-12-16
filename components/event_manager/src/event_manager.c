@@ -117,6 +117,16 @@ esp_err_t event_manager_post(
     return ESP_OK;
 }
 
+esp_err_t event_manager_post_health(health_monitor_component_id_t component_id)
+{
+    return event_manager_post(HEALTH_MONITOR_EVENT,
+        component_id,
+        NULL,
+        0,
+        portMAX_DELAY
+        );
+}
+
 esp_err_t event_manager_post_immediate(
     esp_event_base_t event_base,
     int32_t event_id,

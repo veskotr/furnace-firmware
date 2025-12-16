@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <inttypes.h>
+#include "core_types.h"
 
 typedef struct
 {

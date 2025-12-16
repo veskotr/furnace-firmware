@@ -6,13 +6,13 @@
 #include "utils.h"
 #include "sdkconfig.h"
 
-const char *TAG = "COORDINATOR_CORE";
+static const char *TAG = "COORDINATOR_CORE";
 
-coordinator_ctx_t *g_coordinator_ctx;
+static coordinator_ctx_t *g_coordinator_ctx;
 
 esp_err_t init_coordinator(const coordinator_config_t *config)
 {
-    if (g_coordinator_ctx != NULL && g_coordinator_ctx->is_running)
+    if (g_coordinator_ctx != NULL && g_coordinator_ctx->running)
     {
         return ESP_OK;
     }
@@ -58,7 +58,7 @@ esp_err_t coordinator_list_heating_profiles(void)
 
 esp_err_t stop_coordinator(void)
 {
-    if (g_coordinator_ctx == NULL || !g_coordinator_ctx->is_running)
+    if (g_coordinator_ctx == NULL || !g_coordinator_ctx->running)
     {
         return ESP_OK;
     }
@@ -66,7 +66,7 @@ esp_err_t stop_coordinator(void)
     CHECK_ERR_LOG_RET(shutdown_coordinator_events(g_coordinator_ctx),
                       "Failed to shutdown coordinator events");
 
-    CHECK_ERR_LOG_RET(stop_heating_profile(),
+    CHECK_ERR_LOG_RET(stop_heating_profile(g_coordinator_ctx),
                       "Failed to stop heating profile");
 
     free(g_coordinator_ctx);

@@ -6,12 +6,13 @@
 #include "esp_event.h"
 #include "logger_component.h"
 
-static const char *TAG = "TEMP_MONITOR_TASK";
+static const char* TAG = "TEMP_MONITOR_TASK";
 
 const TempMonitorConfig_t temp_monitor_config = {
     .task_name = "TEMP_MONITOR_TASK",
     .stack_size = 8192,
-    .task_priority = 5};
+    .task_priority = 5
+};
 
 // ----------------------------
 // Event Helper Functions
@@ -27,14 +28,15 @@ static temp_monitor_error_code_t map_esp_err_to_temp_monitor_error(esp_err_t err
 // ----------------------------
 // Task
 // ----------------------------
-static void temp_monitor_task(void *args)
+static void temp_monitor_task(void* args)
 {
-    temp_monitor_context_t *ctx = (temp_monitor_context_t *)args;
+    temp_monitor_context_t* ctx = (temp_monitor_context_t*)args;
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task started");
     TickType_t last_wake = xTaskGetTickCount();
 
-    static const uint8_t max_bad_samples = (CONFIG_TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT * CONFIG_TEMP_SENSORS_SAMPLING_FREQ_HZ) / 100;
+    static const uint8_t max_bad_samples = (CONFIG_TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT *
+        CONFIG_TEMP_SENSORS_SAMPLING_FREQ_HZ) / 100;
     static uint8_t samples_collected = 0;
     static uint8_t bad_samples_collected = 0;
 
@@ -56,7 +58,8 @@ static void temp_monitor_task(void *args)
                 break;
             }
 
-            LOGGER_LOG_WARN(TAG, "Retrying to read temperature sensors data (%d/%d)", retry + 1, CONFIG_TEMP_SENSOR_MAX_READ_RETRIES);
+            LOGGER_LOG_WARN(TAG, "Retrying to read temperature sensors data (%d/%d)", retry + 1,
+                            CONFIG_TEMP_SENSOR_MAX_READ_RETRIES);
 
             vTaskDelay(pdMS_TO_TICKS(CONFIG_TEMP_SENSOR_RETRY_DELAY_MS));
         }
@@ -98,15 +101,20 @@ static void temp_monitor_task(void *args)
             samples_collected = 0;
             bad_samples_collected = 0;
         }
-        //TODO Emit heartbeat event
-        vTaskDelayUntil(&last_wake, period);
+
+        event_manager_post_health(TEMP_MONITOR_EVENT_HEARTBEAT);
+        const uint32_t ticks_to_wait = (last_wake + period) - xTaskGetTickCount();
+        if (ticks_to_wait > 0)
+            ulTaskNotifyTake(pdTRUE, ticks_to_wait);
+        last_wake += period;
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task exiting");
+    ctx->task_handle = NULL;
     vTaskDelete(NULL);
 }
 
-esp_err_t start_temperature_monitor_task(temp_monitor_context_t *ctx)
+esp_err_t start_temperature_monitor_task(temp_monitor_context_t* ctx)
 {
     if (ctx->monitor_running)
     {
@@ -132,15 +140,15 @@ esp_err_t start_temperature_monitor_task(temp_monitor_context_t *ctx)
                                ctx,
                                temp_monitor_config.task_priority,
                                &ctx->task_handle) == pdPASS
-                               ? ESP_OK
-                               : ESP_FAIL,
+                           ? ESP_OK
+                           : ESP_FAIL,
                            ctx->monitor_running = false,
                            "Failed to create temperature monitor task");
 
     return ESP_OK;
 }
 
-esp_err_t stop_temperature_monitor_task(temp_monitor_context_t *ctx)
+esp_err_t stop_temperature_monitor_task(temp_monitor_context_t* ctx)
 {
     if (!ctx->monitor_running)
     {
@@ -148,11 +156,9 @@ esp_err_t stop_temperature_monitor_task(temp_monitor_context_t *ctx)
     }
 
     ctx->monitor_running = false;
-
-    if (ctx->task_handle)
+    if (ctx->task_handle != NULL)
     {
-        vTaskDelete(ctx->task_handle);
-        ctx->task_handle = NULL;
+        xTaskNotifyGive(ctx->task_handle);
     }
 
     return ESP_OK;
@@ -168,9 +174,9 @@ static inline esp_err_t post_temperature_error(temp_monitor_error_code_t error_t
     };
 
     CHECK_ERR_LOG_RET(event_manager_post_blocking(TEMP_MONITOR_EVENT,
-                                                  error_type,
-                                                  &error_event,
-                                                  sizeof(error_event)),
+                          error_type,
+                          &error_event,
+                          sizeof(error_event)),
                       "Failed to post temperature monitor error event");
 
     return ESP_OK;

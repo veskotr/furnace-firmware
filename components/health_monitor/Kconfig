@@ -1,0 +1,55 @@
+menu "Health Monitor Config"
+    
+    config HEARTH_BEAT_COUNT
+        int "Number of components to monitor for heartbeat"
+        default 5
+    
+    config HEALTH_MONITOR_TASK_STACK_SIZE
+        int "Health monitor task stack size"
+        default 4096
+    
+    config HEALTH_MONITOR_TASK_PRIORITY
+        int "Health monitor task priority"
+        default 6 
+    
+    config HEALTH_MONITOR_TASK_NAME
+        string "Health monitor task name"
+        default "health_monitor_task"
+
+    config HEALTH_MONITOR_CHECK_INTERVAL_MS
+        int "Health monitor check interval in milliseconds"
+        default 2000
+
+    config HEALTH_MONITOR_TEMP_MONITOR_MAX_MISSES
+        int "Health monitor temp monitor max misses count"
+        default 2
+
+    config HEALTH_MONITOR_TEMP_MONITOR_MAX_SILENCE_MS
+        int "Health monitor temp monitor max silence interval in ms"
+        default 2000
+
+    config HEALTH_MONITOR_TEMP_PROCESSOR_MAX_MISSES
+        int "Health monitor temp processor max misses count"
+        default 2
+
+    config HEALTH_MONITOR_TEMP_PROCESSOR_MAX_SILENCE_MS
+        int "Health monitor temp processor max silence interval in ms"
+        default 2000
+
+    config HEALTH_MONITOR_HEATER_CONTROLLER_MAX_MISSES
+        int "Health monitor heater controller max misses count"
+        default 2
+
+    config HEALTH_MONITOR_HEATER_CONTROLLER_MAX_SILENCE_MS
+        int "Health monitor heater controller max silence interval in ms"
+        default 2000
+
+    config HEALTH_MONITOR_COORDINATOR_MAX_MISSES
+        int "Health monitor coordinator max misses count"
+        default 2
+
+    config HEALTH_MONITOR_COORDINATOR_MAX_SILENCE_MS
+        int "Health monitor coordinator max silence interval in ms"
+        default 2000
+
+endmenu

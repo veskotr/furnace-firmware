@@ -119,6 +119,7 @@ typedef enum {
     PROCESS_TEMPERATURE_EVENT_DATA = 0,
     PROCESS_TEMPERATURE_EVENT_ERROR
 } process_temperature_event_t;
+
 // ============================================================================
 // HEATER CONTROLLER COMPONENT EVENTS
 // ============================================================================
@@ -139,6 +140,25 @@ typedef enum
     HEATER_CONTROLLER_ERR_GPIO = 0,
     HEATER_CONTROLLER_ERR_UNKNOWN
 } heater_controller_error_t;
+
+// ============================================================================
+// HEALTH MONITOR COMPONENT EVENTS
+// ============================================================================
+
+ESP_EVENT_DECLARE_BASE(HEALTH_MONITOR_EVENT);
+
+typedef enum
+{
+    HEALTH_MONITOR_EVENT_HEARTBEAT = 0,
+} health_monitor_event_id_t;
+
+typedef enum
+{
+    TEMP_MONITOR_EVENT_HEARTBEAT = 0,
+    HEATER_CONTROLLER_EVENT_HEARTBEAT,
+    COORDINATOR_EVENT_HEARTBEAT,
+    TEMP_PROCESSOR_EVENT_HEARTBEAT,
+} health_monitor_component_id_t;
 
 // ============================================================================
 // INITIALIZATION FUNCTION
