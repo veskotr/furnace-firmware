@@ -31,11 +31,11 @@ static pid_controller_state_t pid_state = {
     .previous_error = 0.0f
 };
 
-float pid_controller_compute(float setpoint, float measured_value, float dt)
+float pid_controller_compute(const float setpoint, const float measured_value, const float dt)
 {
-    float error = setpoint - measured_value;
+    const float error = setpoint - measured_value;
     pid_state.integral += error * dt;
-    float derivative = (error - pid_state.previous_error) / dt;
+    const float derivative = (error - pid_state.previous_error) / dt;
 
     float output = (pid_params.kp * error) + (pid_params.ki * pid_state.integral) + (pid_params.kd * derivative);
 

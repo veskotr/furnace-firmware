@@ -3,6 +3,7 @@
 
 #include "esp_err.h"
 #include "esp_event.h"
+#include "event_registry.h"
 #include <stdint.h>
 
 // ============================================================================
@@ -69,6 +70,13 @@ esp_err_t event_manager_post_immediate(
     int32_t event_id,
     void *event_data,
     size_t event_data_size);
+
+/**
+ * @brief Post a health event
+ *
+ * @param component_id Id of the component
+*/
+esp_err_t event_manager_post_health(health_monitor_component_id_t component_id);
 
 /**
  * @brief Convenience wrapper - post with blocking timeout
