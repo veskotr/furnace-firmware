@@ -1,0 +1,20 @@
+menu "Logging"
+
+    config LOG_ENABLE
+        bool "Enable logging"
+        default y
+
+    config LOG_LEVEL
+        int "Log level (0=ERROR ... 4=VERBOSE)"
+        default 4
+        range 0 4
+
+    config LOG_QUEUE_SIZE
+        int "Queue size"
+        default 16
+
+    config LOG_MAX_MESSAGE_LENGTH
+        int "Max message length"
+        default 265
+
+endmenu

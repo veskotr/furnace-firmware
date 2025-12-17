@@ -1,8 +1,6 @@
 #include "coordinator_component.h"
 #include "logger_component.h"
-#include "temperature_profile_controller.h"
 #include "coordinator_component_internal.h"
-#include "heater_controller_component.h"
 #include "utils.h"
 #include "sdkconfig.h"
 

@@ -1,32 +1,44 @@
-
 #include "logger_component.h"
-#include "spi_master_component.h"
+#include "temperature_monitor_component.h"
+#include "temperature_processor_component.h"
+#include "coordinator_component.h"
+#include "event_manager.h"
+#include "utils.h"
+#include "sdkconfig.h"
+#include "health_monitor.h"
+
+static const char* TAG = "main";
 
 void app_main(void)
 {
     logger_init();
-    esp_err_t ret = init_spi(1);
-    if (ret != ESP_OK)
-    {
-        LOGGER_LOG_ERROR("APP", "Failed to initialize SPI: %s", esp_err_to_name(ret));
-        return;
-    }
+    CHECK_ERR_LOG(event_manager_init(),
+                  "Failed to initialize event manager");
 
-    LOGGER_LOG_INFO("APP", "Application is running");
+    temp_monitor_config_t temp_monitor_config = {
+        .number_of_attached_sensors = 5
+    };
+    CHECK_ERR_LOG(init_temp_monitor(&temp_monitor_config),
+                  "Failed to initialize temperature monitor");
 
-    uint8_t tx_data[4] = {'T', 'E', 'S', 'T'};
-    uint8_t rx_data[4] = {0};
+    CHECK_ERR_LOG(init_temp_processor(),
+                  "Failed to initialize temperature processor");
 
-    uint8_t messge_index = 0;
+    const coordinator_config_t coordinator_config = {
+        .profiles = NULL,
+        .num_profiles = 0
+    };
+    CHECK_ERR_LOG(init_coordinator(&coordinator_config),
+                  "Failed to initialize coordinator");
+
+    CHECK_ERR_LOG(init_health_monitor(),
+                  "Failed to initialize health monitor");
+
+    LOGGER_LOG_INFO(TAG, "System initialized successfully");
+
+
     while (1)
     {
-        spi_transfer(0, &tx_data[messge_index], &rx_data[messge_index], 1);
-        LOGGER_LOG_INFO("APP", "SPI Transfer completed. Received: %c", rx_data[messge_index]);
-        if (++messge_index > 3)
-        {
-            messge_index = 0;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

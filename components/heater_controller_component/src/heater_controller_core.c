@@ -1,40 +1,54 @@
 #include "heater_controller_component.h"
 #include "heater_controller_internal.h"
 #include "utils.h"
-#include "freertos/semphr.h"
 
-static const char *TAG = "HEATER_CTRL_CORE";
+static const char* TAG = "HEATER_CTRL_CORE";
 
-float heater_target_power_level = 0.0f;
-esp_event_loop_handle_t heater_controller_event_loop_handle = NULL;
+heater_controller_context_t* g_heater_controller_context;
 
-esp_err_t set_heater_target_power_level(float power_level)
+esp_err_t init_heater_controller_component(void)
 {
-    if (power_level < 0.0f || power_level > 1.0f)
+    if (g_heater_controller_context != NULL && g_heater_controller_context->initialized)
     {
-        return ESP_ERR_INVALID_ARG;
+        return ESP_OK;
     }
 
-    xSemaphoreTake(heater_controller_mutex, portMAX_DELAY);
-    heater_target_power_level = power_level;
-    xSemaphoreGive(heater_controller_mutex);
-    return ESP_OK;
-}
+    // Allocate context if needed
+    if (g_heater_controller_context == NULL)
+    {
+        g_heater_controller_context = calloc(1, sizeof(heater_controller_context_t));
+        if (g_heater_controller_context == NULL)
+        {
+            LOGGER_LOG_ERROR(TAG, "Failed to allocate heater controller context");
+            return ESP_ERR_NO_MEM;
+        }
+    }
 
-esp_err_t init_heater_controller_component(esp_event_loop_handle_t loop_handle)
-{
-    heater_controller_event_loop_handle = loop_handle;
+    CHECK_ERR_LOG_RET(init_events(g_heater_controller_context), "Failed to initialize heater controller events");
 
-    CHECK_ERR_LOG_RET(init_heater_controller(), "Failed to initialize heater controller");
+    CHECK_ERR_LOG_RET(init_heater_controller(g_heater_controller_context), "Failed to initialize heater controller");
 
-    CHECK_ERR_LOG_RET(init_heater_controller_task(), "Failed to initialize heater controller task");
+    CHECK_ERR_LOG_RET(init_heater_controller_task(g_heater_controller_context),
+                      "Failed to initialize heater controller task");
+
+    g_heater_controller_context->initialized = true;
 
     return ESP_OK;
 }
 
 esp_err_t shutdown_heater_controller_component(void)
 {
-    CHECK_ERR_LOG_RET(shutdown_heater_controller_task(), "Failed to shutdown heater controller task");
+    if (g_heater_controller_context == NULL || !g_heater_controller_context->initialized)
+    {
+        return ESP_OK;
+    }
+    CHECK_ERR_LOG_RET(shutdown_heater_controller_task(g_heater_controller_context),
+                      "Failed to shutdown heater controller task");
+
+    CHECK_ERR_LOG_RET(shutdown_heater_controller(g_heater_controller_context), "Failed to shutdown heater controller");
+
+    free(g_heater_controller_context);
+    g_heater_controller_context = NULL;
 
     return ESP_OK;
 }

@@ -1,9 +1,10 @@
 #include "spi_master_component.h"
 #include "driver/spi_master.h"
 #include "sdkconfig.h"
+#include "utils.h"
 
 // Component tag
-static const char *TAG = "SPI_MASTER";
+static const char* TAG = "SPI_MASTER";
 
 // SPI device handles
 spi_device_handle_t spi_slaves[CONFIG_SPI_MAX_NUM_SLAVES];
@@ -65,8 +66,9 @@ static const SpiConfig_t spi_config = {
     .max_transfer_size = 32,
     .clock_speed_hz = CONFIG_SPI_CLOCK_SPEED_HZ,
     .mode = CONFIG_SPI_BUS_MODE,
-    .queue_size = 1};
-    
+    .queue_size = 1
+};
+
 // ----------------------------
 // Helpers
 // ----------------------------
@@ -76,7 +78,8 @@ static esp_err_t add_spi_slave(int index)
         .clock_speed_hz = spi_config.clock_speed_hz,
         .mode = spi_config.mode,
         .spics_io_num = cs_pins[index],
-        .queue_size = spi_config.queue_size};
+        .queue_size = spi_config.queue_size
+    };
     return spi_bus_add_device(HSPI_HOST, &devcfg, &spi_slaves[index]);
 }
 
@@ -100,7 +103,6 @@ esp_err_t init_spi(uint8_t number_of_slaves)
         spi_mutex = xSemaphoreCreateMutex();
     }
 
-    esp_err_t ret;
 
     spi_bus_config_t buscfg = {
         .miso_io_num = spi_config.miso_io,
@@ -111,22 +113,14 @@ esp_err_t init_spi(uint8_t number_of_slaves)
         .max_transfer_sz = 32,
     };
 
-    ret = spi_bus_initialize(HSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    CHECK_ERR_LOG_RET(spi_bus_initialize(HSPI_HOST, &buscfg, SPI_DMA_CH_AUTO),
+                      "Failed to initialize SPI buss");
 
-    if (ret != ESP_OK)
-    {
-        LOGGER_LOG_ERROR(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
-        return ret;
-    }
 
     for (int i = 0; i < number_of_slaves; i++)
     {
-        ret = add_spi_slave(i);
-        if (ret != ESP_OK)
-        {
-            LOGGER_LOG_ERROR(TAG, "Failed to add SPI slave %d: %s", i, esp_err_to_name(ret));
-            return ret;
-        }
+        CHECK_ERR_LOG_RET_FMT(add_spi_slave(i),
+                              "Failed to add SPI slave %d", i);
     }
 
     spi_initialized = true;
@@ -134,7 +128,7 @@ esp_err_t init_spi(uint8_t number_of_slaves)
     return ESP_OK;
 }
 
-esp_err_t spi_transfer(int slave_index, uint8_t *tx, uint8_t *rx, size_t len)
+esp_err_t spi_transfer(const int slave_index, const uint8_t* tx, uint8_t* rx, const size_t len)
 {
     if (slave_index >= _number_of_slaves)
         return ESP_ERR_INVALID_ARG;
@@ -145,12 +139,14 @@ esp_err_t spi_transfer(int slave_index, uint8_t *tx, uint8_t *rx, size_t len)
     spi_transaction_t t = {
         .length = len * 8,
         .tx_buffer = tx,
-        .rx_buffer = rx};
+        .rx_buffer = rx
+    };
 
-    esp_err_t ret = spi_device_transmit(spi_slaves[slave_index], &t);
+    CHECK_ERR_LOG_RET(spi_device_transmit(spi_slaves[slave_index], &t),
+                      "Failed to transmit SPI data");
 
     xSemaphoreGive(spi_mutex);
-    return ret;
+    return ESP_OK;
 }
 
 esp_err_t shutdown_spi(void)
@@ -167,7 +163,8 @@ esp_err_t shutdown_spi(void)
         }
     }
 
-    spi_bus_free(HSPI_HOST);
+    CHECK_ERR_LOG_RET(spi_bus_free(HSPI_HOST),
+                      "Failed to free SPI bus");
 
     if (spi_mutex)
     {

@@ -4,12 +4,12 @@
 #include "temperature_processor_internal.h"
 #include "utils.h"
 
-static const char *TAG = "TEMP_PROCESSOR_CORE";
+static const char* TAG = "TEMP_PROCESSOR_CORE";
 
 volatile bool processor_running = false;
 
 // Single global context pointer (internal to component)
-temp_processor_context_t *g_temp_processor_ctx = NULL;
+temp_processor_context_t* g_temp_processor_ctx = NULL;
 
 // ----------------------------
 // Public API
@@ -34,7 +34,9 @@ esp_err_t init_temp_processor(void)
 
     g_temp_processor_ctx->processor_running = true;
 
-    CHECK_ERR_LOG_RET(start_temp_processor_task(g_temp_processor_ctx), "Failed to start temperature processor task");
+    CHECK_ERR_LOG_CALL_RET(start_temp_processor_task(g_temp_processor_ctx),
+                           free(g_temp_processor_ctx),
+                           "Failed to start temperature processor task");
 
     return ESP_OK;
 }
