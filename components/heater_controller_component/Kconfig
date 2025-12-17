@@ -1,0 +1,22 @@
+menu "Heater Controller"
+    config HEATER_CONTROLLER_GPIO
+        int "GPIO Pin"
+        default 25
+
+    config HEATER_WINDOW_SIZE_MS
+        int "Heater Window Size (ms)"
+        default 10000
+
+    config HEATER_CONTROLLER_TASK_NAME
+        string "Heater Controller Task Name"
+        default "heater_controller_task"
+
+    config HEATER_CONTROLLER_TASK_STACK_SIZE
+        int "Heater Controller Task Stack Size"
+        default 4096
+
+    config HEATER_CONTROLLER_TASK_PRIORITY
+        int "Heater Controller Task Priority"
+        default 5
+
+endmenu

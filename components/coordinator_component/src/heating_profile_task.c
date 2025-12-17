@@ -1,7 +1,6 @@
 #include "utils.h"
 #include "temperature_profile_controller.h"
 #include "pid_component.h"
-#include "heater_controller_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
 
@@ -55,8 +54,9 @@ static void heating_profile_task(void* args)
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
-        CHECK_ERR_LOG(set_heater_target_power_level(power_output),
-                      "Failed to set heater target power level");
+        CHECK_ERR_LOG(
+            post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL, &power_output, sizeof(power_output)),
+            "Failed to set heater target power level");
 
         LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C",
                         ctx->current_temperature);

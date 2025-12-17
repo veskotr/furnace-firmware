@@ -10,15 +10,15 @@
 #include "temperature_monitor_types.h"
 #include "utils.h"
 
-static const char *TAG = "TEMP_MONITOR";
+static const char* TAG = "TEMP_MONITOR";
 
 // Single global context pointer (internal to component)
-temp_monitor_context_t *g_temp_monitor_ctx = NULL;
+temp_monitor_context_t* g_temp_monitor_ctx = NULL;
 
 // ----------------------------
 // Public API
 // ----------------------------
-esp_err_t init_temp_monitor(temp_monitor_config_t *config)
+esp_err_t init_temp_monitor(temp_monitor_config_t* config)
 {
     if (g_temp_monitor_ctx != NULL && g_temp_monitor_ctx->monitor_running)
     {
@@ -38,6 +38,8 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
 
     // Initialize configuration
     g_temp_monitor_ctx->number_of_attached_sensors = config->number_of_attached_sensors;
+    CHECK_ERR_LOG_RET(init_spi(g_temp_monitor_ctx->number_of_attached_sensors),
+                      "Failed to initialize SPI for temperature sensors");
 
     // Create event group
     g_temp_monitor_ctx->processor_event_group = xEventGroupCreate();
@@ -45,17 +47,20 @@ esp_err_t init_temp_monitor(temp_monitor_config_t *config)
     {
         LOGGER_LOG_ERROR(TAG, "Failed to create temperature processor event group");
         free(g_temp_monitor_ctx);
+        shutdown_spi();
         g_temp_monitor_ctx = NULL;
         return ESP_FAIL;
     }
 
     CHECK_ERR_LOG_CALL_RET(init_temp_sensors(g_temp_monitor_ctx),
-                           free(g_temp_monitor_ctx),
+                           free(g_temp_monitor_ctx);
+                           shutdown_spi(),
                            "Failed to initialize temperature sensors");
 
     CHECK_ERR_LOG_CALL_RET(start_temperature_monitor_task(g_temp_monitor_ctx),
-                      free(g_temp_monitor_ctx),
-                      "Failed to start temperature monitor task");
+                           free(g_temp_monitor_ctx);
+                           shutdown_spi(),
+                           "Failed to start temperature monitor task");
 
     return ESP_OK;
 }
@@ -83,6 +88,8 @@ esp_err_t shutdown_temp_monitor(void)
     // Free context
     free(g_temp_monitor_ctx);
     g_temp_monitor_ctx = NULL;
+
+    shutdown_spi();
 
     return ESP_OK;
 }

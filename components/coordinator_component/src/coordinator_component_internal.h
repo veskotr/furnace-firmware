@@ -26,15 +26,23 @@ typedef struct
     bool events_initialized;
 } coordinator_ctx_t;
 
+// ============================================
+// Event handling and posting functions
+// ============================================
 esp_err_t init_coordinator_events(coordinator_ctx_t* ctx);
 
 esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx);
 
-esp_err_t send_coordinator_error_event(coordinator_event_id_t event_type, esp_err_t* event_data,
+esp_err_t post_coordinator_error_event(coordinator_event_id_t event_type, const esp_err_t* event_data,
                                        coordinator_error_code_t coordinator_error_code);
+esp_err_t post_coordinator_event(coordinator_event_id_t event_type, void* event_data, size_t event_data_size);
 
-esp_err_t send_coordinator_event(coordinator_event_id_t event_type, void* event_data, size_t event_data_size);
+esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void* event_data, size_t event_data_size);
 
+
+// ============================================
+// Heating profile task management functions
+// ============================================
 esp_err_t start_heating_profile(coordinator_ctx_t* ctx, size_t profile_index);
 
 esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);

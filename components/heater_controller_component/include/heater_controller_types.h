@@ -1,6 +1,0 @@
-#ifndef HEATER_CONTROLLER_TYPES_H
-#define HEATER_CONTROLLER_TYPES_H
-#include "esp_event.h"
-
-
-#endif // HEATER_CONTROLLER_TYPES_H

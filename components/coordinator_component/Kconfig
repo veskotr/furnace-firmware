@@ -1,0 +1,11 @@
+menu "Coordinator"
+
+    config COORDINATOR_MAX_HEATING_PROFILE_STEPS
+        int "Max heating profile steps"
+        default 20
+
+    config COORDINATOR_MAX_PROFILES_STORED
+        int "Max number of stored profiles"
+        default 5
+
+endmenu

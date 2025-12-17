@@ -7,37 +7,53 @@
 #include "freertos/semphr.h"
 #include "event_registry.h"
 
-extern bool heater_controller_task_running;
-extern float heater_target_power_level;
-extern esp_event_loop_handle_t heater_controller_event_loop_handle;
-extern SemaphoreHandle_t heater_controller_mutex;
-
 static const bool HEATER_ON = true;
 static const bool HEATER_OFF = false;
+
+typedef struct
+{
+    // Task handle
+    TaskHandle_t task_handle;
+
+    // Current heater state
+    volatile bool heater_state;
+
+    // Target power level (0.0 to 1.0)
+    float target_power_level;
+
+    // Task running flag
+    volatile bool task_running;
+
+    bool initialized;
+} heater_controller_context_t;
+
+extern heater_controller_context_t* g_heater_controller_context;
 
 // ----------------------------
 // Task management functions
 // ----------------------------
-esp_err_t init_heater_controller_task(void);
-esp_err_t shutdown_heater_controller_task(void);
+esp_err_t init_heater_controller_task(heater_controller_context_t* ctx);
+esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx);
 
 // ----------------------------
 // Hardware control functions
 // ----------------------------
-esp_err_t init_heater_controller(void);
+esp_err_t init_heater_controller();
+esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float power_level);
 esp_err_t toggle_heater(bool state);
-esp_err_t shutdown_heater_controller(void);
+esp_err_t shutdown_heater_controller();
 
 // ----------------------------
 // Init events
 // ----------------------------
-esp_err_t init_events();
+esp_err_t init_events(heater_controller_context_t* ctx);
 
 // ----------------------------
 // Event posting functions
 // ----------------------------
 esp_err_t post_heater_controller_error(heater_controller_error_t error_code);
-esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void *event_data, size_t event_data_size);
+esp_err_t post_heater_controller_event(heater_controller_event_t event_type,
+                                       void* event_data, size_t event_data_size);
 
 
 #endif // HEATER_CONTROLLER_INTERNAL_H

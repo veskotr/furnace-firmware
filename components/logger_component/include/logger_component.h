@@ -2,9 +2,7 @@
 #define LOGGER_COMPONENT_H
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "sdkconfig.h"
-#include <stdarg.h>
 
 typedef enum
 {
