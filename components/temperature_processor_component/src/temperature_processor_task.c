@@ -60,7 +60,7 @@ static void temp_process_task(void* args)
         }
 
         float average_temperature = 0.0f;
-        process_temperature_error_t result = process_temperature_samples(
+        process_temp_samples_result_t result = process_temperature_samples(
             ctx, samples_buffer, samples_count, &average_temperature);
 
         if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)

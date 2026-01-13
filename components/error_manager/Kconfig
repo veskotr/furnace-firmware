@@ -1,0 +1,7 @@
+menu "Error Manager"
+
+    config ERROR_MANGER_MAX_MODULES
+        int "Max number of modules tracked"
+        default 10
+
+endmenu

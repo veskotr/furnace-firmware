@@ -19,6 +19,8 @@ static const HeaterControllerConfig_t heater_controller_config = {
     .task_priority = CONFIG_HEATER_CONTROLLER_TASK_PRIORITY,
 };
 
+static inline void check_error_and_post_event(const esp_err_t err);
+
 void heater_controller_task(void* args)
 {
     heater_controller_context_t* ctx = (heater_controller_context_t*)args;
@@ -33,31 +35,20 @@ void heater_controller_task(void* args)
 
         if (on_time > 0)
         {
-            const esp_err_t err = toggle_heater( HEATER_ON);
-            if (err != ESP_OK)
-            {
-                LOGGER_LOG_ERROR(TAG, "Failed to turn heater ON");
-                CHECK_ERR_LOG(post_heater_controller_error(HEATER_CONTROLLER_ERR_GPIO),
-                              "Failed to post heater controller error event");
-            }
+            const esp_err_t err = toggle_heater(HEATER_ON);
+            check_error_and_post_event(err);
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(on_time));
         }
 
         if (off_time > 0)
         {
-            const esp_err_t err = toggle_heater( HEATER_OFF);
-            if (err != ESP_OK)
-            {
-                LOGGER_LOG_ERROR(TAG, "Failed to turn heater OFF");
-                CHECK_ERR_LOG(
-                    post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, HEATER_CONTROLLER_ERR_GPIO, sizeof(
-                        heater_controller_error_t)), "Failed to post heater controller error event");
-            }
+            const esp_err_t err = toggle_heater(HEATER_OFF);
+            check_error_and_post_event(err);
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(off_time));
         }
     }
 
-    toggle_heater( HEATER_OFF); // Ensure heater is turned off on exit
+    toggle_heater(HEATER_OFF); // Ensure heater is turned off on exit
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task exiting");
     ctx->task_handle = NULL;
@@ -104,14 +95,14 @@ esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx)
     }
     ctx->task_handle = NULL;
 
-    shutdown_heater_controller(ctx);
+    shutdown_heater_controller();
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task shut down");
 
     return ESP_OK;
 }
 
-esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float power_level)
+esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, const float power_level)
 {
     if (power_level < 0.0f || power_level > 1.0f)
     {
@@ -121,4 +112,18 @@ esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float 
     ctx->target_power_level = power_level;
 
     return ESP_OK;
+}
+
+static inline void check_error_and_post_event(const esp_err_t err)
+{
+    if (err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to turn heater ON/OFF");
+        const furnace_error_t furnace_err = {
+            .severity = SEVERITY_CRITICAL,
+            .source = SOURCE_HEATER_CONTROLLER,
+            .error_code = HEATER_CONTROLLER_ERROR_GPIO
+        };
+        CHECK_ERR_LOG(post_heater_controller_error(furnace_err), "Failed to post heater controller error event");
+    }
 }

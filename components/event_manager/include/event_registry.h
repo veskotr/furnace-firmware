@@ -62,65 +62,6 @@ typedef struct
 } coordinator_status_data_t;
 
 // ============================================================================
-// TEMPERATURE MONITOR COMPONENT EVENTS
-// ============================================================================
-
-ESP_EVENT_DECLARE_BASE(TEMP_MONITOR_EVENT);
-
-typedef enum
-{
-    TEMP_MONITOR_EVENT_ERROR_OCCURRED = 0,
-} temp_monitor_event_id_t;
-
-typedef enum
-{
-    TEMP_MONITOR_ERROR_SENSOR_READ = 0,
-    TEMP_MONITOR_ERROR_SPI_FAULT,
-    TEMP_MONITOR_ERROR_SENSOR_FAULT,
-    TEMP_MONITOR_ERROR_TOO_MANY_BAD_SAMPLES,
-    TEMP_MONITOR_ERROR_UNKNOWN,
-} temp_monitor_error_code_t;
-
-typedef struct
-{
-    temp_monitor_error_code_t error_code; // Mapped error code
-    uint8_t sensor_index;                 // Index of the sensor that caused the error, if applicable
-    uint32_t timestamp_ms;                // Time of the error event
-    int esp_error_code;                   // Original ESP error code
-} temp_monitor_error_event_t;
-
-// ============================================================================
-// TEMPERATURE PROCESSOR COMPONENT EVENTS
-// ============================================================================
-
-ESP_EVENT_DECLARE_BASE(TEMP_PROCESSOR_EVENT);
-
-typedef enum {
-    PROCESS_TEMPERATURE_ERROR_NONE = 0,
-    PROCESS_TEMPERATURE_ERROR_INVALID_DATA,
-    PROCESS_TEMPERATURE_ERROR_COMPUTATION_FAILED,
-    PROCESS_TEMPERATURE_THRESHOLD_EXCEEDED
-} process_temperature_error_type_t;
-
-typedef struct {
-    process_temperature_error_type_t error_type;
-    uint8_t sensor_index;
-} process_temperature_error_t;
-
-
-typedef struct{
-    bool anomaly_detected;
-    float average_temperature;
-    process_temperature_error_t *errors_info;
-    size_t errors_count;
-} process_temperature_data_t;
-
-typedef enum {
-    PROCESS_TEMPERATURE_EVENT_DATA = 0,
-    PROCESS_TEMPERATURE_EVENT_ERROR
-} process_temperature_event_t;
-
-// ============================================================================
 // HEATER CONTROLLER COMPONENT EVENTS
 // ============================================================================
 
@@ -134,12 +75,6 @@ typedef enum
     HEATER_CONTROLLER_STATUS_REPORT_REQUESTED,
     HEATER_CONTROLLER_STATUS_REPORT_RESPONSE
 } heater_controller_event_t;
-
-typedef enum
-{
-    HEATER_CONTROLLER_ERR_GPIO = 0,
-    HEATER_CONTROLLER_ERR_UNKNOWN
-} heater_controller_error_t;
 
 // ============================================================================
 // HEALTH MONITOR COMPONENT EVENTS
@@ -159,6 +94,27 @@ typedef enum
     COORDINATOR_EVENT_HEARTBEAT,
     TEMP_PROCESSOR_EVENT_HEARTBEAT,
 } health_monitor_component_id_t;
+
+// ============================================================================
+// TEMPERATURE PROCESSOR EVENTS
+// ============================================================================
+
+ESP_EVENT_DECLARE_BASE(TEMP_PROCESSOR_EVENT);
+
+#define PROCESS_TEMPERATURE_EVENT_DATA 0
+
+typedef struct
+{
+    float average_temperature;
+    bool valid;
+} temp_processor_data_t;
+
+// ============================================================================
+// FURNACE ERROR EVENTS
+// ============================================================================
+ESP_EVENT_DECLARE_BASE(FURNACE_ERROR_EVENT);
+
+#define FURNACE_ERROR_EVENT_ID 0
 
 // ============================================================================
 // INITIALIZATION FUNCTION

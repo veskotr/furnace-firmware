@@ -12,88 +12,28 @@ static const char* TAG = "COORDINATOR_EVENTS";
 
 float coordinator_current_temperature = 0.0f;
 
-static void handle_temperature_error(const temp_monitor_error_event_t* error_data);
-
-static void temperature_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data);
-
-static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data);
-
 static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data);
-
-static void temperature_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
-{
-    switch (id)
-    {
-    case TEMP_MONITOR_EVENT_ERROR_OCCURRED:
-        {
-            temp_monitor_error_event_t* error_data = (temp_monitor_error_event_t*)event_data;
-            handle_temperature_error(error_data);
-        }
-        break;
-    default:
-        LOGGER_LOG_WARN(TAG, "Unknown Event ID: %d", id);
-        break;
-    }
-}
 
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     const coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
 
-    switch (id)
+    if (id != PROCESS_TEMPERATURE_EVENT_DATA)
     {
-    case PROCESS_TEMPERATURE_EVENT_DATA:
-        {
-            coordinator_current_temperature = *((float*)event_data);
-            LOGGER_LOG_INFO(TAG, "Average Temperature Processed: %.2f C", coordinator_current_temperature);
-            if (ctx != NULL && ctx->running)
-            {
-                xTaskNotifyGive(ctx->task_handle);
-            }
-        }
-        break;
-    case PROCESS_TEMPERATURE_EVENT_ERROR:
-        {
-            // TODO: Handle temperature processing error
-            const process_temperature_error_t* result = (process_temperature_error_t*)event_data;
-
-            LOGGER_LOG_ERROR(TAG, "Temperature Processing Error. Type: %d, Sensor Index: %d",
-                             result->error_type,
-                             result->sensor_index);
-        }
-        break;
-
-    default:
-        // TODO Handle unknown event
         LOGGER_LOG_WARN(TAG, "Unknown Temperature Processor Event ID: %d", id);
-        break;
+        return;
     }
-}
-
-static void handle_temperature_error(const temp_monitor_error_event_t* error_data)
-{
-    // Implement error handling logic here
-    LOGGER_LOG_ERROR(TAG, "Handling temperature error. Type: %d, ESP Error Code: %d",
-                     error_data->error_code,
-                     error_data->esp_error_code);
-    switch (error_data->error_code)
+    else
     {
-    case TEMP_MONITOR_ERROR_SENSOR_READ:
-        // TODO Handle sensor read error
-        break;
-    case TEMP_MONITOR_ERROR_SENSOR_FAULT:
-        // TODO Handle sensor fault error
-        break;
-    case TEMP_MONITOR_ERROR_SPI_FAULT:
-        // TODO Handle SPI error
-        break;
-    case TEMP_MONITOR_ERROR_TOO_MANY_BAD_SAMPLES:
-        // TODO Handle too many bad samples error
-        break;
-    case TEMP_MONITOR_ERROR_UNKNOWN:
-    default:
-        // TODO Handle unknown error
-        break;
+        if (event_data == NULL)
+        {
+            LOGGER_LOG_WARN(TAG, "Temperature Processor Event Data is NULL");
+            return;
+        }
+
+        const float* temperature = (float*)event_data;
+        coordinator_current_temperature = *temperature;
+        LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", coordinator_current_temperature);
     }
 }
 
@@ -232,20 +172,6 @@ esp_err_t post_coordinator_event(const coordinator_event_id_t event_type, void* 
 esp_err_t init_coordinator_events(coordinator_ctx_t* ctx)
 {
     CHECK_ERR_LOG_RET(event_manager_subscribe(
-                          TEMP_MONITOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &temperature_event_handler,
-                          ctx),
-                      "Failed to subscribe to temperature monitor events");
-
-    CHECK_ERR_LOG_RET(event_manager_subscribe(
-                          TEMP_PROCESSOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &temperature_processor_event_handler,
-                          ctx),
-                      "Failed to subscribe to temperature processor events");
-
-    CHECK_ERR_LOG_RET(event_manager_subscribe(
                           COORDINATOR_EVENT,
                           ESP_EVENT_ANY_ID,
                           &coordinator_event_handler,
@@ -268,17 +194,7 @@ esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx)
                           ESP_EVENT_ANY_ID,
                           &coordinator_event_handler),
                       "Failed to unsubscribe from coordinator events");
-    CHECK_ERR_LOG_RET(event_manager_unsubscribe(
-                          TEMP_PROCESSOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &temperature_processor_event_handler),
-                      "Failed to unsubscribe from temperature processor events");
 
-    CHECK_ERR_LOG_RET(event_manager_unsubscribe(
-                          TEMP_MONITOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &temperature_event_handler),
-                      "Failed to unsubscribe from temperature monitor events");
 
     ctx->events_initialized = false;
     return ESP_OK;
