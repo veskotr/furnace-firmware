@@ -17,7 +17,7 @@ esp_err_t init_health_monitor(void)
     {
         return ESP_OK;
     }
-    g_health_monitor_ctx = calloc(sizeof(health_monitor_ctx_t), 1);
+    g_health_monitor_ctx = calloc(1, sizeof(health_monitor_ctx_t));
     if (g_health_monitor_ctx == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Failed to allocate health monitor context");

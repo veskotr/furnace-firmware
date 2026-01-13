@@ -4,11 +4,16 @@
 #include "esp_err.h"
 #include <stdbool.h>
 #include "esp_event.h"
-#include "freertos/semphr.h"
 #include "event_registry.h"
+#include "furnace_error_types.h"
 
 static const bool HEATER_ON = true;
 static const bool HEATER_OFF = false;
+
+typedef enum
+{
+    HEATER_CONTROLLER_ERROR_GPIO,
+} heater_controller_error_t;
 
 typedef struct
 {
@@ -51,7 +56,8 @@ esp_err_t init_events(heater_controller_context_t* ctx);
 // ----------------------------
 // Event posting functions
 // ----------------------------
-esp_err_t post_heater_controller_error(heater_controller_error_t error_code);
+inline esp_err_t post_heater_controller_error(furnace_error_t error);
+
 esp_err_t post_heater_controller_event(heater_controller_event_t event_type,
                                        void* event_data, size_t event_data_size);
 

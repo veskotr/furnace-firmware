@@ -1,6 +1,7 @@
 #include "heater_controller_internal.h"
 #include "utils.h"
 #include "event_manager.h"
+#include "furnace_error_types.h"
 
 static const char* TAG = "HEATER_CTRL_EVENTS";
 
@@ -48,9 +49,13 @@ esp_err_t init_events(heater_controller_context_t* ctx)
     return ESP_OK;
 }
 
-esp_err_t post_heater_controller_error(heater_controller_error_t error_code)
+inline esp_err_t post_heater_controller_error(furnace_error_t error)
 {
-    return post_heater_controller_event(HEATER_CONTROLLER_ERROR_OCCURRED, &error_code, sizeof(error_code));
+    return event_manager_post(FURNACE_ERROR_EVENT,
+                              FURNACE_ERROR_EVENT_ID,
+                              &error,
+                              sizeof(furnace_error_t),
+                              portMAX_DELAY);
 }
 
 esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void* event_data, size_t event_data_size)

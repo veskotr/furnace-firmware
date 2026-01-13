@@ -16,6 +16,10 @@ menu "Temperature Sensors"
         int "Ring buffer size"
         default 32
 
+    config TEMP_SENSORS_MAX_SENSOR_FAILURES
+        int "Max sensor failures before error"
+        default 5
+
     menu "Sensor Read Behavior"
         config TEMP_SENSOR_MAX_READ_RETRIES
             int "Max read retries"

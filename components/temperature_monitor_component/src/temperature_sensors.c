@@ -3,10 +3,9 @@
 #include "spi_master_component.h"
 #include "max31865_registers.h"
 #include <math.h>
-#include <float.h>
 #include "utils.h"
 
-static const char *TAG = "TEMP_SENSORS";
+static const char* TAG = "TEMP_SENSORS";
 
 const max31865_registers_t max31865_registers = {
     .config_register_read_address = 0x00,
@@ -21,21 +20,21 @@ const max31865_registers_t max31865_registers = {
     .low_fault_threshold_msb_write_address = 0x85,
     .low_fault_threshold_lsb_read_address = 0x06,
     .low_fault_threshold_lsb_write_address = 0x86,
-    .fault_status_read_address = 0x07};
+    .fault_status_read_address = 0x07
+};
 
 static esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config);
 
 static float process_temperature_data(uint16_t sensor_data);
 
-static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t *data);
+static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t* data);
 
-static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t *fault_byte, max31865_fault_flags_t *fault_flags);
+static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t* fault_byte);
 
-static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags_t *fault_flags);
+static esp_err_t parse_max31865_faults(uint8_t* fault_byte, max31865_fault_flags_t* fault_flags);
 
-static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data);
 
-esp_err_t init_temp_sensors(temp_monitor_context_t *ctx)
+esp_err_t init_temp_sensors(temp_monitor_context_t* ctx)
 {
     //TODO Externalize config
     uint8_t config_value = 0;
@@ -57,78 +56,86 @@ esp_err_t init_temp_sensor(uint8_t sensor_index, uint8_t sensor_config)
     // send config register via SPI
     uint8_t tx_buff[2] = {
         max31865_registers.config_register_write_address,
-        sensor_config};
-    CHECK_ERR_LOG_RET(spi_transfer(sensor_index, tx_buff, NULL, sizeof(tx_buff)), "Failed to send config to temperature sensor"); // Send config
+        sensor_config
+    };
+    CHECK_ERR_LOG_RET(spi_transfer(sensor_index, tx_buff, NULL, sizeof(tx_buff)),
+                      "Failed to send config to temperature sensor"); // Send config
     return ESP_OK;
 }
 
-esp_err_t read_temp_sensors_data(temp_monitor_context_t *ctx, temp_sample_t *temp_sample_to_fill)
+// ReSharper disable CppDFAUnreachableCode
+void read_temp_sensors_data(const temp_monitor_context_t* ctx, temp_sample_t* temp_sample_to_fill)
 {
-    temp_sensor_t *data_buffer = temp_sample_to_fill->sensors;
+    temp_sensor_t* data_buffer = temp_sample_to_fill->sensors;
+    temp_sample_to_fill->empty = true;
+    temp_sample_to_fill->valid = true;
     for (size_t i = 0; i < ctx->number_of_attached_sensors; i++)
     {
-        CHECK_ERR_LOG_RET_FMT(read_temp_sensor(i, &data_buffer[i]), "Failed to read temperature sensor %d data", i);
+        const esp_err_t error = read_temp_sensor(i, &data_buffer[i]);
+        if (error != ESP_OK)
+        {
+            temp_sample_to_fill->valid = false;
+            data_buffer[i].error = error;
+            LOGGER_LOG_ERROR(TAG, "Failed to read temperature sensor %d data", i);
+            continue;
+        }
+        temp_sample_to_fill->empty = false;
+
         if (!(data_buffer[i].valid))
         {
             temp_sample_to_fill->valid = false;
         }
-        
     }
-
-    return ESP_OK;
 }
 
-static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t *data)
+static esp_err_t read_temp_sensor(uint8_t sensor_index, temp_sensor_t* data)
 {
-    uint8_t tx_data[3] = {max31865_registers.rtd_msb_read_address, 0x00, 0x00};
+    const uint8_t tx_data[3] = {max31865_registers.rtd_msb_read_address, 0x00, 0x00};
     uint8_t rx_data[3] = {0};
 
     data->index = sensor_index;
-    data->sensor_fault.raw_fault_byte = 0;
-    data->sensor_fault.faults = (max31865_fault_flags_t){0};
+    data->raw_fault_byte = 0;
     data->valid = true;
-    data->sensor_fault.type = SENSOR_ERR_NONE;
 
     // Read 2 bytes (MSB + LSB)
     CHECK_ERR_LOG_RET_FMT(spi_transfer(sensor_index, tx_data, rx_data, sizeof(tx_data)),
                           "Failed to read temperature sensor %d data",
                           sensor_index);
 
-    uint16_t raw = ((uint16_t)rx_data[1] << 8) | rx_data[2];
+    const uint16_t raw = ((uint16_t)rx_data[1] << 8) | rx_data[2];
 
     if (raw & 0x0001)
     {
         LOGGER_LOG_ERROR(TAG, "Fault detected in temperature sensor %d", sensor_index);
-        CHECK_ERR_LOG_RET_FMT(handle_max31865_fault(sensor_index, &data->sensor_fault.raw_fault_byte, &data->sensor_fault.faults),
+        CHECK_ERR_LOG_RET_FMT(handle_max31865_fault(sensor_index, &data->raw_fault_byte),
                               "Failed to handle fault for sensor %d",
                               sensor_index);
-        data->sensor_fault.type = classify_sensor_fault(data);
-        
+
         data->valid = false;
         return ESP_OK;
     }
 
-    uint16_t raw_data = raw >> 1; // Remove fault bit and align data
+    const uint16_t raw_data = raw >> 1; // Remove fault bit and align data
 
     data->temperature_c = process_temperature_data(raw_data);
 
     return ESP_OK;
 }
 
-static float process_temperature_data(uint16_t sensor_data)
+static float process_temperature_data(const uint16_t sensor_data)
 {
     // TODO: Extract consts to macros or config
     //  Convert raw data to temperature using Callendar-Van Dusen equation
-    const float R0 = 100.0;                             // Resistance at 0°C for PT100
-    const float A = 3.9083e-3;                          // Callendar-Van Dusen coefficient A
-    const float B = -5.775e-7;                          // Callendar-Van Dusen coefficient B
+    const float R0 = 100.0; // Resistance at 0°C for PT100
+    const float A = 3.9083e-3; // Callendar-Van Dusen coefficient A
+    const float B = -5.775e-7; // Callendar-Van Dusen coefficient B
     float resistance = (sensor_data * 400.0) / 32768.0; // Assuming Vref = 3.3V and RTD excitation current of 1mA
     float temp_c = (-A + sqrtf(A * A - 4 * B * (1 - (resistance / R0)))) / (2 * B);
 
     return temp_c;
 }
 
-static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t *fault_byte, max31865_fault_flags_t *fault_flags)
+static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t* fault_byte)
 {
     uint8_t config;
     uint8_t addr;
@@ -149,18 +156,16 @@ static esp_err_t handle_max31865_fault(uint8_t sensor_index, uint8_t *fault_byte
     config |= (1 << 1);
     uint8_t config_tx_buffer[2] = {
         max31865_registers.config_register_write_address,
-        config};
+        config
+    };
     CHECK_ERR_LOG_RET_FMT(spi_transfer(sensor_index, config_tx_buffer, NULL, 2),
                           "Failed to clear fault bit on sensor %d",
                           sensor_index);
 
-    // Parse fault flags
-    CHECK_ERR_LOG_RET_FMT(parse_max31865_faults(fault_byte, fault_flags), "Failed to parse fault flags for sensor %d", sensor_index);
-
     return ESP_OK;
 }
 
-static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags_t *fault_flags)
+static esp_err_t parse_max31865_faults(uint8_t* fault_byte, max31865_fault_flags_t* fault_flags)
 {
     // Parse fault flags
     fault_flags->high_threshold = (*fault_byte & MAX31865_FAULT_HIGHTHRESH) != 0;
@@ -172,25 +177,3 @@ static esp_err_t parse_max31865_faults(uint8_t *fault_byte, max31865_fault_flags
 
     return ESP_OK;
 }
-
-// Classify sensor error based on internal sensor data
-static temp_sensor_fault_type_t classify_sensor_fault(temp_sensor_t *sensor_data)
-{
-    if (sensor_data->sensor_fault.raw_fault_byte == 0)
-    {
-        return SENSOR_ERR_NONE;
-    }
-    else if (sensor_data->sensor_fault.faults.rtdin_force_open || sensor_data->sensor_fault.faults.refin_force_open || sensor_data->sensor_fault.faults.refin_force_closed)
-    {
-        return SENSOR_ERR_RTD_FAULT;
-    }
-    else if (sensor_data->sensor_fault.faults.over_under_voltage)
-    {
-        return SENSOR_ERR_COMMUNICATION;
-    }
-    else
-    {
-        return SENSOR_ERR_UNKNOWN;
-    }
-}
-
