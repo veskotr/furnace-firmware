@@ -30,4 +30,14 @@ typedef struct
     heating_node_t *first_node;
 } heating_profile_t;
 
+// ===========================================================================
+// Task config type
+// ===========================================================================
+typedef struct
+{
+    const char* task_name;
+    uint32_t stack_size;
+    UBaseType_t task_priority;
+} task_config_t;
+
 #endif

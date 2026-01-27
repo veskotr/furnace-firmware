@@ -1,0 +1,25 @@
+menu "Commands Dispatcher"
+
+    config COMMANDS_DISPATCHER_QUEUE_SIZE
+        int "Commands Dispatcher Queue Size"
+        default 10
+        range 1 50
+
+    config COMMANDS_DISPATCHER_TASK_STACK_SIZE
+        int "Commands Dispatcher Task Stack Size"
+        default 4096
+
+    config COMMANDS_DISPATCHER_TASK_PRIORITY
+        int "Commands Dispatcher Task Priority"
+        default 5
+
+    config COMMANDS_DISPATCHER_TASK_NAME
+        string "Commands Dispatcher Task Name"
+        default "COMMANDS_DISPATCHER_NAME"
+
+    config COMMANDS_DISPATCHER_MAX_HANDLERS
+        int "Max number of command handlers"
+        default 5
+        range 1 10
+
+endmenu

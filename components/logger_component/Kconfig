@@ -1,5 +1,17 @@
 menu "Logging"
 
+    config LOG_TASK_STACK_SIZE
+        int "Logging task stack size"
+        default 4096
+
+    config LOG_TASK_PRIORITY
+        int "Logging task priority"
+        default 4
+
+    config LOG_TASK_NAME
+        string "Logging task name"
+        default "LOG_TASK"
+
     config LOG_ENABLE
         bool "Enable logging"
         default y

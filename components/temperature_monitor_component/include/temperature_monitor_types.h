@@ -2,7 +2,9 @@
 #define TEMPERATURE_MONITOR_TYPES_H
 
 #include "sdkconfig.h"
-
+#include <stdbool.h>
+#include <inttypes.h>
+#include "esp_err.h"
 
 typedef struct
 {

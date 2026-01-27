@@ -51,8 +51,6 @@ typedef struct
     TaskHandle_t task_handle;
 } temp_processor_context_t;
 
-extern temp_processor_context_t* g_temp_processor_ctx;
-
 esp_err_t start_temp_processor_task(temp_processor_context_t* ctx);
 
 esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx);

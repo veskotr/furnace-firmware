@@ -1,4 +1,4 @@
-menu "SPI"
+ menu "SPI"
 
     menu "Bus Settings"
         config SPI_BUS_MISO

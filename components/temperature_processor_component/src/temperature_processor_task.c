@@ -22,9 +22,9 @@ typedef struct
 } TempProcessorConfig_t;
 
 static const TempProcessorConfig_t temp_processor_config = {
-    .task_name = "TEMP_CALC_TASK",
-    .stack_size = 8192,
-    .task_priority = 5
+    .task_name = CONFIG_TEMP_PROCESSOR_TASK_NAME,
+    .stack_size = CONFIG_TEMP_PROCESSOR_TASK_STACK_SIZE,
+    .task_priority = CONFIG_TEMP_PROCESSOR_TASK_PRIORITY
 };
 
 // ----------------------------
@@ -66,15 +66,20 @@ static void temp_process_task(void* args)
         if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)
         {
             LOGGER_LOG_WARN(TAG, "Temperature processing encountered errors: type %d", result.error_type);
+
+            //TODO Add error gathering
+
+            /*
             CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_ERROR, &result, sizeof(result)),
-                          "Failed to post temp process error");
+                          "Failed to post temp process error");*/
         }
         else
         {
             LOGGER_LOG_INFO(TAG, "Processed average temperature: %.2f C", average_temperature);
         }
-        CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_DATA, &average_temperature, sizeof(float)),
-                      "Failed to post temp process data");
+        //TODO Add error gathering
+        /*CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_DATA, &average_temperature, sizeof(float)),
+                      "Failed to post temp process data");*/
         event_manager_post_health(TEMP_PROCESSOR_EVENT_HEARTBEAT);
     }
 

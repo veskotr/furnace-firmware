@@ -1,10 +1,10 @@
 #include "logger_component.h"
 #include "esp_log.h"
-
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 // Component tag
-static const char *TAG = "LOGGER";
+static const char* TAG = "LOGGER";
 
 // Logger queue handle
 static QueueHandle_t logger_queue;
@@ -17,20 +17,21 @@ static bool logger_initialized = false;
 // ----------------------------
 typedef struct
 {
-    const char *task_name;
+    const char* task_name;
     uint32_t stack_size;
     UBaseType_t task_priority;
 } LoggerConfig_t;
 
 static const LoggerConfig_t logger_config = {
-    .task_name = "LOGGER_TASK",
-    .stack_size = 4096,
-    .task_priority = 4};
+    .task_name = CONFIG_LOG_TASK_NAME,
+    .stack_size = CONFIG_LOG_TASK_STACK_SIZE,
+    .task_priority = CONFIG_LOG_TASK_PRIORITY
+};
 
 // ----------------------------
 // Logger Task
 // ----------------------------
-static void logger_task(void *args)
+static void logger_task(void* args)
 {
     log_message_t msg;
 
@@ -76,13 +77,15 @@ void logger_init(void)
         return;
     }
 
-    xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority, NULL);
+    xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
+                NULL);
     logger_initialized = true;
 }
 
-void logger_send(log_level_t log_level, const char *tag, const char *fmt, ...)
+void logger_send(log_level_t log_level, const char* tag, const char* fmt, ...)
 {
-     if (logger_queue == NULL) {
+    if (logger_queue == NULL)
+    {
         // Queue not initialized
         ESP_LOGW("LOGGER", "Logger queue not initialized");
         return;
@@ -99,7 +102,8 @@ void logger_send(log_level_t log_level, const char *tag, const char *fmt, ...)
     va_end(args);
 
     // Send to queue - wait up to a tick if full
-    if (xQueueSend(logger_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE) {
+    if (xQueueSend(logger_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
         ESP_LOGW("LOGGER", "Logger queue full, message dropped: %s", msg.message);
     }
 }

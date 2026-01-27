@@ -5,7 +5,7 @@
 #include "core_types.h"
 #include "coordinator_component_types.h"
 
-esp_err_t init_coordinator(const coordinator_config_t *config);
+esp_err_t init_coordinator(const coordinator_config_t* config);
 
 esp_err_t stop_coordinator(void);
 

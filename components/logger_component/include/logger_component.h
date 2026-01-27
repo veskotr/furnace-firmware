@@ -1,7 +1,6 @@
 #ifndef LOGGER_COMPONENT_H
 #define LOGGER_COMPONENT_H
 
-#include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 
 typedef enum

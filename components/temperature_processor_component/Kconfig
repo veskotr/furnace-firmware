@@ -1,0 +1,15 @@
+menu "Temperature Processor"
+
+    config TEMP_PROCESSOR_TASK_STACK_SIZE
+        int "Temperature processor task stack size"
+        default 4096
+
+    config TEMP_PROCESSOR_TASK_PRIORITY
+        int "Temperature processor task priority"
+        default 5
+
+    config TEMP_PROCESSOR_TASK_NAME
+        string "Temperature processor task name"
+        default "TEMP_PROCESSOR_TASK"
+
+endmenu

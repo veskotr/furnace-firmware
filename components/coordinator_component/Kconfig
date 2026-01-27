@@ -1,5 +1,18 @@
 menu "Coordinator"
 
+
+    config COORDINATOR_TASK_STACK_SIZE
+        int "Coordinator Task Stack Size"
+        default 4096
+
+    config COORDINATOR_TASK_PRIORITY
+        int "Coordinator Task Priority"
+        default 5
+
+    config COORDINATOR_TASK_NAME
+        string "Coordinator Task Name"
+        default "COORDINATOR_TASK"
+
     config COORDINATOR_MAX_HEATING_PROFILE_STEPS
         int "Max heating profile steps"
         default 20

@@ -15,7 +15,7 @@ void temp_ring_buffer_push(temp_ring_buffer_t *rb, const temp_sample_t *sample)
 {
     xSemaphoreTake(rb->mutex, portMAX_DELAY);
 
-    size_t cap = CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE;
+    const size_t cap = CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE;
 
     rb->buffer[rb->write_index] = *sample;
 

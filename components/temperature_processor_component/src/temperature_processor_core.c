@@ -9,7 +9,7 @@ static const char* TAG = "TEMP_PROCESSOR_CORE";
 volatile bool processor_running = false;
 
 // Single global context pointer (internal to component)
-temp_processor_context_t* g_temp_processor_ctx = NULL;
+static temp_processor_context_t* g_temp_processor_ctx = NULL;
 
 // ----------------------------
 // Public API

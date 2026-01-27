@@ -4,11 +4,11 @@
 #include "utils.h"
 #include "sdkconfig.h"
 
-static const char *TAG = "COORDINATOR_CORE";
+static const char* TAG = "COORDINATOR_CORE";
 
-static coordinator_ctx_t *g_coordinator_ctx;
+coordinator_ctx_t* g_coordinator_ctx;
 
-esp_err_t init_coordinator(const coordinator_config_t *config)
+esp_err_t init_coordinator(const coordinator_config_t* config)
 {
     if (g_coordinator_ctx != NULL && g_coordinator_ctx->running)
     {
@@ -25,7 +25,7 @@ esp_err_t init_coordinator(const coordinator_config_t *config)
         }
     }
 
-    g_coordinator_ctx->heating_profiles = (heating_profile_t *)config->profiles;
+    g_coordinator_ctx->heating_profiles = (heating_profile_t*)config->profiles;
     g_coordinator_ctx->num_profiles = config->num_profiles;
 
     // Initialize Coordinator Events
@@ -46,7 +46,7 @@ esp_err_t coordinator_list_heating_profiles(void)
     LOGGER_LOG_INFO(TAG, "Available Heating Profiles:");
     for (size_t i = 0; i < g_coordinator_ctx->num_profiles; i++)
     {
-        const heating_profile_t *profile = &g_coordinator_ctx->heating_profiles[i];
+        const heating_profile_t* profile = &g_coordinator_ctx->heating_profiles[i];
         LOGGER_LOG_INFO(TAG, "Profile Index: %d, Name: %s, Duration: %d ms, Target Temp: %.2f C",
                         i,
                         profile->name);

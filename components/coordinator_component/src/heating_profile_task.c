@@ -3,6 +3,7 @@
 #include "pid_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
+#include "coordinator_component.h"
 
 static const char* TAG = "COORDINATOR_TASK";
 
@@ -12,6 +13,12 @@ typedef struct
     uint32_t stack_size;
     UBaseType_t task_priority;
 } CoordinatorTaskConfig_t;
+
+static const CoordinatorTaskConfig_t coordinator_task_config = {
+    .task_name = CONFIG_COORDINATOR_TASK_NAME,
+    .stack_size = CONFIG_COORDINATOR_TASK_STACK_SIZE,
+    .task_priority = CONFIG_COORDINATOR_TASK_PRIORITY
+};
 
 static void heating_profile_task(void* args)
 {
@@ -54,9 +61,10 @@ static void heating_profile_task(void* args)
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
-        CHECK_ERR_LOG(
+        //TODO Fix me
+        /*CHECK_ERR_LOG(
             post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL, &power_output, sizeof(power_output)),
-            "Failed to set heater target power level");
+            "Failed to set heater target power level");*/
 
         LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C",
                         ctx->current_temperature);
@@ -68,13 +76,7 @@ static void heating_profile_task(void* args)
     vTaskDelete(NULL);
 }
 
-static const CoordinatorTaskConfig_t coordinator_task_config = {
-    .task_name = "COORDINATOR_TASK",
-    .stack_size = 8192,
-    .task_priority = 5
-};
-
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_index)
+esp_err_t start_heating_profile(coordinator_ctx_t *ctx, const size_t profile_index)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
@@ -131,7 +133,7 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
     return ESP_OK;
 }
 
-esp_err_t pause_heating_profile(coordinator_ctx_t* ctx)
+esp_err_t coordinator_pause_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {
@@ -145,7 +147,7 @@ esp_err_t pause_heating_profile(coordinator_ctx_t* ctx)
     return ESP_OK;
 }
 
-esp_err_t resume_heating_profile(coordinator_ctx_t* ctx)
+esp_err_t coordinator_resume_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {
@@ -160,27 +162,19 @@ esp_err_t resume_heating_profile(coordinator_ctx_t* ctx)
     return ESP_OK;
 }
 
-void get_heating_task_state(const coordinator_ctx_t* ctx, heating_task_state_t* state_out)
+esp_err_t coordinator_get_heating_task_state()
 {
-    if (state_out == NULL)
-    {
-        return;
-    }
-
-    *state_out = ctx->heating_task_state;
+    //TODO Post state event
+    return ESP_FAIL;
 }
 
-void get_current_heating_profile(const coordinator_ctx_t* ctx, size_t* profile_index_out)
+esp_err_t coordinator_get_current_heating_profile()
 {
-    if (profile_index_out == NULL)
-    {
-        return;
-    }
-
-    *profile_index_out = ctx->heating_task_state.profile_index;
+    //TODO Post current profile event
+    return ESP_FAIL;
 }
 
-esp_err_t stop_heating_profile(coordinator_ctx_t* ctx)
+esp_err_t coordinator_stop_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {

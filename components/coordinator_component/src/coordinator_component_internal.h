@@ -49,9 +49,9 @@ esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);
 
 esp_err_t resume_heating_profile(coordinator_ctx_t* ctx);
 
-void get_heating_task_state(const coordinator_ctx_t* ctx, heating_task_state_t* state_out);
+esp_err_t get_heating_task_state(const coordinator_ctx_t* ctx);
 
-void get_current_heating_profile(const coordinator_ctx_t* ctx, size_t* profile_index_out);
+esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx);
 
 esp_err_t stop_heating_profile(coordinator_ctx_t* ctx);
 
