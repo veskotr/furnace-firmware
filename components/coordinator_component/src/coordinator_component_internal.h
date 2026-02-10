@@ -8,7 +8,7 @@
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
-const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
+static const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
 
 typedef struct
 {

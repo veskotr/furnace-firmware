@@ -62,4 +62,6 @@ process_temp_samples_result_t process_temperature_samples(temp_processor_context
 
 esp_err_t post_temp_processor_event(temp_processor_data_t data);
 
+esp_err_t post_processing_error(furnace_error_t furnace_error);
+
 #endif // TEMPERATURE_PROCESSOR_INTERNAL_H

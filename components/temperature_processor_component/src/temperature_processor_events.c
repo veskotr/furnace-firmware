@@ -17,7 +17,7 @@ esp_err_t post_temp_processor_event(temp_processor_data_t data)
     return ESP_OK;
 }
 
-static esp_err_t post_processing_error(furnace_error_t furnace_error)
+esp_err_t post_processing_error(furnace_error_t furnace_error)
 {
     CHECK_ERR_LOG_RET(event_manager_post_blocking(FURNACE_ERROR_EVENT,
                           FURNACE_ERROR_EVENT_ID,

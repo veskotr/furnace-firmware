@@ -1,0 +1,7 @@
+menu "Run Indicator"
+
+config RUN_INDICATOR_ENABLED
+    bool "Enable run indicator"
+    default y
+
+endmenu

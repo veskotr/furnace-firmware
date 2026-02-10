@@ -1,0 +1,7 @@
+menu "Nextion HMI"
+
+config NEXTION_HMI_ENABLED
+    bool "Enable Nextion HMI"
+    default y
+
+endmenu
