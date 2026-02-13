@@ -4,4 +4,40 @@ config NEXTION_HMI_ENABLED
     bool "Enable Nextion HMI"
     default y
 
+if NEXTION_HMI_ENABLED
+
+    # ─── Transport (UART) ─────────────────────────────────────────────
+    rsource "src/transport/Kconfig"
+
+    # ─── Display / UI ─────────────────────────────────────────────────
+    rsource "src/ui/Kconfig"
+
+    # ─── Program data (editor, limits, validation) ────────────────────
+    rsource "src/program/Kconfig"
+
+    # ─── SD-card storage & file I/O ───────────────────────────────────
+    rsource "src/storage/Kconfig"
+
+    # ─── Event dispatcher tasks ───────────────────────────────────────
+    rsource "src/events/Kconfig"
+
+    # ─── HMI coordinator (command queue + worker task) ────────────────
+    rsource "src/coordinator/Kconfig"
+
+    # ─── Core / entry-point tasks ─────────────────────────────────────
+
+    menu "Core Task Configuration"
+
+        config NEXTION_RX_TASK_STACK_SIZE
+            int "RX task stack size (bytes)"
+            default 4096
+
+        config NEXTION_RX_TASK_PRIORITY
+            int "RX task priority"
+            default 10
+
+    endmenu
+
+endif # NEXTION_HMI_ENABLED
+
 endmenu

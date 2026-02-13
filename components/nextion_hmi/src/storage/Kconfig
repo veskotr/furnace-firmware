@@ -1,0 +1,34 @@
+menu "Program Storage"
+
+    config NEXTION_MAX_PROGRAMS
+        int "Maximum number of stored programs"
+        default 200
+
+    config NEXTION_PROGRAM_FILE_SIZE
+        int "Program file buffer size (bytes)"
+        default 4096
+        help
+            Maximum buffer size for program file read/write.
+            Nextion SD bus limit is 4 KB.
+
+    config NEXTION_PROGRAM_FILE_EXTENSION
+        string "Program file extension"
+        default ".prg"
+
+    config NEXTION_FILE_READ_CHUNK_SIZE
+        int "File read chunk size (bytes)"
+        default 512
+        help
+            Chunk size for reading files from Nextion SD card.
+
+    config NEXTION_FILE_WRITE_CHUNK_SIZE
+        int "File write chunk size (bytes)"
+        default 512
+        help
+            Chunk size for writing files to Nextion SD card via twfile.
+
+    config NEXTION_HMI_PROFILE_SLOT_COUNT
+        int "Heating profile slot count"
+        default 1
+
+endmenu

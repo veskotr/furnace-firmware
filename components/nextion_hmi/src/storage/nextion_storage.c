@@ -1,13 +1,14 @@
-#include "nextion_storage.h"
+#include "nextion_storage_internal.h"
 
-#include "app_config.h"
-#include "nextion_transport.h"
-#include "nextion_file_reader.h"
+#include "sdkconfig.h"
+#include "nextion_transport_internal.h"
+#include "nextion_file_reader_internal.h"
+#include "heating_program_models_internal.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
-#include "esp_log.h"
+#include "logger_component.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -71,7 +72,7 @@ static bool serialize_program(const ProgramDraft *draft, char *out, size_t out_l
         used += (size_t)written;
     }
 
-    return used < PROGRAM_FILE_SIZE;
+    return used < CONFIG_NEXTION_PROGRAM_FILE_SIZE;
 }
 
 // twfile packet header constant
@@ -85,14 +86,14 @@ static int wait_for_response(uint8_t *buf, size_t max_len, int timeout_ms)
     
     while (elapsed < timeout_ms && received < max_len) {
         size_t available = 0;
-        uart_get_buffered_data_len(NEXTION_UART_PORT, &available);
+        uart_get_buffered_data_len(CONFIG_NEXTION_UART_PORT_NUM, &available);
         
         if (available > 0) {
             size_t to_read = available;
             if (received + to_read > max_len) {
                 to_read = max_len - received;
             }
-            int rd = uart_read_bytes(NEXTION_UART_PORT, buf + received, to_read, pdMS_TO_TICKS(100));
+            int rd = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, buf + received, to_read, pdMS_TO_TICKS(100));
             if (rd > 0) {
                 received += rd;
                 // Check for complete response
@@ -121,7 +122,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     bool locked = false;
     bool success = true;
 
-    static char payload[PROGRAM_FILE_SIZE];
+    static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE];
     memset(payload, 0, sizeof(payload));  // Zero-fill to pad file
 
     if (!serialize_program(draft, payload, sizeof(payload))) {
@@ -130,7 +131,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     }
 
     size_t payload_len = strlen(payload);
-    ESP_LOGI(TAG, "Saving program, payload len=%u", (unsigned)payload_len);
+    LOGGER_LOG_INFO(TAG, "Saving program, payload len=%u", (unsigned)payload_len);
 
     char filename[64];
     sanitize_filename(draft->name, filename, sizeof(filename));
@@ -140,7 +141,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     }
 
     char path[96];
-    snprintf(path, sizeof(path), "sd0/%s%s", filename, PROGRAM_FILE_EXTENSION);
+    snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
     if (nextion_file_exists(path)) {
         bool same_file = (original_name && original_name[0] != '\0' &&
@@ -161,15 +162,15 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    uart_flush_input(NEXTION_UART_PORT);
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
-    snprintf(cmd, sizeof(cmd), "twfile \"sd0/%s%s\",%u", filename, PROGRAM_FILE_EXTENSION, (unsigned)payload_len);
+    snprintf(cmd, sizeof(cmd), "twfile \"sd0/%s%s\",%u", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION, (unsigned)payload_len);
     nextion_send_cmd(cmd);
 
     uint8_t resp[8];
-    int resp_len = wait_for_response(resp, sizeof(resp), 2000);
+    int resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
 
-    ESP_LOGI(TAG, "twfile response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
+    LOGGER_LOG_INFO(TAG, "twfile response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
 
     if (resp_len < 1) {
         set_error(error_msg, error_len, "twfile no response");
@@ -185,20 +186,19 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     if (resp[0] != 0xFE) {
         set_error(error_msg, error_len, "twfile unexpected response");
-        ESP_LOGW(TAG, "Expected 0xFE, got 0x%02X", resp[0]);
+        LOGGER_LOG_WARN(TAG, "Expected 0xFE, got 0x%02X", resp[0]);
         success = false;
         goto cleanup;
     }
 
-    ESP_LOGI(TAG, "twfile ready, sending packets");
+    LOGGER_LOG_INFO(TAG, "twfile ready, sending packets");
 
-#define TWFILE_MAX_DATA 512
     uint16_t pkt_id = 0;
     size_t offset = 0;
 
     while (offset < payload_len) {
         size_t remaining = payload_len - offset;
-        size_t chunk = (remaining > TWFILE_MAX_DATA) ? TWFILE_MAX_DATA : remaining;
+        size_t chunk = (remaining > CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE) ? CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE : remaining;
 
         uint8_t header[12];
         memcpy(header, TWFILE_PKT_CONST, 7);
@@ -211,28 +211,28 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
         nextion_send_raw(header, sizeof(header));
         nextion_send_raw((const uint8_t *)(payload + offset), chunk);
 
-        int ack = wait_for_response(resp, 1, 500);
+        int ack = wait_for_response(resp, 1, CONFIG_NEXTION_UART_PACKET_ACK_TIMEOUT_MS);
 
         if (ack < 1) {
-            ESP_LOGW(TAG, "No ACK for packet %u", pkt_id);
+            LOGGER_LOG_WARN(TAG, "No ACK for packet %u", pkt_id);
             set_error(error_msg, error_len, "twfile packet timeout");
             success = false;
             goto cleanup;
         }
 
         if (resp[0] == 0x04) {
-            ESP_LOGW(TAG, "NAK for packet %u, retrying", pkt_id);
+            LOGGER_LOG_WARN(TAG, "NAK for packet %u, retrying", pkt_id);
             continue;
         }
 
         if (resp[0] == 0xFD) {
-            ESP_LOGI(TAG, "Packet %u sent, transfer complete", pkt_id);
+            LOGGER_LOG_INFO(TAG, "Packet %u sent, transfer complete", pkt_id);
             offset = payload_len;
             break;
         }
 
         if (resp[0] != 0x05) {
-            ESP_LOGW(TAG, "Unexpected ACK 0x%02X for packet %u", resp[0], pkt_id);
+            LOGGER_LOG_WARN(TAG, "Unexpected ACK 0x%02X for packet %u", resp[0], pkt_id);
             set_error(error_msg, error_len, "twfile bad ack");
             success = false;
             goto cleanup;
@@ -241,13 +241,13 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
         offset += chunk;
         pkt_id++;
 
-        ESP_LOGI(TAG, "Packet %u sent, %u/%u bytes", pkt_id - 1, (unsigned)offset, (unsigned)payload_len);
+        LOGGER_LOG_INFO(TAG, "Packet %u sent, %u/%u bytes", pkt_id - 1, (unsigned)offset, (unsigned)payload_len);
     }
 
-    resp_len = wait_for_response(resp, sizeof(resp), 2000);
+    resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
 
     if (!(resp_len >= 1 && resp[0] == 0xFD)) {
-        ESP_LOGW(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
+        LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
         success = false;
     }
 
@@ -274,14 +274,14 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
     }
 
     char path[96];
-    snprintf(path, sizeof(path), "sd0/%s%s", filename, PROGRAM_FILE_EXTENSION);
+    snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
     if (!nextion_file_exists(path)) {
         set_error(error_msg, error_len, "Program not found");
         return false;
     }
 
-    ESP_LOGI(TAG, "Deleting program: %s", path);
+    LOGGER_LOG_INFO(TAG, "Deleting program: %s", path);
 
     bool locked = false;
 
@@ -289,7 +289,7 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_uart_lock();
     locked = true;
-    uart_flush_input(NEXTION_UART_PORT);
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "delfile \"%s\"", path);
@@ -304,5 +304,80 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
         nextion_uart_unlock();
     }
     s_storage_active = false;
+    return true;
+}
+
+bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, size_t error_len)
+{
+    if (!filename || filename[0] == '\0') {
+        snprintf(error_msg, error_len, "Invalid program name");
+        return false;
+    }
+
+    char path[128];
+    if (strstr(filename, ".")) {
+        snprintf(path, sizeof(path), "sd0/%s", filename);
+    } else {
+        snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
+    }
+
+    char *file_data = malloc(CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1);
+    if (!file_data) {
+        snprintf(error_msg, error_len, "Out of memory");
+        return false;
+    }
+
+    size_t file_len = 0;
+    if (!nextion_read_file(path, file_data, CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1, &file_len)) {
+        free(file_data);
+        snprintf(error_msg, error_len, "Program read failed");
+        return false;
+    }
+
+    LOGGER_LOG_INFO(TAG, "Program file read: %u bytes from %s", (unsigned)file_len, path);
+
+    program_draft_clear();
+
+    char *line = strtok(file_data, "\n");
+    while (line) {
+        if (strncmp(line, "name=", 5) == 0) {
+            program_draft_set_name(line + 5);
+        } else if (strncmp(line, "stage=", 6) == 0) {
+            int stage = 0;
+            int t_min = 0;
+            int target = 0;
+            int t_delta = 0;
+            int delta_x10 = 0;
+            // Try new format first (delta_x10=), then fallback to old format (delta=)
+            if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta, &delta_x10) == 5) {
+                program_draft_set_stage((uint8_t)stage,
+                                        t_min,
+                                        target,
+                                        t_delta,
+                                        delta_x10,
+                                        true,
+                                        true,
+                                        true,
+                                        true);
+            } else {
+                int delta = 0;
+                if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta, &delta) == 5) {
+                    // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
+                    program_draft_set_stage((uint8_t)stage,
+                                            t_min,
+                                            target,
+                                            t_delta,
+                                            delta * 10,
+                                            true,
+                                            true,
+                                            true,
+                                            true);
+                }
+            }
+        }
+        line = strtok(NULL, "\n");
+    }
+
+    free(file_data);
     return true;
 }

@@ -7,8 +7,8 @@ idf_component_register(
         "nextion_file_reader.c"
         "nextion_storage.c"
         "nextion_ui.c"
-        "program_graph.c"
-        "program_models.c"
-        "program_validation.c"
+        "heating_program_graph.c"
+        "heating_program_models.c"
+        "heating_program_validation.c"
     INCLUDE_DIRS "."
 )

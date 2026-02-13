@@ -1,4 +1,4 @@
-#include "program_graph.h"
+#include "heating_program_graph_internal.h"
 
 #include <math.h>
 

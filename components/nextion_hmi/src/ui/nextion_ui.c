@@ -1,6 +1,6 @@
-#include "nextion_ui.h"
+#include "nextion_ui_internal.h"
 
-#include "nextion_transport.h"
+#include "nextion_transport_internal.h"
 #include <stdio.h>
 
 void nextion_show_error(const char *message)

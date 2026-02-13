@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <inttypes.h>
-#include "core_types.h"
+#include "heating_program_types.h"
 
 typedef struct
 {
@@ -21,8 +21,8 @@ typedef struct
 
 typedef struct
 {
-    heating_profile_t *profiles;
-    size_t num_profiles;
+    const ProgramDraft *programs;   // Array of programs (ProgramDraft[])
+    size_t num_programs;
 } coordinator_config_t;
 
 #endif // COORDINATOR_COMPONENT_TYPES_H

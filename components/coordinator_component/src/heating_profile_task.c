@@ -81,10 +81,20 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
         return ESP_OK;
     }
 
-    if (profile_index >= ctx->num_profiles)
+    if (profile_index >= ctx->num_programs)
     {
-        LOGGER_LOG_ERROR(TAG, "Invalid profile index: %d", profile_index);
+        LOGGER_LOG_ERROR(TAG, "Invalid program index: %d", profile_index);
         return ESP_ERR_INVALID_ARG;
+    }
+
+    const ProgramDraft *prog = &ctx->programs[profile_index];
+
+    // Calculate total duration from stages
+    uint32_t total_ms = 0;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        if (prog->stages[i].is_set) {
+            total_ms += (uint32_t)prog->stages[i].t_min * 60U * 1000U;
+        }
     }
 
     ctx->heating_task_state.profile_index = profile_index;
@@ -92,14 +102,13 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
     ctx->heating_task_state.is_paused = false;
     ctx->heating_task_state.is_completed = false;
     ctx->heating_task_state.current_time_elapsed_ms = 0;
-    ctx->heating_task_state.total_time_ms = ctx->heating_profiles[profile_index].first_node
-        ->duration_ms;
+    ctx->heating_task_state.total_time_ms = total_ms;
     ctx->heating_task_state.current_temperature = ctx->current_temperature;
     ctx->heating_task_state.heating_element_on = false;
     ctx->heating_task_state.fan_on = false;
 
     const temp_profile_config_t temp_profile_config = {
-        .heating_profile = &ctx->heating_profiles[profile_index],
+        .program = prog,
         .initial_temperature = ctx->current_temperature
     };
 

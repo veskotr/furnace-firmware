@@ -1,0 +1,5 @@
+menu "Event Dispatcher Configuration"
+    # Note: The per-operation task configs (sync, save, edit, load) have been
+    # removed. All event handling now runs on the single HMI coordinator task.
+    # See src/coordinator/Kconfig for the coordinator task settings.
+endmenu

@@ -1,6 +1,6 @@
 #ifndef TEMPERATURE_PROFILE_TYPES_H
 #define TEMPERATURE_PROFILE_TYPES_H
-#include "core_types.h"
+#include "heating_program_types.h"
 
 typedef enum
 {
@@ -14,7 +14,7 @@ typedef enum
 
 typedef struct {
     float initial_temperature;
-    heating_profile_t *heating_profile;
+    const ProgramDraft *program;   // Program to execute (array of stages)
 } temp_profile_config_t;
 
 #endif // TEMPERATURE_PROFILE_TYPES_H

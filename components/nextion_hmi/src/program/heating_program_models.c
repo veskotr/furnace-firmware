@@ -1,10 +1,13 @@
-#include "program_models.h"
+#include "heating_program_models.h"
+#include "heating_program_models_internal.h"
+#include "nextion_hmi.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 static ProgramDraft s_program_draft;
+static ProgramDraft s_run_program;   // Snapshot copied at run-start, read by coordinator
 static int s_current_temp_c = 23;
 static int s_current_kw = 0;
 static SemaphoreHandle_t s_program_mutex = NULL;
@@ -123,4 +126,24 @@ int program_get_current_kw(void)
     int value = s_current_kw;
     xSemaphoreGiveRecursive(s_program_mutex);
     return value;
+}
+
+// ============================================================================
+// Run slot — used by coordinator during program execution
+// ============================================================================
+
+const ProgramDraft *hmi_get_run_program(size_t *out_count)
+{
+    if (out_count) {
+        *out_count = 1;  // Single run slot
+    }
+    return &s_run_program;
+}
+
+void program_copy_draft_to_run_slot(void)
+{
+    ensure_program_mutex();
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(&s_run_program, &s_program_draft, sizeof(s_run_program));
+    xSemaphoreGiveRecursive(s_program_mutex);
 }

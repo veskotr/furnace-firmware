@@ -1,0 +1,24 @@
+menu "HMI Coordinator Task"
+
+    config NEXTION_COORDINATOR_TASK_STACK_SIZE
+        int "Coordinator task stack size (bytes)"
+        default 8192
+        help
+            Stack size for the single HMI coordinator task that processes
+            all commands sequentially (line handling, file I/O, display
+            updates). Must be large enough for the deepest call chain
+            (typically program load with graph building).
+
+    config NEXTION_COORDINATOR_TASK_PRIORITY
+        int "Coordinator task priority"
+        default 5
+
+    config NEXTION_COORDINATOR_QUEUE_DEPTH
+        int "Command queue depth"
+        default 8
+        help
+            Maximum number of commands that can be queued before the
+            coordinator processes them. Commands arrive at human
+            interaction speed, so a small queue is sufficient.
+
+endmenu

@@ -1,16 +1,22 @@
 idf_component_register(
     SRCS
         "src/nextion_hmi.c"
-        "src/program_profile_adapter.c"
-        "src/config.c"
-        "src/nextion_transport.c"
-        "src/nextion_events.c"
-        "src/nextion_file_reader.c"
-        "src/nextion_storage.c"
-        "src/nextion_ui.c"
-        "src/program_graph.c"
-        "src/program_models.c"
-        "src/program_validation.c"
+        "src/coordinator/hmi_coordinator.c"
+        "src/transport/nextion_transport.c"
+        "src/storage/nextion_storage.c"
+        "src/storage/nextion_file_reader.c"
+        "src/ui/nextion_ui.c"
+        "src/events/nextion_events.c"
+        "src/program/heating_program_models.c"
+        "src/program/heating_program_graph.c"
     INCLUDE_DIRS "include"
-    REQUIRES common driver nvs_flash event_manager
+    PRIV_INCLUDE_DIRS
+        "src"
+        "src/coordinator"
+        "src/transport"
+        "src/storage"
+        "src/ui"
+        "src/events"
+        "src/program"
+    REQUIRES common driver nvs_flash event_manager logger_component
 )

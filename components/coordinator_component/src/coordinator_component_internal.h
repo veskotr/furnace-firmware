@@ -4,7 +4,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "core_types.h"
+#include "heating_program_types.h"
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
@@ -14,8 +14,8 @@ typedef struct
 {
     TaskHandle_t task_handle;
 
-    heating_profile_t* heating_profiles;
-    size_t num_profiles;
+    const ProgramDraft *programs;  // Array of ProgramDraft[]
+    size_t num_programs;
 
     bool running;
     bool paused;

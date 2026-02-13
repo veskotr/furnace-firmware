@@ -5,7 +5,6 @@
 #include "event_manager.h"
 #include "event_registry.h"
 #include "nextion_hmi.h"
-#include "program_profile_adapter.h"
 #include "run_indicator.h"
 #include "utils.h"
 #include "sdkconfig.h"
@@ -40,11 +39,11 @@ void app_main(void)
         LOGGER_LOG_WARN(TAG, "Skipping temperature processor init (no sensors)");
     }
 
-    size_t profile_count = 0;
-    heating_profile_t *profiles = hmi_get_profile_slots(&profile_count);
+    size_t program_count = 0;
+    const ProgramDraft *programs = hmi_get_run_program(&program_count);
     const coordinator_config_t coordinator_config = {
-        .profiles = profiles,
-        .num_profiles = profile_count
+        .programs = programs,
+        .num_programs = program_count
     };
     CHECK_ERR_LOG_CALL(init_coordinator(&coordinator_config),
                        return,

@@ -1,0 +1,73 @@
+menu "Program Editor"
+
+    config NEXTION_PROGRAMS_PAGE_STAGE_COUNT
+        int "Stages displayed per page"
+        default 5
+        help
+            Number of stage rows visible on each programs editor page.
+
+    config NEXTION_PROGRAMS_PAGE_COUNT
+        int "Number of editor pages"
+        default 3
+        help
+            Number of pages in the programs editor.
+            Total stages = page_stage_count * page_count.
+
+endmenu
+
+menu "Operational Limits"
+
+    config NEXTION_MAX_OPERATIONAL_TIME_MIN
+        int "Maximum total program time (minutes)"
+        default 10080
+        help
+            Upper bound for total program duration. 10080 = 7 days.
+
+    config NEXTION_MIN_OPERATIONAL_TIME_MIN
+        int "Minimum total program time (minutes)"
+        default 1
+
+    config NEXTION_MAX_TEMPERATURE_C
+        int "Maximum temperature (C)"
+        default 170
+
+    config NEXTION_SENSOR_READ_FREQUENCY_SEC
+        int "Sensor read frequency (seconds)"
+        default 1
+
+    config NEXTION_DELTA_T_MAX_PER_MIN_X10
+        int "Max heating rate x10 (30 = 3.0 C/min)"
+        default 30
+
+    config NEXTION_DELTA_T_MIN_PER_MIN_X10
+        int "Max cooling rate x10 (-30 = -3.0 C/min)"
+        default -30
+
+    config NEXTION_T_DELTA_MIN_MIN
+        int "Minimum time delta per stage (minutes)"
+        default 1
+
+    config NEXTION_HEATER_POWER_KW
+        int "Heater power (kW)"
+        default 20
+
+endmenu
+
+menu "Validation Tolerances"
+
+    config NEXTION_TIME_TOLERANCE_SEC
+        int "Time tolerance (seconds)"
+        default 30
+        help
+            Allowed deviation when checking if user-entered time
+            is physically achievable.
+
+    config NEXTION_TEMP_TOLERANCE_C
+        int "Temperature tolerance (C)"
+        default 2
+
+    config NEXTION_DELTA_TEMP_TOLERANCE_C_X10
+        int "Delta-temp tolerance x10 (5 = 0.5 C/min)"
+        default 5
+
+endmenu

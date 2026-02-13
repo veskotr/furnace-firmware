@@ -5,7 +5,6 @@
 #include "freertos/task.h"
 #include "esp_event.h"
 #include "spi_master_component.h"
-#include "core_types.h"
 #include "temperature_monitor_internal.h"
 #include "temperature_monitor_types.h"
 #include "utils.h"

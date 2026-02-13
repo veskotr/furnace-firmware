@@ -1,0 +1,54 @@
+menu "UART Configuration"
+
+    config NEXTION_UART_PORT_NUM
+        int "UART port number (0, 1 or 2)"
+        default 1
+        range 0 2
+        help
+            Hardware UART peripheral to use for Nextion communication.
+            0 = UART0, 1 = UART1, 2 = UART2.
+
+    config NEXTION_UART_BAUD_RATE
+        int "UART baud rate"
+        default 115200
+        help
+            Baud rate for Nextion UART communication.
+            Must match the baud rate configured on the Nextion display.
+
+    config NEXTION_UART_TX_PIN
+        int "UART TX GPIO pin"
+        default 32
+
+    config NEXTION_UART_RX_PIN
+        int "UART RX GPIO pin"
+        default 33
+
+    config NEXTION_UART_RX_BUF_SIZE
+        int "UART RX buffer size (bytes)"
+        default 2048
+
+    config NEXTION_UART_TX_BUF_SIZE
+        int "UART TX buffer size (bytes)"
+        default 2048
+
+    config NEXTION_LINE_BUF_SIZE
+        int "Line buffer size for RX parsing (bytes)"
+        default 128
+        help
+            Maximum length of a single Nextion command/response line.
+
+    config NEXTION_UART_RESPONSE_TIMEOUT_MS
+        int "UART response timeout (ms)"
+        default 2000
+        help
+            Timeout waiting for a response from the Nextion display
+            for file operations and write-file commands.
+
+    config NEXTION_UART_PACKET_ACK_TIMEOUT_MS
+        int "UART packet ACK timeout (ms)"
+        default 500
+        help
+            Timeout waiting for per-packet acknowledgement during
+            file write (twfile) transfers.
+
+endmenu

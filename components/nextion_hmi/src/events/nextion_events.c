@@ -1,18 +1,17 @@
-#include "nextion_events.h"
+#include "nextion_events_internal.h"
 
-#include "app_config.h"
-#include "config.h"
-#include "nextion_file_reader.h"
-#include "nextion_transport.h"
-#include "nextion_storage.h"
-#include "nextion_ui.h"
-#include "program_models.h"
-#include "program_graph.h"
-#include "program_validation.h"
+#include "sdkconfig.h"
+#include "nextion_file_reader_internal.h"
+#include "nextion_transport_internal.h"
+#include "nextion_storage_internal.h"
+#include "nextion_ui_internal.h"
+#include "heating_program_models.h"
+#include "heating_program_models_internal.h"
+#include "heating_program_graph_internal.h"
+#include "heating_program_validation.h"
 #include "event_manager.h"
 #include "event_registry.h"
-#include "program_profile_adapter.h"
-#include "esp_log.h"
+#include "logger_component.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,33 +26,33 @@ static const char *TAG = "nextion_events";
 static uint8_t s_programs_page = 1;
 static bool s_graph_visible = false;
 static char s_original_program_name[64] = {0};
-static volatile bool s_sync_pending = false;
-static volatile bool s_sync_in_progress = false;
+
+// Live waveform tracking (Phase 4: two-channel graph)
+static bool     s_waveform_active = false;   // true while a profile is running
+static uint32_t s_waveform_total_ms = 0;     // total duration of the loaded profile
+static uint32_t s_waveform_x = 0;            // current pixel position on channel 1
 
 // Forward declarations
 static void handle_settings_init(void);
 static void format_delta_x10(int val_x10, char *buf, size_t buf_len);
 static void update_main_status(void);
 static void sync_program_buffer(void);
-static void request_sync_program_buffer(void);
 static bool load_program_into_draft(const char *filename, char *error_msg, size_t error_len);
 static void programs_page_apply(uint8_t page);
 
 static void handle_run_start(void)
 {
     char error_msg[96] = {0};
-    AppConfig cfg = config_get_effective();
     ProgramDraft snapshot = *program_draft_get();
 
-    if (!program_validate_draft(&snapshot, &cfg, error_msg, sizeof(error_msg))) {
+    if (!program_validate_draft_with_temp(&snapshot, program_get_current_temp_c(),
+                                         error_msg, sizeof(error_msg))) {
         nextion_show_error(error_msg);
         return;
     }
 
-    if (!hmi_build_profile_from_draft(&snapshot, error_msg, sizeof(error_msg))) {
-        nextion_show_error(error_msg[0] != '\0' ? error_msg : "Profile build failed");
-        return;
-    }
+    // Copy validated draft into the run slot so the coordinator reads a stable snapshot
+    program_copy_draft_to_run_slot();
 
     coordinator_start_profile_data_t data = {
         .profile_index = 0
@@ -93,238 +92,6 @@ static void handle_run_stop(void)
     if (err != ESP_OK) {
         nextion_show_error("Stop failed");
     }
-}
-
-static void nextion_program_load_task(void *arg)
-{
-    char *filename = (char *)arg;
-    if (!filename || filename[0] == '\0') {
-        free(filename);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "Program load task: %s", filename);
-
-    char path[128];
-    if (strstr(filename, ".")) {
-        snprintf(path, sizeof(path), "sd0/%s", filename);
-    } else {
-        snprintf(path, sizeof(path), "sd0/%s%s", filename, PROGRAM_FILE_EXTENSION);
-    }
-
-    // Allocate file buffer on heap to avoid stack overflow
-    char *file_data = malloc(PROGRAM_FILE_SIZE + 1);
-    if (!file_data) {
-        nextion_show_error("Out of memory");
-        free(filename);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    size_t file_len = 0;
-    if (!nextion_read_file(path, file_data, PROGRAM_FILE_SIZE + 1, &file_len)) {
-        nextion_show_error("Program read failed");
-        free(file_data);
-        free(filename);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    ESP_LOGI(TAG, "Program read ok: %u bytes", (unsigned)file_len);
-    
-    // Debug: show first 128 bytes as hex and printable chars
-    // ESP_LOGI(TAG, "File content (first 128 bytes hex):");
-    // for (int i = 0; i < 128 && i < (int)file_len; i += 16) {
-    //     char hex[64] = {0};
-    //     char ascii[20] = {0};
-    //     for (int j = 0; j < 16 && (i + j) < (int)file_len; j++) {
-    //         unsigned char c = (unsigned char)file_data[i + j];
-    //         snprintf(hex + j * 3, 4, "%02X ", c);
-    //         ascii[j] = (c >= 32 && c < 127) ? c : '.';
-    //     }
-    //     ESP_LOGI(TAG, "%04X: %s |%s|", i, hex, ascii);
-    // }
-
-    program_draft_clear();
-
-    char *line = strtok(file_data, "\n");
-    while (line) {
-        if (strncmp(line, "name=", 5) == 0) {
-            program_draft_set_name(line + 5);
-        } else if (strncmp(line, "stage=", 6) == 0) {
-            int stage = 0;
-            int t_min = 0;
-            int target = 0;
-            int t_delta = 0;
-            int delta_x10 = 0;
-            // Try new format first (delta_x10=), then fallback to old format (delta=)
-            if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta, &delta_x10) == 5) {
-                program_draft_set_stage((uint8_t)stage,
-                                        t_min,
-                                        target,
-                                        t_delta,
-                                        delta_x10,
-                                        true,
-                                        true,
-                                        true,
-                                        true);
-            } else {
-                int delta = 0;
-                if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta, &delta) == 5) {
-                    // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
-                    program_draft_set_stage((uint8_t)stage,
-                                            t_min,
-                                            target,
-                                            t_delta,
-                                            delta * 10,
-                                            true,
-                                            true,
-                                            true,
-                                            true);
-                }
-            }
-        }
-        line = strtok(NULL, "\n");
-    }
-
-    free(file_data);
-
-    const ProgramDraft *parsed = program_draft_get();
-    char cmd[96];
-    snprintf(cmd, sizeof(cmd), "progNameDisp.txt=\"%s\"", parsed->name);
-    nextion_send_cmd(cmd);
-
-    int total_time = 0;
-    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &parsed->stages[i];
-        if (!stage->is_set) {
-            continue;
-        }
-        total_time += stage->t_min;
-    }
-
-    ESP_LOGI(TAG, "Program parsed: name=%s time=%d", parsed->name, total_time);
-
-    snprintf(cmd, sizeof(cmd), "timeElapsed.txt=\"0\"");
-    nextion_send_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "timeRamaining.txt=\"%d\"", total_time);
-    nextion_send_cmd(cmd);
-
-    // Allocate graph samples on heap
-    uint8_t *samples = malloc(PROGRAMS_GRAPH_WIDTH);
-    if (!samples) {
-        nextion_show_error("Out of memory");
-        free(filename);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    size_t count = program_build_graph(parsed, samples, PROGRAMS_GRAPH_WIDTH, MAIN_GRAPH_WIDTH, CONFIG_MAX_TEMPERATURE_C, program_get_current_temp_c());
-    if (count == 0) {
-        nextion_show_error("Graph build failed");
-        free(samples);
-        free(filename);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    snprintf(cmd, sizeof(cmd), "cle %d,0", NEXTION_GRAPH_DISP_ID);
-    nextion_send_cmd(cmd);
-    for (size_t i = 0; i < count; ++i) {
-        snprintf(cmd, sizeof(cmd), "add %d,0,%u", NEXTION_GRAPH_DISP_ID, (unsigned)samples[i]);
-        nextion_send_cmd(cmd);
-        if ((i % 64) == 0) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-    }
-
-    free(samples);
-    free(filename);
-    sync_program_buffer();
-    vTaskDelete(NULL);;
-}
-
-typedef struct {
-    ProgramDraft *draft;
-    char original_name[64];
-} SaveTaskArgs;
-
-typedef struct {
-    char name[64];
-} EditTaskArgs;
-
-static void nextion_save_task(void *arg)
-{
-    SaveTaskArgs *args = (SaveTaskArgs *)arg;
-    ProgramDraft *draft = args->draft;
-    char save_error[64];
-    if (!nextion_storage_save_program(draft, args->original_name, save_error, sizeof(save_error))) {
-        nextion_show_error(save_error);
-    } else {
-        nextion_clear_error();
-        // Update original name after successful save (for subsequent saves)
-        strncpy(s_original_program_name, draft->name, sizeof(s_original_program_name) - 1);
-        s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
-        ESP_LOGI(TAG, "Program draft validated and saved to SD");
-    }
-    free(draft);
-    free(args);
-    vTaskDelete(NULL);
-}
-
-static void nextion_edit_task(void *arg)
-{
-    EditTaskArgs *args = (EditTaskArgs *)arg;
-    char *name = args ? args->name : NULL;
-
-    if (!name || name[0] == '\0') {
-        nextion_show_error("No program selected");
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    char path[128];
-    if (strstr(name, ".")) {
-        snprintf(path, sizeof(path), "sd0/%s", name);
-    } else {
-        snprintf(path, sizeof(path), "sd0/%s%s", name, PROGRAM_FILE_EXTENSION);
-    }
-
-    if (!nextion_file_exists(path)) {
-        nextion_show_error("Program not found");
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    char error_msg[64];
-    if (!load_program_into_draft(name, error_msg, sizeof(error_msg))) {
-        nextion_show_error(error_msg);
-        free(args);
-        vTaskDelete(NULL);
-        return;
-    }
-
-    // Store original name to allow overwriting only this file
-    strncpy(s_original_program_name, program_draft_get()->name, sizeof(s_original_program_name) - 1);
-    s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
-    s_programs_page = 1;
-    s_graph_visible = false;
-
-    nextion_send_cmd("page " NEXTION_PAGE_PROGRAMS);
-    vTaskDelay(pdMS_TO_TICKS(30));
-    programs_page_apply(1);
-
-    char cmd[96];
-    snprintf(cmd, sizeof(cmd), "progNameInput.txt=\"%s\"", program_draft_get()->name);
-    nextion_send_cmd(cmd);
-
-    sync_program_buffer();
-
-    free(args);
-    vTaskDelete(NULL);
 }
 
 static void nextion_set_text_chunked(const char *obj_name, const char *text)
@@ -402,12 +169,12 @@ static bool serialize_program_to_buffer(const ProgramDraft *draft, char *out, si
 
 static void sync_program_buffer(void)
 {
-    char *payload = malloc(PROGRAM_FILE_SIZE);
+    char *payload = malloc(CONFIG_NEXTION_PROGRAM_FILE_SIZE);
     if (!payload) {
         return;
     }
-    memset(payload, 0, PROGRAM_FILE_SIZE);
-    if (!serialize_program_to_buffer(program_draft_get(), payload, PROGRAM_FILE_SIZE)) {
+    memset(payload, 0, CONFIG_NEXTION_PROGRAM_FILE_SIZE);
+    if (!serialize_program_to_buffer(program_draft_get(), payload, CONFIG_NEXTION_PROGRAM_FILE_SIZE)) {
         free(payload);
         return;
     }
@@ -415,101 +182,9 @@ static void sync_program_buffer(void)
     free(payload);
 }
 
-static void nextion_sync_task(void *arg)
-{
-    (void)arg;
-    do {
-        s_sync_pending = false;
-        sync_program_buffer();
-        vTaskDelay(pdMS_TO_TICKS(1));
-    } while (s_sync_pending);
-
-    s_sync_in_progress = false;
-    vTaskDelete(NULL);
-}
-
-static void request_sync_program_buffer(void)
-{
-    s_sync_pending = true;
-    if (s_sync_in_progress) {
-        return;
-    }
-    s_sync_in_progress = true;
-    BaseType_t ok = xTaskCreate(nextion_sync_task, "prog_sync", 2048, NULL, 5, NULL);
-    if (ok != pdPASS) {
-        s_sync_in_progress = false;
-    }
-}
-
 static bool load_program_into_draft(const char *filename, char *error_msg, size_t error_len)
 {
-    if (!filename || filename[0] == '\0') {
-        snprintf(error_msg, error_len, "Invalid program name");
-        return false;
-    }
-
-    char path[128];
-    if (strstr(filename, ".")) {
-        snprintf(path, sizeof(path), "sd0/%s", filename);
-    } else {
-        snprintf(path, sizeof(path), "sd0/%s%s", filename, PROGRAM_FILE_EXTENSION);
-    }
-
-    char *file_data = malloc(PROGRAM_FILE_SIZE + 1);
-    if (!file_data) {
-        snprintf(error_msg, error_len, "Out of memory");
-        return false;
-    }
-
-    size_t file_len = 0;
-    if (!nextion_read_file(path, file_data, PROGRAM_FILE_SIZE + 1, &file_len)) {
-        free(file_data);
-        snprintf(error_msg, error_len, "Program read failed");
-        return false;
-    }
-
-    program_draft_clear();
-
-    char *line = strtok(file_data, "\n");
-    while (line) {
-        if (strncmp(line, "name=", 5) == 0) {
-            program_draft_set_name(line + 5);
-        } else if (strncmp(line, "stage=", 6) == 0) {
-            int stage = 0;
-            int t_min = 0;
-            int target = 0;
-            int t_delta = 0;
-            int delta_x10 = 0;
-            if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta, &delta_x10) == 5) {
-                program_draft_set_stage((uint8_t)stage,
-                                        t_min,
-                                        target,
-                                        t_delta,
-                                        delta_x10,
-                                        true,
-                                        true,
-                                        true,
-                                        true);
-            } else {
-                int delta = 0;
-                if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta, &delta) == 5) {
-                    program_draft_set_stage((uint8_t)stage,
-                                            t_min,
-                                            target,
-                                            t_delta,
-                                            delta * 10,
-                                            true,
-                                            true,
-                                            true,
-                                            true);
-                }
-            }
-        }
-        line = strtok(NULL, "\n");
-    }
-
-    free(file_data);
-    return true;
+    return nextion_storage_parse_file_to_draft(filename, error_msg, error_len);
 }
 
 static void programs_page_apply(uint8_t page)
@@ -659,17 +334,10 @@ static bool parse_decimal_x10(const char *text, int *out_value_x10)
     return true;
 }
 
-// Format x10 value as decimal string for display (15 -> "1.5", 30 -> "3.0")
+// Format x10 value — delegates to shared helper from program_validation
 static void format_delta_x10(int val_x10, char *buf, size_t buf_len)
 {
-    int whole = val_x10 / 10;
-    int frac = val_x10 % 10;
-    if (frac < 0) frac = -frac;
-    if (val_x10 < 0 && whole == 0) {
-        snprintf(buf, buf_len, "-0.%d", frac);
-    } else {
-        snprintf(buf, buf_len, "%d.%d", whole, frac);
-    }
+    format_x10_value(val_x10, buf, buf_len);
 }
 
 static char *trim_in_place(char *text)
@@ -862,7 +530,7 @@ static void handle_save_prog(const char *payload)
 
         // Default t_delta if not set
         if (!t_delta_set) {
-            t_delta = CONFIG_T_DELTA_MIN_MIN;
+            t_delta = CONFIG_NEXTION_T_DELTA_MIN_MIN;
             t_delta_set = true;
         }
 
@@ -882,36 +550,27 @@ static void handle_save_prog(const char *payload)
         }
     }
 
-    request_sync_program_buffer();
+    sync_program_buffer();
 
     // Validate the full draft (includes mathematical consistency checks)
     char error_msg[64];
-    AppConfig effective = config_get_effective();
 
-    if (!program_validate_draft(program_draft_get(), &effective, error_msg, sizeof(error_msg))) {
+    if (!program_validate_draft_with_temp(program_draft_get(), program_get_current_temp_c(),
+                                         error_msg, sizeof(error_msg))) {
         nextion_show_error(error_msg);
         return;
     }
 
-    // Save to SD
-    ProgramDraft *draft_copy = malloc(sizeof(ProgramDraft));
-    if (!draft_copy) {
-        nextion_show_error("Save failed: no memory");
-        return;
+    // Save to SD (runs inline on coordinator task — no concurrent access)
+    char save_error[64];
+    if (!nextion_storage_save_program(program_draft_get(), s_original_program_name, save_error, sizeof(save_error))) {
+        nextion_show_error(save_error);
+    } else {
+        nextion_clear_error();
+        strncpy(s_original_program_name, program_draft_get()->name, sizeof(s_original_program_name) - 1);
+        s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
+        LOGGER_LOG_INFO(TAG, "Program draft validated and saved to SD");
     }
-    *draft_copy = *program_draft_get();
-
-    SaveTaskArgs *args = malloc(sizeof(SaveTaskArgs));
-    if (!args) {
-        free(draft_copy);
-        nextion_show_error("Save failed: no memory");
-        return;
-    }
-    args->draft = draft_copy;
-    strncpy(args->original_name, s_original_program_name, sizeof(args->original_name) - 1);
-    args->original_name[sizeof(args->original_name) - 1] = '\0';
-
-    xTaskCreate(nextion_save_task, "prog_save", 4096, args, 5, NULL);
 }
 
 static void handle_show_graph(const char *payload)
@@ -1014,7 +673,7 @@ static void handle_show_graph(const char *payload)
         }
 
         if (!t_delta_set) {
-            t_delta = CONFIG_T_DELTA_MIN_MIN;
+            t_delta = CONFIG_NEXTION_T_DELTA_MIN_MIN;
             t_delta_set = true;
         }
 
@@ -1036,16 +695,16 @@ static void handle_show_graph(const char *payload)
 
     // Clear and render using full draft
     char cmd[64];
-    snprintf(cmd, sizeof(cmd), "cle %d,0", NEXTION_PROGRAMS_GRAPH_ID);
+    snprintf(cmd, sizeof(cmd), "cle %d,0", CONFIG_NEXTION_PROGRAMS_GRAPH_ID);
     nextion_send_cmd(cmd);
 
-    uint8_t *samples = malloc(PROGRAMS_GRAPH_WIDTH);
+    uint8_t *samples = malloc(CONFIG_NEXTION_PROGRAMS_GRAPH_WIDTH);
     if (!samples) {
         nextion_show_error("Graph: out of memory");
         return;
     }
 
-    size_t count = program_build_graph(program_draft_get(), samples, PROGRAMS_GRAPH_WIDTH, PROGRAMS_GRAPH_HEIGHT, CONFIG_MAX_TEMPERATURE_C, program_get_current_temp_c());
+    size_t count = program_build_graph(program_draft_get(), samples, CONFIG_NEXTION_PROGRAMS_GRAPH_WIDTH, CONFIG_NEXTION_PROGRAMS_GRAPH_HEIGHT, CONFIG_NEXTION_MAX_TEMPERATURE_C, program_get_current_temp_c());
     if (count == 0) {
         nextion_show_error("Graph: no data to render");
         free(samples);
@@ -1053,7 +712,7 @@ static void handle_show_graph(const char *payload)
     }
 
     for (size_t i = 0; i < count; ++i) {
-        snprintf(cmd, sizeof(cmd), "add %d,0,%u", NEXTION_PROGRAMS_GRAPH_ID, (unsigned)samples[i]);
+        snprintf(cmd, sizeof(cmd), "add %d,0,%u", CONFIG_NEXTION_PROGRAMS_GRAPH_ID, (unsigned)samples[i]);
         nextion_send_cmd(cmd);
         if ((i % 64) == 0) {
             vTaskDelay(pdMS_TO_TICKS(1));
@@ -1095,9 +754,6 @@ static void handle_autofill(const char *payload)
         nextion_show_error(err);
         return;
     }
-
-    // Get effective config for limits
-    AppConfig config = config_get_effective();
 
     // Get current temperature as starting point
     int current_temp = program_get_current_temp_c();
@@ -1161,8 +817,7 @@ static void handle_autofill(const char *payload)
         }
 
         // Validate target temp against config
-        if (target_t > config.max_temperature_c) {
-            snprintf(error_msg, sizeof(error_msg), "Stage %d: Temp max is %d", stage_num, config.max_temperature_c);
+        if (!validate_temp_in_range(target_t, stage_num, error_msg, sizeof(error_msg))) {
             any_error = true;
             continue;
         }
@@ -1193,16 +848,7 @@ static void handle_autofill(const char *payload)
             }
             
             // Validate delta_t against config limits
-            char delta_buf[16];
-            if (delta_t_x10 > config.delta_t_max_per_min_x10) {
-                format_delta_x10(config.delta_t_max_per_min_x10, delta_buf, sizeof(delta_buf));
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Delta T max is %s", stage_num, delta_buf);
-                any_error = true;
-                continue;
-            }
-            if (delta_t_x10 < config.delta_t_min_per_min_x10) {
-                format_delta_x10(config.delta_t_min_per_min_x10, delta_buf, sizeof(delta_buf));
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Delta T min is %s", stage_num, delta_buf);
+            if (!validate_delta_t_in_range(delta_t_x10, stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
                 continue;
             }
@@ -1214,9 +860,7 @@ static void handle_autofill(const char *payload)
             if (calc_time < 1) calc_time = 1;  // Minimum 1 minute
             
             // Validate calculated time against config
-            if (calc_time > config.max_operational_time_min) {
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Calc time %d > max %d", 
-                    stage_num, calc_time, config.max_operational_time_min);
+            if (!validate_time_in_range(calc_time, stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
                 continue;
             }
@@ -1231,16 +875,8 @@ static void handle_autofill(const char *payload)
         // Case 2: Have target + time, calculate delta_T
         // delta_t_x10 = temp_diff_x10 / t
         if (t_set && !delta_t_set) {
-            if (t_min <= 0) {
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Time must be > 0", stage_num);
-                any_error = true;
-                continue;
-            }
-            
-            // Validate time against config
-            if (t_min > config.max_operational_time_min) {
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Time max is %d", 
-                    stage_num, config.max_operational_time_min);
+            // Validate time input
+            if (!validate_time_in_range(t_min, stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
                 continue;
             }
@@ -1249,25 +885,13 @@ static void handle_autofill(const char *payload)
             int calc_delta_x10 = temp_diff_x10 / t_min;
             
             // Validate calculated delta_t against config limits
-            char delta_buf[16];
-            if (calc_delta_x10 > config.delta_t_max_per_min_x10) {
-                int min_time = temp_diff_x10 / config.delta_t_max_per_min_x10;
-                if (min_time < 0) min_time = -min_time;
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Need >= %d min at max dT", 
-                    stage_num, min_time);
-                any_error = true;
-                continue;
-            }
-            if (calc_delta_x10 < config.delta_t_min_per_min_x10) {
-                int min_time = temp_diff_x10 / config.delta_t_min_per_min_x10;
-                if (min_time < 0) min_time = -min_time;
-                snprintf(error_msg, sizeof(error_msg), "Stage %d: Need >= %d min at min dT", 
-                    stage_num, min_time);
+            if (!validate_delta_t_in_range(calc_delta_x10, stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
                 continue;
             }
             
             // Format as decimal for display
+            char delta_buf[16];
             format_delta_x10(calc_delta_x10, delta_buf, sizeof(delta_buf));
             snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"%s\"", (unsigned)field_num, delta_buf);
             nextion_send_cmd(cmd);
@@ -1316,25 +940,25 @@ static void handle_nav_event(const char *destination)
         program_draft_clear();
         s_programs_page = 1;
         s_graph_visible = false;
-        nextion_send_cmd("page " NEXTION_PAGE_PROGRAMS);
+        nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
         return;
     }
 
     if (strcmp(destination, "main") == 0) {
-        nextion_send_cmd("page " NEXTION_PAGE_MAIN);
+        nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
         vTaskDelay(pdMS_TO_TICKS(30));
         update_main_status();
         return;
     }
 
     if (strcmp(destination, "settings") == 0) {
-        nextion_send_cmd("page " NEXTION_PAGE_SETTINGS);
+        nextion_send_cmd("page " CONFIG_NEXTION_PAGE_SETTINGS);
         vTaskDelay(pdMS_TO_TICKS(50));  // Wait for page to load
         handle_settings_init();
         return;
     }
 
-    ESP_LOGW(TAG, "Unknown nav destination: %s", destination);
+    LOGGER_LOG_WARN(TAG, "Unknown nav destination: %s", destination);
 }
 
 void nextion_update_main_status(void)
@@ -1342,42 +966,49 @@ void nextion_update_main_status(void)
     update_main_status();
 }
 
+void nextion_event_handle_init(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(500));
+    nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
+    vTaskDelay(pdMS_TO_TICKS(30));
+    update_main_status();
+}
+
 // Handle settings page init: send config and user config values to HMI
 static void handle_settings_init(void)
 {
     char cmd[64];
-    AppConfig cfg = config_get_defaults();
 
     // Send hardware/safety limits (read-only cfg_* fields)
-    snprintf(cmd, sizeof(cmd), "cfg_t.txt=\"%d\"", cfg.max_operational_time_min);
+    snprintf(cmd, sizeof(cmd), "cfg_t.txt=\"%d\"", CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN);
     nextion_send_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cfg_Tmax.txt=\"%d\"", cfg.max_temperature_c);
+    snprintf(cmd, sizeof(cmd), "cfg_Tmax.txt=\"%d\"", CONFIG_NEXTION_MAX_TEMPERATURE_C);
     nextion_send_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cfg_dt.txt=\"%d\"", cfg.sensor_read_frequency_sec);
+    snprintf(cmd, sizeof(cmd), "cfg_dt.txt=\"%d\"", CONFIG_NEXTION_SENSOR_READ_FREQUENCY_SEC);
     nextion_send_cmd(cmd);
     // Format delta_t_max as decimal (x10 value)
     char delta_max_buf[16];
-    format_delta_x10(cfg.delta_t_max_per_min_x10, delta_max_buf, sizeof(delta_max_buf));
+    format_delta_x10(CONFIG_NEXTION_DELTA_T_MAX_PER_MIN_X10, delta_max_buf, sizeof(delta_max_buf));
     snprintf(cmd, sizeof(cmd), "cfg_dTmax.txt=\"%s\"", delta_max_buf);
     nextion_send_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cfg_Power.txt=\"%d\"", cfg.power_kw);
+    snprintf(cmd, sizeof(cmd), "cfg_Power.txt=\"%d\"", CONFIG_NEXTION_HEATER_POWER_KW);
     nextion_send_cmd(cmd);
 
     // Note: Time fields are populated by Nextion from its built-in RTC in preinit
 
-    ESP_LOGI(TAG, "Settings init sent");
+    LOGGER_LOG_INFO(TAG, "Settings init sent");
 }
 
 // Handle save settings: RTC time/date only (user config removed)
 static void handle_save_settings(const char *payload)
 {
     if (!payload) {
-        ESP_LOGE(TAG, "save_settings: payload is NULL");
+        LOGGER_LOG_ERROR(TAG, "save_settings: payload is NULL");
         return;
     }
 
-    ESP_LOGI(TAG, "save_settings raw payload: [%s]", payload);
-    ESP_LOGI(TAG, "save_settings payload length: %d", (int)strlen(payload));
+    LOGGER_LOG_INFO(TAG, "save_settings raw payload: [%s]", payload);
+    LOGGER_LOG_INFO(TAG, "save_settings payload length: %d", (int)strlen(payload));
 
     // Payload format: timeDirty,dateDirty,hour,min,sec,day,month,year
     char buffer[256];
@@ -1394,9 +1025,9 @@ static void handle_save_settings(const char *payload)
         cursor = comma ? comma + 1 : NULL;
     }
 
-    ESP_LOGI(TAG, "save_settings token_count: %d", (int)token_count);
+    LOGGER_LOG_INFO(TAG, "save_settings token_count: %d", (int)token_count);
     for (size_t i = 0; i < token_count; i++) {
-        ESP_LOGI(TAG, "  token[%d]: [%s]", (int)i, tokens[i] ? tokens[i] : "NULL");
+        LOGGER_LOG_INFO(TAG, "  token[%d]: [%s]", (int)i, tokens[i] ? tokens[i] : "NULL");
     }
 
     if (token_count < 8) {
@@ -1431,7 +1062,7 @@ static void handle_save_settings(const char *payload)
         nextion_send_cmd(cmd);
         snprintf(cmd, sizeof(cmd), "rtc5=%d", sec);
         nextion_send_cmd(cmd);
-        ESP_LOGI(TAG, "Nextion RTC time set to %02d:%02d:%02d", hour, min, sec);
+        LOGGER_LOG_INFO(TAG, "Nextion RTC time set to %02d:%02d:%02d", hour, min, sec);
     }
 
     // Update RTC date if user edited date fields
@@ -1447,11 +1078,11 @@ static void handle_save_settings(const char *payload)
         nextion_send_cmd(cmd);
         snprintf(cmd, sizeof(cmd), "rtc2=%d", day);
         nextion_send_cmd(cmd);
-        ESP_LOGI(TAG, "Nextion RTC date set to %04d-%02d-%02d", year, month, day);
+        LOGGER_LOG_INFO(TAG, "Nextion RTC date set to %04d-%02d-%02d", year, month, day);
     }
 
     if (!time_dirty && !date_dirty) {
-        ESP_LOGI(TAG, "Settings saved (time/date unchanged)");
+        LOGGER_LOG_INFO(TAG, "Settings saved (time/date unchanged)");
     }
 
     nextion_clear_error();
@@ -1541,7 +1172,7 @@ static void handle_prog_page_data(const char *payload)
         }
 
         if (!t_delta_set) {
-            t_delta = CONFIG_T_DELTA_MIN_MIN;
+            t_delta = CONFIG_NEXTION_T_DELTA_MIN_MIN;
         }
 
         program_draft_set_stage(stage_num,
@@ -1562,8 +1193,8 @@ static void handle_prog_page_data(const char *payload)
         programs_page_apply((uint8_t)(s_programs_page + 1));
     }
 
-    // Then sync the buffer in background
-    request_sync_program_buffer();
+    // Sync the buffer
+    sync_program_buffer();
 }
 
 static void handle_add_prog(void)
@@ -1572,11 +1203,11 @@ static void handle_add_prog(void)
     program_draft_clear();
     s_programs_page = 1;
     s_graph_visible = false;
-    nextion_send_cmd("page " NEXTION_PAGE_PROGRAMS);
+    nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
     vTaskDelay(pdMS_TO_TICKS(30));
     programs_page_apply(1);
     nextion_send_cmd("progNameInput.txt=\"\"");
-    request_sync_program_buffer();
+    sync_program_buffer();
 }
 
 static void handle_delete_prog(const char *current_name)
@@ -1597,7 +1228,7 @@ static void handle_delete_prog(const char *current_name)
     // Show confirmation dialog - use escaped quotes for Nextion string
     char cmd[96];
     snprintf(cmd, sizeof(cmd), "confirmTxt.txt=\"Delete \\\"%.26s\\\"?\"", s_original_program_name);
-    ESP_LOGI(TAG, "Delete confirm cmd: %s", cmd);
+    LOGGER_LOG_INFO(TAG, "Delete confirm cmd: %s", cmd);
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_send_cmd("vis confirmBdy,1");
@@ -1630,7 +1261,7 @@ static void handle_confirm_delete(void)
     s_programs_page = 1;
     programs_page_apply(1);
     nextion_send_cmd("progNameInput.txt=\"\"");
-    request_sync_program_buffer();
+    sync_program_buffer();
 }
 
 static void handle_edit_prog(const char *payload)
@@ -1639,24 +1270,52 @@ static void handle_edit_prog(const char *payload)
         return;
     }
 
-    EditTaskArgs *args = malloc(sizeof(EditTaskArgs));
-    if (!args) {
-        nextion_show_error("Out of memory");
+    char name[64];
+    strncpy(name, payload, sizeof(name) - 1);
+    name[sizeof(name) - 1] = '\0';
+    char *trimmed = trim_in_place(name);
+    if (trimmed != name) {
+        memmove(name, trimmed, strlen(trimmed) + 1);
+    }
+
+    if (name[0] == '\0') {
+        nextion_show_error("No program selected");
         return;
     }
 
-    strncpy(args->name, payload, sizeof(args->name) - 1);
-    args->name[sizeof(args->name) - 1] = '\0';
-    char *trimmed = trim_in_place(args->name);
-    if (trimmed != args->name) {
-        memmove(args->name, trimmed, strlen(trimmed) + 1);
+    char path[128];
+    if (strstr(name, ".")) {
+        snprintf(path, sizeof(path), "sd0/%s", name);
+    } else {
+        snprintf(path, sizeof(path), "sd0/%s%s", name, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
     }
 
-    BaseType_t ok = xTaskCreate(nextion_edit_task, "prog_edit", 8192, args, 5, NULL);
-    if (ok != pdPASS) {
-        free(args);
-        nextion_show_error("Edit task create failed");
+    if (!nextion_file_exists(path)) {
+        nextion_show_error("Program not found");
+        return;
     }
+
+    char error_msg[64];
+    if (!load_program_into_draft(name, error_msg, sizeof(error_msg))) {
+        nextion_show_error(error_msg);
+        return;
+    }
+
+    // Store original name to allow overwriting only this file
+    strncpy(s_original_program_name, program_draft_get()->name, sizeof(s_original_program_name) - 1);
+    s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
+    s_programs_page = 1;
+    s_graph_visible = false;
+
+    nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
+    vTaskDelay(pdMS_TO_TICKS(30));
+    programs_page_apply(1);
+
+    char cmd[96];
+    snprintf(cmd, sizeof(cmd), "progNameInput.txt=\"%s\"", program_draft_get()->name);
+    nextion_send_cmd(cmd);
+
+    sync_program_buffer();
 }
 
 static void handle_program_select(const char *filename)
@@ -1677,18 +1336,61 @@ static void handle_program_select(const char *filename)
         return;
     }
 
-    char *copy = malloc(name_len + 1);
-    if (!copy) {
+    LOGGER_LOG_INFO(TAG, "Program load: %s", filename);
+
+    char error_msg[64];
+    if (!nextion_storage_parse_file_to_draft(filename, error_msg, sizeof(error_msg))) {
+        nextion_show_error(error_msg);
+        return;
+    }
+
+    const ProgramDraft *parsed = program_draft_get();
+    char cmd[96];
+    snprintf(cmd, sizeof(cmd), "progNameDisp.txt=\"%s\"", parsed->name);
+    nextion_send_cmd(cmd);
+
+    int total_time = 0;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        const ProgramStage *stage = &parsed->stages[i];
+        if (!stage->is_set) {
+            continue;
+        }
+        total_time += stage->t_min;
+    }
+
+    LOGGER_LOG_INFO(TAG, "Program parsed: name=%s time=%d", parsed->name, total_time);
+
+    snprintf(cmd, sizeof(cmd), "timeElapsed.txt=\"0\"");
+    nextion_send_cmd(cmd);
+    snprintf(cmd, sizeof(cmd), "timeRamaining.txt=\"%d\"", total_time);
+    nextion_send_cmd(cmd);
+
+    // Allocate graph samples on heap
+    uint8_t *samples = malloc(CONFIG_NEXTION_PROGRAMS_GRAPH_WIDTH);
+    if (!samples) {
         nextion_show_error("Out of memory");
         return;
     }
-    memcpy(copy, filename, name_len);
-    copy[name_len] = '\0';
-    BaseType_t ok = xTaskCreate(nextion_program_load_task, "prog_load", 8192, copy, 5, NULL);
-    if (ok != pdPASS) {
-        free(copy);
-        nextion_show_error("Load task create failed");
+
+    size_t count = program_build_graph(parsed, samples, CONFIG_NEXTION_PROGRAMS_GRAPH_WIDTH, CONFIG_NEXTION_MAIN_GRAPH_WIDTH, CONFIG_NEXTION_MAX_TEMPERATURE_C, program_get_current_temp_c());
+    if (count == 0) {
+        nextion_show_error("Graph build failed");
+        free(samples);
+        return;
     }
+
+    snprintf(cmd, sizeof(cmd), "cle %d,0", CONFIG_NEXTION_GRAPH_DISP_ID);
+    nextion_send_cmd(cmd);
+    for (size_t i = 0; i < count; ++i) {
+        snprintf(cmd, sizeof(cmd), "add %d,0,%u", CONFIG_NEXTION_GRAPH_DISP_ID, (unsigned)samples[i]);
+        nextion_send_cmd(cmd);
+        if ((i % 64) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
+    free(samples);
+    sync_program_buffer();
 }
 
 void nextion_event_handle_line(const char *line)
@@ -1731,7 +1433,7 @@ void nextion_event_handle_line(const char *line)
 
     const char *prog_sel = strstr(clean, "prog_select:");
     if (prog_sel) {
-        ESP_LOGI(TAG, "Program select raw: %s", prog_sel + 12);
+        LOGGER_LOG_INFO(TAG, "Program select raw: %s", prog_sel + 12);
         handle_program_select(prog_sel + 12);
         return;
     }
@@ -1811,5 +1513,109 @@ void nextion_event_handle_line(const char *line)
         return;
     }
 
-    ESP_LOGI(TAG, "Unhandled Nextion line: %s", clean);
+    LOGGER_LOG_INFO(TAG, "Unhandled Nextion line: %s", clean);
+}
+
+/* ── Phase 4: event-driven display handlers ────────────────────────
+ *
+ * These are called from the HMI coordinator task (never from the
+ * event-loop task), so they are fully serialized with line handlers
+ * and can safely touch shared state and send Nextion commands.
+ * ----------------------------------------------------------------- */
+
+void nextion_event_handle_temp_update(float temperature, bool valid)
+{
+    if (!valid) {
+        return;
+    }
+
+    int temp_c = (int)(temperature + 0.5f);
+    program_set_current_temp_c(temp_c);
+
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "currentTemp.txt=\"%d\"", temp_c);
+    nextion_send_cmd(cmd);
+
+    // Live waveform: add measured-temp point on channel 1
+    if (s_waveform_active && s_waveform_x < (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH) {
+        // Scale temperature to graph pixel (0 = bottom, HEIGHT = top)
+        int y = 0;
+        if (CONFIG_NEXTION_MAX_TEMPERATURE_C > 0) {
+            y = (temp_c * CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) / CONFIG_NEXTION_MAX_TEMPERATURE_C;
+        }
+        if (y < 0) y = 0;
+        if (y > CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) y = CONFIG_NEXTION_MAIN_GRAPH_HEIGHT;
+
+        snprintf(cmd, sizeof(cmd), "add %d,1,%d",
+                 CONFIG_NEXTION_GRAPH_DISP_ID, y);
+        nextion_send_cmd(cmd);
+        s_waveform_x++;
+    }
+}
+
+void nextion_event_handle_profile_started(void)
+{
+    LOGGER_LOG_INFO(TAG, "Profile started — updating display");
+    nextion_send_cmd("progNameDisp.txt=\"Running\"");
+    nextion_clear_error();
+
+    // Compute total profile duration for waveform pacing
+    const ProgramDraft *draft = program_draft_get();
+    uint32_t total_min = 0;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        if (draft->stages[i].is_set) {
+            total_min += (uint32_t)draft->stages[i].t_min;
+        }
+    }
+    s_waveform_total_ms = total_min * 60U * 1000U;
+    s_waveform_x = 0;
+    s_waveform_active = true;
+
+    // Clear channel 1 (live measured temp) — channel 0 was pre-rendered
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "cle %d,1", CONFIG_NEXTION_GRAPH_DISP_ID);
+    nextion_send_cmd(cmd);
+}
+
+void nextion_event_handle_profile_paused(void)
+{
+    LOGGER_LOG_INFO(TAG, "Profile paused");
+    nextion_send_cmd("progNameDisp.txt=\"Paused\"");
+}
+
+void nextion_event_handle_profile_resumed(void)
+{
+    LOGGER_LOG_INFO(TAG, "Profile resumed");
+    nextion_send_cmd("progNameDisp.txt=\"Running\"");
+}
+
+void nextion_event_handle_profile_stopped(void)
+{
+    LOGGER_LOG_INFO(TAG, "Profile stopped");
+    nextion_send_cmd("progNameDisp.txt=\"Stopped\"");
+    s_waveform_active = false;
+}
+
+static const char *coordinator_error_to_str(coordinator_error_code_t code)
+{
+    switch (code) {
+        case COORDINATOR_ERROR_NONE:               return "Unknown error";
+        case COORDINATOR_ERROR_PROFILE_NOT_PAUSED:  return "Cannot pause";
+        case COORDINATOR_ERROR_PROFILE_NOT_RESUMED: return "Cannot resume";
+        case COORDINATOR_ERROR_PROFILE_NOT_STOPPED: return "Cannot stop";
+        case COORDINATOR_ERROR_NOT_STARTED:         return "Not started";
+        default:                                    return "System error";
+    }
+}
+
+void nextion_event_handle_profile_error(coordinator_error_code_t code,
+                                        esp_err_t esp_err)
+{
+    LOGGER_LOG_ERROR(TAG, "Profile error: code=%d esp_err=%s",
+                     (int)code, esp_err_to_name(esp_err));
+
+    char msg[96];
+    snprintf(msg, sizeof(msg), "%s (%s)",
+             coordinator_error_to_str(code), esp_err_to_name(esp_err));
+    nextion_show_error(msg);
 }

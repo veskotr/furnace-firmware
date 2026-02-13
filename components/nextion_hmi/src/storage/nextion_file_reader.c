@@ -1,12 +1,12 @@
-#include "nextion_file_reader.h"
+#include "nextion_file_reader_internal.h"
 
-#include "app_config.h"
-#include "nextion_transport.h"
+#include "sdkconfig.h"
+#include "nextion_transport_internal.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
-#include "esp_log.h"
+#include "logger_component.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -39,7 +39,7 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         return false;
     }
 
-    ESP_LOGI(TAG, "Reading file: %s (buffer: %u)", path, (unsigned)max_len);
+    LOGGER_LOG_INFO(TAG, "Reading file: %s (buffer: %u)", path, (unsigned)max_len);
 
     // Set file read active to bypass line buffering in RX task
     s_file_read_active = true;
@@ -48,7 +48,7 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
     vTaskDelay(pdMS_TO_TICKS(20));
 
     // Clear any pending UART data
-    uart_flush_input(NEXTION_UART_PORT);
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
     bool locked = false;
     nextion_uart_lock();
@@ -60,10 +60,10 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
     nextion_send_cmd(cmd);
 
     uint8_t size_buf[4] = {0};
-    int len = uart_read_bytes(NEXTION_UART_PORT, size_buf, 4, pdMS_TO_TICKS(2000));
+    int len = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, size_buf, 4, pdMS_TO_TICKS(CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS));
     
     if (len != 4) {
-        ESP_LOGW(TAG, "Failed to get file size, got %d bytes", len);
+        LOGGER_LOG_WARN(TAG, "Failed to get file size, got %d bytes", len);
         goto cleanup;
     }
 
@@ -72,21 +72,20 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
                          ((uint32_t)size_buf[2] << 16) |
                          ((uint32_t)size_buf[3] << 24);
 
-    ESP_LOGI(TAG, "File size: %u bytes", (unsigned)file_size);
+    LOGGER_LOG_INFO(TAG, "File size: %u bytes", (unsigned)file_size);
 
     if (file_size == 0 || file_size > max_len - 1) {
-        ESP_LOGW(TAG, "File size invalid or too large: %u (max %u)", 
+        LOGGER_LOG_WARN(TAG, "File size invalid or too large: %u (max %u)", 
                  (unsigned)file_size, (unsigned)(max_len - 1));
         goto cleanup;
     }
 
     // Step 2: Read file in chunks (Nextion serial buffer < 1024 bytes)
-    #define CHUNK_SIZE 512
     uint32_t offset = 0;
 
     while (offset < file_size) {
         uint32_t bytes_remaining = file_size - offset;
-        uint32_t chunk = (bytes_remaining > CHUNK_SIZE) ? CHUNK_SIZE : bytes_remaining;
+        uint32_t chunk = (bytes_remaining > CONFIG_NEXTION_FILE_READ_CHUNK_SIZE) ? CONFIG_NEXTION_FILE_READ_CHUNK_SIZE : bytes_remaining;
 
         // Request chunk
         snprintf(cmd, sizeof(cmd), "rdfile \"%s\",%u,%u,0", path, (unsigned)offset, (unsigned)chunk);
@@ -94,12 +93,12 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
 
         // Read chunk data
         size_t chunk_received = 0;
-        int timeout_ms = 2000;
+        int timeout_ms = CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS;
         int elapsed_ms = 0;
 
         while (chunk_received < chunk && elapsed_ms < timeout_ms) {
             size_t available = 0;
-            uart_get_buffered_data_len(NEXTION_UART_PORT, &available);
+            uart_get_buffered_data_len(CONFIG_NEXTION_UART_PORT_NUM, &available);
 
             if (available > 0) {
                 size_t to_read = available;
@@ -107,7 +106,7 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
                     to_read = chunk - chunk_received;
                 }
 
-                int rd = uart_read_bytes(NEXTION_UART_PORT, 
+                int rd = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, 
                                          (uint8_t *)out + total_received + chunk_received,
                                          to_read, pdMS_TO_TICKS(100));
                 if (rd > 0) {
@@ -121,7 +120,7 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         }
 
         if (chunk_received != chunk) {
-            ESP_LOGW(TAG, "Chunk read failed at offset %u: got %u of %u",
+            LOGGER_LOG_WARN(TAG, "Chunk read failed at offset %u: got %u of %u",
                      (unsigned)offset, (unsigned)chunk_received, (unsigned)chunk);
             goto cleanup;
         }
@@ -129,7 +128,7 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         total_received += chunk_received;
         offset += chunk;
 
-        ESP_LOGI(TAG, "Read chunk: %u/%u bytes", (unsigned)total_received, (unsigned)file_size);
+        LOGGER_LOG_INFO(TAG, "Read chunk: %u/%u bytes", (unsigned)total_received, (unsigned)file_size);
 
         // Small delay between chunks
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -145,7 +144,7 @@ cleanup:
         *out_len = total_received;
     }
 
-    ESP_LOGI(TAG, "File read complete: %u bytes", (unsigned)total_received);
+    LOGGER_LOG_INFO(TAG, "File read complete: %u bytes", (unsigned)total_received);
     return (total_received > 0);
 }
 
@@ -155,11 +154,11 @@ bool nextion_file_exists(const char *path)
         return false;
     }
 
-    ESP_LOGI(TAG, "Checking file: %s", path);
+    LOGGER_LOG_INFO(TAG, "Checking file: %s", path);
 
     s_file_read_active = true;
     vTaskDelay(pdMS_TO_TICKS(20));
-    uart_flush_input(NEXTION_UART_PORT);
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
     bool locked = false;
     nextion_uart_lock();
@@ -170,14 +169,14 @@ bool nextion_file_exists(const char *path)
     nextion_send_cmd(cmd);
 
     uint8_t resp_buf[8] = {0};
-    int len = uart_read_bytes(NEXTION_UART_PORT, resp_buf, sizeof(resp_buf), pdMS_TO_TICKS(2000));
+    int len = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, resp_buf, sizeof(resp_buf), pdMS_TO_TICKS(CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS));
 
     s_file_read_active = false;
 
-    ESP_LOGI(TAG, "File exists check: got %d bytes, first=0x%02X", len, len > 0 ? resp_buf[0] : 0);
+    LOGGER_LOG_INFO(TAG, "File exists check: got %d bytes, first=0x%02X", len, len > 0 ? resp_buf[0] : 0);
 
     if (len < 4) {
-        ESP_LOGW(TAG, "File exists check failed, got %d bytes", len);
+        LOGGER_LOG_WARN(TAG, "File exists check failed, got %d bytes", len);
         return false;
     }
 
