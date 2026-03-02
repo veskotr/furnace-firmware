@@ -2,7 +2,7 @@ menu "Display Configuration"
 
     config NEXTION_MAIN_GRAPH_WIDTH
         int "Main page graph width (px)"
-        default 1024
+        default 764
 
     config NEXTION_MAIN_GRAPH_HEIGHT
         int "Main page graph height (px)"
@@ -14,7 +14,7 @@ menu "Display Configuration"
 
     config NEXTION_PROGRAMS_GRAPH_HEIGHT
         int "Programs page graph height (px)"
-        default 450
+        default 449
 
     config NEXTION_GRAPH_DISP_ID
         int "Main graph Nextion component ID"
@@ -41,5 +41,19 @@ menu "Display Configuration"
     config NEXTION_PAGE_SETTINGS
         string "Settings page name"
         default "settings_page"
+
+    config NEXTION_HAS_WIFI
+        bool "Device has WiFi capability"
+        default n
+        help
+            Enable to show the WiFi configuration button and
+            website QR code on the settings page.
+
+    config NEXTION_HAS_BLUETOOTH
+        bool "Device has Bluetooth capability"
+        default n
+        help
+            Enable to show the Bluetooth configuration button
+            on the settings page.
 
 endmenu

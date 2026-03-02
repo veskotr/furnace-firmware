@@ -15,14 +15,14 @@ typedef struct
     bool is_completed;
     uint32_t current_time_elapsed_ms;
     uint32_t total_time_ms;
+    uint32_t stages_only_ms;          // Duration of heating stages (excl. cooldown)
     bool heating_element_on;
     bool fan_on;
 } heating_task_state_t;
 
 typedef struct
 {
-    const ProgramDraft *programs;   // Array of programs (ProgramDraft[])
-    size_t num_programs;
+    int _reserved;   // coordinator no longer needs init-time config
 } coordinator_config_t;
 
 #endif // COORDINATOR_COMPONENT_TYPES_H

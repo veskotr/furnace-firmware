@@ -12,6 +12,12 @@
 #define NEXTION_CMD_TERMINATOR       0xFF
 #define NEXTION_CMD_TERMINATOR_COUNT 3
 
+static const uint8_t s_cmd_terminator[NEXTION_CMD_TERMINATOR_COUNT] = {
+    NEXTION_CMD_TERMINATOR,
+    NEXTION_CMD_TERMINATOR,
+    NEXTION_CMD_TERMINATOR,
+};
+
 static const char *TAG = "nextion_transport";
 static SemaphoreHandle_t s_uart_mutex = NULL;
 
@@ -55,13 +61,7 @@ void nextion_send_cmd(const char *cmd)
 
     nextion_uart_lock();
     uart_write_bytes(CONFIG_NEXTION_UART_PORT_NUM, cmd, (size_t)strlen(cmd));
-
-    const uint8_t terminator[NEXTION_CMD_TERMINATOR_COUNT] = {
-        NEXTION_CMD_TERMINATOR,
-        NEXTION_CMD_TERMINATOR,
-        NEXTION_CMD_TERMINATOR,
-    };
-    nextion_send_raw(terminator, sizeof(terminator));
+    uart_write_bytes(CONFIG_NEXTION_UART_PORT_NUM, (const char *)s_cmd_terminator, NEXTION_CMD_TERMINATOR_COUNT);
     nextion_uart_unlock();
 }
 

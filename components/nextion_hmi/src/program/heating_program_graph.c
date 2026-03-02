@@ -1,6 +1,7 @@
 #include "heating_program_graph_internal.h"
 
-#include <math.h>
+#include "sdkconfig.h"
+#include <string.h>
 
 static uint8_t clamp_u8(int value)
 {
@@ -19,76 +20,94 @@ size_t program_build_graph(const ProgramDraft *draft, uint8_t *out, size_t max_l
         return 0;
     }
 
-    int current_temp = start_temp_c;
-    size_t total_points = 0;
+    memset(out, 0, max_len);
 
-    // count total points needed
+    /*
+     * Build keypoints: each active stage adds one (cumulative_time, temperature)
+     * entry.  The first keypoint is the starting condition at time 0.
+     */
+    float kp_time[PROGRAMS_TOTAL_STAGE_COUNT + 2];  /* +2: start + cooldown */
+    float kp_temp[PROGRAMS_TOTAL_STAGE_COUNT + 2];
+    int   n_keys = 0;
+
+    kp_time[0] = 0.0f;
+    kp_temp[0] = (float)start_temp_c;
+    n_keys = 1;
+
+    float total_time = 0.0f;
+
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
         const ProgramStage *stage = &draft->stages[i];
         if (!stage->is_set || !stage->t_set || !stage->target_set) {
             continue;
         }
-
-        int steps = stage->t_delta_min > 0 ? (stage->t_min / stage->t_delta_min) : stage->t_min;
-        if (steps <= 0) {
-            steps = 1;
-        }
-        total_points += (size_t)steps;
-        current_temp = stage->target_t_c;
+        total_time += (float)stage->t_min;
+        kp_time[n_keys] = total_time;
+        kp_temp[n_keys] = (float)stage->target_t_c;
+        n_keys++;
     }
 
-    if (total_points == 0) {
+    if (n_keys <= 1 || total_time <= 0.0f) {
         return 0;
     }
 
-    float scale = (total_points > (size_t)width_px) ? ((float)total_points / (float)width_px) : 1.0f;
-
-    current_temp = start_temp_c;
-    size_t out_count = 0;
-    size_t point_index = 0;
-
-    // plot points
-    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
-        if (!stage->is_set || !stage->t_set || !stage->target_set) {
-            continue;
+    /*
+     * Implicit cooldown stage: ramp from last temperature to 0 C.
+     * Duration is derived from the configured natural cooling rate.
+     */
+    float last_temp = kp_temp[n_keys - 1];
+    if (last_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
+        float cooldown_min = (last_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+        if (cooldown_min < 1.0f) {
+            cooldown_min = 1.0f;
         }
-
-        int steps = stage->t_delta_min > 0 ? (stage->t_min / stage->t_delta_min) : stage->t_min;
-        if (steps <= 0) {
-            steps = 1;
-        }
-
-        for (int s = 1; s <= steps; ++s) {
-            float progress = (float)s / (float)steps;
-            float temp = (float)current_temp + (float)(stage->target_t_c - current_temp) * progress;
-            int capped_temp = (int)temp;
-            if (capped_temp < 0) {
-                capped_temp = 0;
-            }
-            if (capped_temp > max_temp_c) {
-                capped_temp = max_temp_c;
-            }
-
-            size_t bucket = (size_t)((float)point_index / scale);
-            if (bucket >= (size_t)width_px) {
-                bucket = (size_t)width_px - 1;
-            }
-            if (bucket >= max_len) {
-                return out_count;
-            }
-
-            if (bucket >= out_count) {
-                out_count = bucket + 1;
-            }
-
-            int mapped = (int)((float)capped_temp * 255.0f / (float)max_temp_c);
-            out[bucket] = clamp_u8(mapped);
-            point_index++;
-        }
-
-        current_temp = stage->target_t_c;
+        total_time += cooldown_min;
+        kp_time[n_keys] = total_time;
+        kp_temp[n_keys] = 0.0f;
+        n_keys++;
     }
 
-    return out_count;
+    /* Output count is the full available width, clamped to buffer size. */
+    size_t count = (size_t)width_px;
+    if (count > max_len) {
+        count = max_len;
+    }
+
+    /*
+     * For every output pixel, compute the time it represents and linearly
+     * interpolate the temperature from the surrounding keypoints.  This
+     * always stretches (or compresses) the profile to fill the full width.
+     */
+    for (size_t x = 0; x < count; ++x) {
+        float t = (count > 1)
+                  ? (total_time * (float)x / (float)(count - 1))
+                  : 0.0f;
+
+        /* Find the segment this time falls into */
+        float temp_val = kp_temp[n_keys - 1]; /* default: last keypoint */
+        for (int k = 1; k < n_keys; ++k) {
+            if (t <= kp_time[k]) {
+                float seg_len = kp_time[k] - kp_time[k - 1];
+                float frac = (seg_len > 0.0f)
+                             ? ((t - kp_time[k - 1]) / seg_len)
+                             : 1.0f;
+                temp_val = kp_temp[k - 1]
+                         + (kp_temp[k] - kp_temp[k - 1]) * frac;
+                break;
+            }
+        }
+
+        int capped = (int)temp_val;
+        if (capped < 0) {
+            capped = 0;
+        }
+        if (capped > max_temp_c) {
+            capped = max_temp_c;
+        }
+
+        int mapped = (int)((float)capped * 255.0f / (float)max_temp_c);
+        out[x] = clamp_u8(mapped);
+    }
+
+    return count;
 }

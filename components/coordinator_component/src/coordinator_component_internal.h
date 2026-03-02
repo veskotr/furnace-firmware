@@ -2,6 +2,7 @@
 #define COORDINATOR_COMPONENT_INTERNAL_H
 
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "heating_program_types.h"
@@ -13,9 +14,10 @@ static const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
 typedef struct
 {
     TaskHandle_t task_handle;
+    esp_timer_handle_t pid_tick_timer;  // Periodic timer driving the PID control loop
 
-    const ProgramDraft *programs;  // Array of ProgramDraft[]
-    size_t num_programs;
+    ProgramDraft run_program;       // Copy of the program being executed
+    bool has_program;               // True after a program has been loaded
 
     bool running;
     bool paused;

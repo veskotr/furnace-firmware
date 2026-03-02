@@ -4,4 +4,9 @@ config RUN_INDICATOR_ENABLED
     bool "Enable run indicator"
     default y
 
+config RUN_INDICATOR_GPIO
+    int "Run Indicator GPIO Pin"
+    default 22
+    depends on RUN_INDICATOR_ENABLED
+
 endmenu

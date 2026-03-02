@@ -10,6 +10,10 @@
 #include "sdkconfig.h"
 #include "health_monitor.h"
 
+#ifdef CONFIG_MODBUS_TEMP_ENABLED
+#include "modbus_temp_monitor.h"
+#endif
+
 static const char* TAG = "main";
 
 void app_main(void)
@@ -22,6 +26,15 @@ void app_main(void)
                        return,
                        "Failed to initialize event registry");
 
+    bool sensors_available = false;
+
+#ifdef CONFIG_MODBUS_TEMP_ENABLED
+    /* ── MODBUS path: MS9024 provides temperature via RS485 ────────── */
+    LOGGER_LOG_WARN(TAG, "*** MODBUS temperature source (MS9024) ***");
+    LOGGER_LOG_WARN(TAG, "SPI temperature monitor and processor SKIPPED");
+    sensors_available = true;   /* MODBUS component posts events directly */
+#else
+    /* ── SPI path: MAX31865 thermocouples ──────────────────────────── */
     temp_monitor_config_t temp_monitor_config = {
         .number_of_attached_sensors = 5
     };
@@ -29,30 +42,41 @@ void app_main(void)
     if (temp_err != ESP_OK) {
         LOGGER_LOG_ERROR(TAG, "Failed to initialize temperature monitor: %s (continuing without sensors)",
                          esp_err_to_name(temp_err));
+    } else {
+        sensors_available = true;
     }
 
-    if (temp_err == ESP_OK) {
+    if (sensors_available) {
         CHECK_ERR_LOG_CALL(init_temp_processor(),
                            return,
                            "Failed to initialize temperature processor");
     } else {
         LOGGER_LOG_WARN(TAG, "Skipping temperature processor init (no sensors)");
     }
+#endif
 
-    size_t program_count = 0;
-    const ProgramDraft *programs = hmi_get_run_program(&program_count);
-    const coordinator_config_t coordinator_config = {
-        .programs = programs,
-        .num_programs = program_count
-    };
+    const coordinator_config_t coordinator_config = { 0 };
     CHECK_ERR_LOG_CALL(init_coordinator(&coordinator_config),
                        return,
                        "Failed to initialize coordinator");
 
-    if (temp_err == ESP_OK) {
+#ifdef CONFIG_MODBUS_TEMP_ENABLED
+    /* Start MODBUS monitor AFTER coordinator (needs event base ready) */
+    CHECK_ERR_LOG_CALL(modbus_temp_monitor_init(),
+                       return,
+                       "Failed to initialize MODBUS temperature monitor");
+#endif
+
+    if (sensors_available) {
+#ifndef CONFIG_MODBUS_TEMP_ENABLED
+        /* Health monitor expects heartbeats from temp_monitor/processor;
+           those don't exist in MODBUS mode, so only init for SPI path. */
         CHECK_ERR_LOG_CALL(init_health_monitor(),
                            return,
                            "Failed to initialize health monitor");
+#else
+        LOGGER_LOG_WARN(TAG, "Health monitor skipped in MODBUS mode (no temp_monitor heartbeats)");
+#endif
     } else {
         LOGGER_LOG_WARN(TAG, "Skipping health monitor init (temp sensors unavailable, WDT would trigger)");
     }

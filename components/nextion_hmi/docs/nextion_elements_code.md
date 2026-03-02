@@ -7,11 +7,15 @@ Nextion Elements Documentation
 Main Page
 
 - preinit
-	- Explanation: Hide error overlay.
+	- Explanation: Hide error overlay and confirmation dialog.
 	- Nextion code: Preinitialize Event
 		vis errTxtHead,0
 		vis errText,0
 		vis errTxtCloseB,0
+		vis confirmBdy,0
+		vis confirmTxt,0
+		vis confirmEnd,0
+		vis confirmCancel,0
 - progNameDisp
 	- Explanation: TODO
 	- Nextion code: TODO
@@ -111,27 +115,61 @@ Main Page
 - clockVar (Variable va1, type=string, txt_maxl=10, vscope=global)
 	- Explanation: Text buffer for clock/date timer formatting.
 	- Nextion code: None
+
 - startProgBtn
 	- Explanation: TODO
 	- Nextion code: Touch Release Event
 		prints "prog_start",0
 		printh 0d 0a
+
 - pauseProgB
 	- Explanation: TODO
 	- Nextion code: Touch Release Event
 		prints "prog_pause",0
 		printh 0d 0a
+
 - endProgBtn
-	- Explanation: TODO
+	- Explanation: Request program end. Shows confirmation dialog; ESP32 handles display.
 	- Nextion code: Touch Release Event
 		prints "prog_stop",0
 		printh 0d 0a
+
 - editProgBtn
 	- Explanation: Edit currently loaded program (allow overwrite).
 	- Nextion code: Touch Release Event
 		prints "edit_prog:",0
 		prints progNameDisp.txt,0
 		printh 0d 0a
+
+- graphBorder
+	- Explanation: Visual element to border the graph.
+	- Nextion code: None
+
+- machineState
+	- Explanation: Displays current machine state like program running or loading file.
+	- Nextion code: None
+
+- confirmBdy
+	- Explanation: Confirmation dialog background. Hidden on page entry. ESP32 shows on end program request.
+	- Nextion code: None (ESP32 controls visibility)
+
+- confirmTxt
+	- Explanation: Confirmation dialog message (max 36 chars). ESP32 sets to "End program? Can't resume.".
+	- Nextion code: None (ESP32 sets via confirmTxt.txt="...")
+
+- confirmEnd
+	- Explanation: Confirm end program button. Sends confirm_end to ESP32 which stops the profile and hides dialog.
+	- Nextion code: Touch Release Event
+		prints "confirm_end",0
+		printh 0d 0a
+
+- confirmCancel
+	- Explanation: Cancel button. Hides confirmation dialog locally without ESP32 involvement.
+	- Nextion code: Touch Release Event
+		vis confirmBdy,0
+		vis confirmTxt,0
+		vis confirmEnd,0
+		vis confirmCancel,0
 
 Settings Page
 
@@ -156,11 +194,15 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 	- Nextion code: None
 
 - preinit
-	- Explanation: Hide error overlay. Only populate time fields once per page visit (check timeInit flag).
+	- Explanation: Hide error overlay and optional connectivity elements. Only populate time fields once per page visit (check timeInit flag). ESP32 selectively shows websiteQr/wirelessCfgB/bluetoothCfgB via handle_settings_init() based on NEXTION_HAS_WIFI and NEXTION_HAS_BLUETOOTH Kconfig options.
 	- Nextion code: Preinitialize Event
 		vis errTxtHead,0
 		vis errText,0
 		vis errTxtCloseB,0
+		vis websiteQrHead,0
+		vis websiteQr,0
+		vis wirelessCfgB,0
+		vis bluetoothCfgB,0
 		// Only populate time fields on first preinit (page entry)
 		if(timeInit.val==0)
 		{
@@ -267,17 +309,20 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 	- Nextion code: Touch Press Event
 		dateDirty.val=1
 
+- websiteQrHead
+	- Explanation: QR code heading. Hidden on preinit; ESP32 shows via vis websiteQr,1 when CONFIG_NEXTION_HAS_WIFI is enabled.
+	- Nextion code: None (ESP32 controls visibility)
 - websiteQr
-	- Explanation: QR code for website. Static display element.
-	- Nextion code: None
+	- Explanation: QR code for website. Hidden on preinit; ESP32 shows via vis websiteQr,1 when CONFIG_NEXTION_HAS_WIFI is enabled.
+	- Nextion code: None (ESP32 controls visibility)
 
 - wirelessCfgB
-	- Explanation: WiFi configuration button. TODO: future feature.
-	- Nextion code: TODO
+	- Explanation: WiFi configuration button. Hidden on preinit; ESP32 shows via vis wirelessCfgB,1 when CONFIG_NEXTION_HAS_WIFI is enabled.
+	- Nextion code: TODO (future feature, button visible only when WiFi is available)
 
 - bluetoothCfgB
-	- Explanation: Bluetooth configuration button. TODO: future feature.
-	- Nextion code: TODO
+	- Explanation: Bluetooth configuration button. Hidden on preinit; ESP32 shows via vis bluetoothCfgB,1 when CONFIG_NEXTION_HAS_BLUETOOTH is enabled.
+	- Nextion code: TODO (future feature, button visible only when Bluetooth is available)
 
 Programs Page
 

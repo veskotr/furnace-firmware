@@ -1,4 +1,5 @@
 #include "temperature_profile_controller.h"
+#include "sdkconfig.h"
 #include "logger_component.h"
 #include <math.h>
 
@@ -69,7 +70,25 @@ profile_controller_error_t get_target_temperature_at_time(const uint32_t time_ms
         start_temp = (float)stage->target_t_c;
     }
 
-    return PROFILE_CONTROLLER_ERROR_TIME_EXCEEDS_PROFILE_DURATION;
+    /* Implicit cooldown: ramp from last stage temp to 0 C */
+    if (start_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
+        float cooldown_min = (start_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+        if (cooldown_min < 1.0f) {
+            cooldown_min = 1.0f;
+        }
+        uint32_t cooldown_ms = (uint32_t)(cooldown_min * 60.0f * 1000.0f);
+
+        if (time_ms <= elapsed_time + cooldown_ms) {
+            float t = (float)(time_ms - elapsed_time) / (float)cooldown_ms;
+            *temperature = start_temp * (1.0f - t);
+            return PROFILE_CONTROLLER_ERROR_NONE;
+        }
+        elapsed_time += cooldown_ms;
+    }
+
+    /* Past cooldown — hold at 0 */
+    *temperature = 0.0f;
+    return PROFILE_CONTROLLER_ERROR_NONE;
 }
 
 profile_controller_error_t shutdown_profile_controller(void)

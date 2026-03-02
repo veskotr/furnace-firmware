@@ -1,5 +1,6 @@
 #include "run_indicator.h"
 
+#include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "event_manager.h"
 #include "event_registry.h"
@@ -7,7 +8,7 @@
 #include "freertos/task.h"
 #include "logger_component.h"
 
-#define RUN_INDICATOR_GPIO GPIO_NUM_14
+#define RUN_INDICATOR_GPIO CONFIG_RUN_INDICATOR_GPIO
 
 static const char *TAG = "run_indicator";
 

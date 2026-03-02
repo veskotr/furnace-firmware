@@ -33,9 +33,11 @@ menu "UART Configuration"
 
     config NEXTION_LINE_BUF_SIZE
         int "Line buffer size for RX parsing (bytes)"
-        default 128
+        default 256
         help
             Maximum length of a single Nextion command/response line.
+            Must be large enough for the longest line the display
+            can send (prog_page_data with full stage data ~160 bytes).
 
     config NEXTION_UART_RESPONSE_TIMEOUT_MS
         int "UART response timeout (ms)"

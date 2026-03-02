@@ -44,7 +44,7 @@ static void sanitize_filename(const char *name, char *out, size_t out_len)
     out[idx] = '\0';
 }
 
-static bool serialize_program(const ProgramDraft *draft, char *out, size_t out_len)
+bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_len)
 {
     size_t used = 0;
     int written = snprintf(out, out_len, "name=%s\n", draft->name);
@@ -59,7 +59,6 @@ static bool serialize_program(const ProgramDraft *draft, char *out, size_t out_l
             continue;
         }
 
-        // Store delta_t as x10 integer for precision (15 = 1.5°C/min)
         written = snprintf(out + used, out_len - used, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d\n",
                            i + 1,
                            stage->t_min,
@@ -72,7 +71,7 @@ static bool serialize_program(const ProgramDraft *draft, char *out, size_t out_l
         used += (size_t)written;
     }
 
-    return used < CONFIG_NEXTION_PROGRAM_FILE_SIZE;
+    return used < out_len;
 }
 
 // twfile packet header constant
@@ -125,7 +124,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE];
     memset(payload, 0, sizeof(payload));  // Zero-fill to pad file
 
-    if (!serialize_program(draft, payload, sizeof(payload))) {
+    if (!nextion_serialize_program(draft, payload, sizeof(payload))) {
         set_error(error_msg, error_len, "Program too large");
         return false;
     }
@@ -164,7 +163,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
-    snprintf(cmd, sizeof(cmd), "twfile \"sd0/%s%s\",%u", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION, (unsigned)payload_len);
+    snprintf(cmd, sizeof(cmd), "twfile \"%s\",%u", path, (unsigned)payload_len);
     nextion_send_cmd(cmd);
 
     uint8_t resp[8];
@@ -228,7 +227,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
         if (resp[0] == 0xFD) {
             LOGGER_LOG_INFO(TAG, "Packet %u sent, transfer complete", pkt_id);
             offset = payload_len;
-            break;
+            goto cleanup;   /* 0xFD already received — skip second wait */
         }
 
         if (resp[0] != 0x05) {
@@ -248,6 +247,7 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     if (!(resp_len >= 1 && resp[0] == 0xFD)) {
         LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
+        set_error(error_msg, error_len, "twfile completion failed");
         success = false;
     }
 
@@ -310,7 +310,7 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
 bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, size_t error_len)
 {
     if (!filename || filename[0] == '\0') {
-        snprintf(error_msg, error_len, "Invalid program name");
+        set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
 
@@ -321,16 +321,11 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
         snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
     }
 
-    char *file_data = malloc(CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1);
-    if (!file_data) {
-        snprintf(error_msg, error_len, "Out of memory");
-        return false;
-    }
+    static char file_data[CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1];
 
     size_t file_len = 0;
     if (!nextion_read_file(path, file_data, CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1, &file_len)) {
-        free(file_data);
-        snprintf(error_msg, error_len, "Program read failed");
+        set_error(error_msg, error_len, "Program read failed");
         return false;
     }
 
@@ -378,6 +373,5 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
         line = strtok(NULL, "\n");
     }
 
-    free(file_data);
     return true;
 }

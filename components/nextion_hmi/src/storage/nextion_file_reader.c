@@ -15,20 +15,9 @@ static const char *TAG = "nextion_file_reader";
 
 static volatile bool s_file_read_active = false;
 
-void nextion_file_reader_init(void)
-{
-    // Nothing to init
-}
-
 bool nextion_file_reader_active(void)
 {
     return s_file_read_active;
-}
-
-void nextion_file_reader_feed(uint8_t byte)
-{
-    // Not used in direct UART read approach
-    (void)byte;
 }
 
 bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_len)
@@ -44,15 +33,12 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
     // Set file read active to bypass line buffering in RX task
     s_file_read_active = true;
 
-    // Small delay to let RX task notice and pause
-    vTaskDelay(pdMS_TO_TICKS(20));
-
-    // Clear any pending UART data
-    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
-
     bool locked = false;
     nextion_uart_lock();
     locked = true;
+
+    // Clear any pending UART data while we own the UART
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
     // Step 1: Get file size using rdfile with count=0
     char cmd[160];
@@ -129,9 +115,6 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         offset += chunk;
 
         LOGGER_LOG_INFO(TAG, "Read chunk: %u/%u bytes", (unsigned)total_received, (unsigned)file_size);
-
-        // Small delay between chunks
-        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
 cleanup:
@@ -156,13 +139,14 @@ bool nextion_file_exists(const char *path)
 
     LOGGER_LOG_INFO(TAG, "Checking file: %s", path);
 
-    s_file_read_active = true;
-    vTaskDelay(pdMS_TO_TICKS(20));
-    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
-
+    bool exists = false;
     bool locked = false;
+
+    s_file_read_active = true;
+
     nextion_uart_lock();
     locked = true;
+    uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
     char cmd[160];
     snprintf(cmd, sizeof(cmd), "rdfile \"%s\",0,0,0", path);
@@ -171,19 +155,17 @@ bool nextion_file_exists(const char *path)
     uint8_t resp_buf[8] = {0};
     int len = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, resp_buf, sizeof(resp_buf), pdMS_TO_TICKS(CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS));
 
-    s_file_read_active = false;
-
     LOGGER_LOG_INFO(TAG, "File exists check: got %d bytes, first=0x%02X", len, len > 0 ? resp_buf[0] : 0);
 
     if (len < 4) {
         LOGGER_LOG_WARN(TAG, "File exists check failed, got %d bytes", len);
-        return false;
+        goto cleanup;
     }
 
     // Nextion returns 0x06 + error code for file not found
     // or 0x05 for invalid variable/command
     if (resp_buf[0] == 0x06 || resp_buf[0] == 0x05 || resp_buf[0] == 0x04) {
-        return false;
+        goto cleanup;
     }
 
     // For successful read, first 4 bytes are the file size
@@ -193,8 +175,12 @@ bool nextion_file_exists(const char *path)
                          ((uint32_t)resp_buf[3] << 24);
 
     // If we got a valid size response, file exists
+    exists = file_size > 0;
+
+cleanup:
     if (locked) {
         nextion_uart_unlock();
     }
-    return file_size > 0;
+    s_file_read_active = false;
+    return exists;
 }

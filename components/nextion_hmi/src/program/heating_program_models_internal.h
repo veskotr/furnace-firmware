@@ -6,6 +6,7 @@
 
 #include "heating_program_models.h"
 
+void program_models_init(void);
 void program_draft_clear(void);
 void program_draft_set_name(const char *name);
 bool program_draft_set_stage(uint8_t stage_number,
@@ -18,7 +19,8 @@ bool program_draft_set_stage(uint8_t stage_number,
                              bool t_delta_set,
                              bool delta_t_set);
 void program_draft_clear_stage(uint8_t stage_number);
-const ProgramDraft *program_draft_get(void);
+void program_draft_get(ProgramDraft *out);
+const char *program_draft_get_name(void);
 void program_set_current_temp_c(int temp_c);
 int program_get_current_temp_c(void);
 void program_set_current_kw(int kw);

@@ -16,10 +16,12 @@ typedef enum {
 
     // --- Event-driven updates (Phase 4) ---
     HMI_CMD_TEMP_UPDATE,        // Temperature processor event → live temp display
+    HMI_CMD_STATUS_UPDATE,      // Coordinator: periodic status (time, power, temps)
     HMI_CMD_PROFILE_STARTED,    // Coordinator: profile execution started
     HMI_CMD_PROFILE_PAUSED,     // Coordinator: profile execution paused
     HMI_CMD_PROFILE_RESUMED,    // Coordinator: profile execution resumed
     HMI_CMD_PROFILE_STOPPED,    // Coordinator: profile execution stopped
+    HMI_CMD_PROFILE_COMPLETED,  // Coordinator: profile finished naturally
     HMI_CMD_PROFILE_ERROR,      // Coordinator: error occurred
 } hmi_cmd_type_t;
 
@@ -39,6 +41,13 @@ typedef struct {
             float average_temperature;               // HMI_CMD_TEMP_UPDATE
             bool valid;
         } temp;
+        struct {
+            float current_temperature;               // HMI_CMD_STATUS_UPDATE
+            float target_temperature;
+            float power_output;
+            uint32_t elapsed_ms;
+            uint32_t total_ms;
+        } status;
         struct {
             float current_temperature;               // HMI_CMD_PROFILE_*
             float target_temperature;

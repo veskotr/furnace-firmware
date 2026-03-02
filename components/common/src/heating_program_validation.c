@@ -4,7 +4,6 @@
 
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static void set_error(char *error_msg, size_t error_len, const char *msg)
@@ -272,13 +271,6 @@ bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_
     if (total_time < CONFIG_NEXTION_MIN_OPERATIONAL_TIME_MIN) {
         snprintf(error_msg, error_len, "Program time %d below min %d",
             total_time, CONFIG_NEXTION_MIN_OPERATIONAL_TIME_MIN);
-        return false;
-    }
-
-    // Final total time check (redundant but explicit)
-    if (total_time > CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN) {
-        snprintf(error_msg, error_len, "Program time %d exceeds max %d",
-            total_time, CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN);
         return false;
     }
 

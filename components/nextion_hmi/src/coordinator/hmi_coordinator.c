@@ -2,6 +2,9 @@
 
 #include "sdkconfig.h"
 #include "nextion_events_internal.h"
+#include "nextion_file_reader_internal.h"
+#include "nextion_storage_internal.h"
+#include "heating_program_models_internal.h"
 #include "logger_component.h"
 #include "event_manager.h"
 #include "event_registry.h"
@@ -13,6 +16,81 @@
 
 static const char *TAG = "hmi_coord";
 static QueueHandle_t s_cmd_queue = NULL;
+
+/* ── Deferred-send state ───────────────────────────────────────────
+ *
+ * While a file transfer (storage / file-reader) owns the UART we keep
+ * draining the command queue so it never fills up, but we skip all
+ * nextion_send_cmd() calls.  Instead we capture the latest snapshot
+ * of volatile data (temperature) and buffer the small number of
+ * critical events (profile state, errors) for replay once the UART
+ * is free again.
+ * ----------------------------------------------------------------- */
+
+/** Maximum critical events we can buffer during one file transfer. */
+#define DEFERRED_CRITICAL_MAX  8
+
+/** True while a file transfer is in progress and we are deferring. */
+static bool s_deferring = false;
+
+/** Latest temperature cached while deferring. */
+static struct {
+    float temperature;
+    bool  valid;
+    bool  pending;       /**< true if at least one update was deferred */
+} s_deferred_temp;
+
+/** Small ring of critical commands deferred during a transfer. */
+static hmi_cmd_t s_deferred_critical[DEFERRED_CRITICAL_MAX];
+static int       s_deferred_critical_count = 0;
+
+/** Check whether storage or file-reader currently owns the UART. */
+static bool uart_busy(void)
+{
+    return nextion_storage_active() || nextion_file_reader_active();
+}
+
+/** Replay all deferred work after a file transfer completes. */
+static void flush_deferred(void)
+{
+    /* 1. Replay critical events in order */
+    for (int i = 0; i < s_deferred_critical_count; i++) {
+        const hmi_cmd_t *c = &s_deferred_critical[i];
+        switch (c->type) {
+            case HMI_CMD_PROFILE_STARTED:
+                nextion_event_handle_profile_started();
+                break;
+            case HMI_CMD_PROFILE_PAUSED:
+                nextion_event_handle_profile_paused();
+                break;
+            case HMI_CMD_PROFILE_RESUMED:
+                nextion_event_handle_profile_resumed();
+                break;
+            case HMI_CMD_PROFILE_STOPPED:
+                nextion_event_handle_profile_stopped();
+                break;
+            case HMI_CMD_PROFILE_COMPLETED:
+                nextion_event_handle_profile_completed();
+                break;
+            case HMI_CMD_PROFILE_ERROR:
+                nextion_event_handle_profile_error(
+                    c->error.error_code, c->error.esp_error);
+                break;
+            default:
+                break;
+        }
+    }
+    s_deferred_critical_count = 0;
+
+    /* 2. Push the latest temperature reading (one send, not many) */
+    if (s_deferred_temp.pending) {
+        nextion_event_handle_temp_update(
+            s_deferred_temp.temperature, s_deferred_temp.valid);
+        s_deferred_temp.pending = false;
+    }
+
+    LOGGER_LOG_INFO(TAG, "Deferred commands flushed");
+}
 
 /* ── ESP event → HMI queue bridge handlers ─────────────────────── */
 // These run on the event_manager's event-loop task and simply serialize
@@ -68,6 +146,22 @@ static void coordinator_event_bridge(void *handler_arg, esp_event_base_t base,
             cmd.type = HMI_CMD_PROFILE_STOPPED;
             break;
 
+        case COORDINATOR_EVENT_PROFILE_COMPLETED:
+            cmd.type = HMI_CMD_PROFILE_COMPLETED;
+            break;
+
+        case COORDINATOR_EVENT_STATUS_UPDATE:
+            cmd.type = HMI_CMD_STATUS_UPDATE;
+            if (event_data) {
+                const coordinator_status_data_t *s = event_data;
+                cmd.status.current_temperature = s->current_temperature;
+                cmd.status.target_temperature  = s->target_temperature;
+                cmd.status.power_output        = s->power_output;
+                cmd.status.elapsed_ms          = s->elapsed_ms;
+                cmd.status.total_ms            = s->total_ms;
+            }
+            break;
+
         case COORDINATOR_EVENT_ERROR_OCCURRED:
             cmd.type = HMI_CMD_PROFILE_ERROR;
             if (event_data) {
@@ -94,10 +188,79 @@ static void hmi_coordinator_task(void *arg)
     hmi_cmd_t cmd;
 
     while (true) {
-        if (xQueueReceive(s_cmd_queue, &cmd, portMAX_DELAY) != pdTRUE) {
+        /*
+         * Use a short timeout instead of portMAX_DELAY so we can detect
+         * the transition from "UART busy" → "UART free" and flush
+         * any deferred work promptly.
+         */
+        BaseType_t got = xQueueReceive(s_cmd_queue, &cmd,
+                                        pdMS_TO_TICKS(50));
+
+        /* ── Check for deferral state transitions ─────────────────── */
+        bool busy = uart_busy();
+
+        if (busy && !s_deferring) {
+            /* Just entered a file transfer */
+            s_deferring = true;
+            s_deferred_temp.pending = false;
+            s_deferred_critical_count = 0;
+            LOGGER_LOG_INFO(TAG, "UART busy — deferring HMI commands");
+        } else if (!busy && s_deferring) {
+            /* File transfer just finished — replay deferred work */
+            s_deferring = false;
+            flush_deferred();
+        }
+
+        if (got != pdTRUE) {
+            continue;   /* timeout, no command — loop back to check again */
+        }
+
+        /* ── If deferring, buffer instead of sending ──────────────── */
+        if (s_deferring) {
+            switch (cmd.type) {
+                case HMI_CMD_TEMP_UPDATE:
+                    /* Only keep the latest reading (RAM model still updated) */
+                    if (cmd.temp.valid) {
+                        int temp_c = (int)(cmd.temp.average_temperature + 0.5f);
+                        program_set_current_temp_c(temp_c);
+                    }
+                    s_deferred_temp.temperature = cmd.temp.average_temperature;
+                    s_deferred_temp.valid       = cmd.temp.valid;
+                    s_deferred_temp.pending     = true;
+                    break;
+
+                case HMI_CMD_STATUS_UPDATE:
+                    /* Best-effort display data — drop while UART is busy */
+                    break;
+
+                case HMI_CMD_PROFILE_STARTED:
+                case HMI_CMD_PROFILE_PAUSED:
+                case HMI_CMD_PROFILE_RESUMED:
+                case HMI_CMD_PROFILE_STOPPED:
+                case HMI_CMD_PROFILE_COMPLETED:
+                case HMI_CMD_PROFILE_ERROR:
+                    /* Buffer critical events for replay */
+                    if (s_deferred_critical_count < DEFERRED_CRITICAL_MAX) {
+                        s_deferred_critical[s_deferred_critical_count++] = cmd;
+                    } else {
+                        LOGGER_LOG_WARN(TAG, "Deferred critical buffer full, dropping cmd %d",
+                                        (int)cmd.type);
+                    }
+                    break;
+
+                case HMI_CMD_HANDLE_LINE:
+                    /* RX task is parked during transfers, but just in case */
+                    LOGGER_LOG_WARN(TAG, "Line received during transfer (dropped): %s",
+                                    cmd.line);
+                    break;
+
+                default:
+                    break;
+            }
             continue;
         }
 
+        /* ── Normal dispatch (UART is free) ───────────────────────── */
         switch (cmd.type) {
             case HMI_CMD_INIT_DISPLAY:
                 nextion_event_handle_init();
@@ -110,6 +273,15 @@ static void hmi_coordinator_task(void *arg)
             case HMI_CMD_TEMP_UPDATE:
                 nextion_event_handle_temp_update(
                     cmd.temp.average_temperature, cmd.temp.valid);
+                break;
+
+            case HMI_CMD_STATUS_UPDATE:
+                nextion_event_handle_status_update(
+                    cmd.status.elapsed_ms,
+                    cmd.status.total_ms,
+                    cmd.status.current_temperature,
+                    cmd.status.target_temperature,
+                    cmd.status.power_output);
                 break;
 
             case HMI_CMD_PROFILE_STARTED:
@@ -126,6 +298,10 @@ static void hmi_coordinator_task(void *arg)
 
             case HMI_CMD_PROFILE_STOPPED:
                 nextion_event_handle_profile_stopped();
+                break;
+
+            case HMI_CMD_PROFILE_COMPLETED:
+                nextion_event_handle_profile_completed();
                 break;
 
             case HMI_CMD_PROFILE_ERROR:

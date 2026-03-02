@@ -12,16 +12,16 @@ static int s_current_temp_c = 23;
 static int s_current_kw = 0;
 static SemaphoreHandle_t s_program_mutex = NULL;
 
-static void ensure_program_mutex(void)
+void program_models_init(void)
 {
     if (s_program_mutex == NULL) {
         s_program_mutex = xSemaphoreCreateRecursiveMutex();
+        configASSERT(s_program_mutex);
     }
 }
 
 void program_draft_clear(void)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memset(&s_program_draft, 0, sizeof(s_program_draft));
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -32,7 +32,6 @@ void program_draft_set_name(const char *name)
     if (!name) {
         return;
     }
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     strncpy(s_program_draft.name, name, sizeof(s_program_draft.name) - 1);
     s_program_draft.name[sizeof(s_program_draft.name) - 1] = '\0';
@@ -53,7 +52,6 @@ bool program_draft_set_stage(uint8_t stage_number,
         return false;
     }
 
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
 
     ProgramStage *stage = &s_program_draft.stages[stage_number - 1];
@@ -76,27 +74,32 @@ void program_draft_clear_stage(uint8_t stage_number)
     if (stage_number < 1 || stage_number > PROGRAMS_TOTAL_STAGE_COUNT) {
         return;
     }
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memset(&s_program_draft.stages[stage_number - 1], 0, sizeof(ProgramStage));
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 
-const ProgramDraft *program_draft_get(void)
+void program_draft_get(ProgramDraft *out)
 {
-    static ProgramDraft snapshot;
-
-    ensure_program_mutex();
+    if (!out) {
+        return;
+    }
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
-    memcpy(&snapshot, &s_program_draft, sizeof(snapshot));
+    memcpy(out, &s_program_draft, sizeof(*out));
     xSemaphoreGiveRecursive(s_program_mutex);
+}
 
-    return &snapshot;
+const char *program_draft_get_name(void)
+{
+    static char name_buf[sizeof(((ProgramDraft *)0)->name)];
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(name_buf, s_program_draft.name, sizeof(name_buf));
+    xSemaphoreGiveRecursive(s_program_mutex);
+    return name_buf;
 }
 
 void program_set_current_temp_c(int temp_c)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_current_temp_c = temp_c;
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -104,7 +107,6 @@ void program_set_current_temp_c(int temp_c)
 
 int program_get_current_temp_c(void)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_current_temp_c;
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -113,7 +115,6 @@ int program_get_current_temp_c(void)
 
 void program_set_current_kw(int kw)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_current_kw = kw;
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -121,7 +122,6 @@ void program_set_current_kw(int kw)
 
 int program_get_current_kw(void)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_current_kw;
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -132,17 +132,15 @@ int program_get_current_kw(void)
 // Run slot — used by coordinator during program execution
 // ============================================================================
 
-const ProgramDraft *hmi_get_run_program(size_t *out_count)
+void hmi_get_run_program(ProgramDraft *out)
 {
-    if (out_count) {
-        *out_count = 1;  // Single run slot
-    }
-    return &s_run_program;
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(out, &s_run_program, sizeof(*out));
+    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 void program_copy_draft_to_run_slot(void)
 {
-    ensure_program_mutex();
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memcpy(&s_run_program, &s_program_draft, sizeof(s_run_program));
     xSemaphoreGiveRecursive(s_program_mutex);
