@@ -2,13 +2,12 @@
 #define COORDINATOR_COMPONENT_INTERNAL_H
 
 #include "esp_err.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "core_types.h"
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
-const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
+#define INVALID_PROFILE_INDEX ((size_t)0xFFFFFFFF);
 
 typedef struct
 {

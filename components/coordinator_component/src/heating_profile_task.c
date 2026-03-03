@@ -3,7 +3,6 @@
 #include "pid_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
-#include "coordinator_component.h"
 
 static const char* TAG = "COORDINATOR_TASK";
 
@@ -133,7 +132,9 @@ esp_err_t start_heating_profile(coordinator_ctx_t *ctx, const size_t profile_ind
     return ESP_OK;
 }
 
-esp_err_t coordinator_pause_heating_profile(coordinator_ctx_t *ctx)
+
+
+esp_err_t pause_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {
@@ -147,7 +148,7 @@ esp_err_t coordinator_pause_heating_profile(coordinator_ctx_t *ctx)
     return ESP_OK;
 }
 
-esp_err_t coordinator_resume_heating_profile(coordinator_ctx_t *ctx)
+esp_err_t resume_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {
@@ -162,19 +163,19 @@ esp_err_t coordinator_resume_heating_profile(coordinator_ctx_t *ctx)
     return ESP_OK;
 }
 
-esp_err_t coordinator_get_heating_task_state()
+esp_err_t get_heating_task_state(const coordinator_ctx_t* ctx)
 {
     //TODO Post state event
     return ESP_FAIL;
 }
 
-esp_err_t coordinator_get_current_heating_profile()
+esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx)
 {
     //TODO Post current profile event
     return ESP_FAIL;
 }
 
-esp_err_t coordinator_stop_heating_profile(coordinator_ctx_t *ctx)
+esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {

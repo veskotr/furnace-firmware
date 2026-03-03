@@ -2,7 +2,6 @@
 #include "utils.h"
 #include "temperature_profile_controller.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "logger_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
