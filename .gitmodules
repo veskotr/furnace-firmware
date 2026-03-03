@@ -1,0 +1,3 @@
+[submodule "components/esp-modbus"]
+	path = components/esp_modbus
+	url = https://github.com/espressif/esp-modbus.git
