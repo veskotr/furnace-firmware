@@ -72,3 +72,33 @@ esp_err_t register_command_handler(
     LOGGER_LOG_INFO(TAG, "Registered command handler for target: %d", target);
     return ESP_OK;
 }
+
+esp_err_t unregister_command_handler(command_target_t target)
+{
+    if (commands_dispatcher_ctx == NULL)
+    {
+        LOGGER_LOG_ERROR(TAG, "Invalid context for unregistering command handler");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (target >= CONFIG_COMMANDS_DISPATCHER_MAX_HANDLERS)
+    {
+        LOGGER_LOG_ERROR(TAG, "Invalid command target: %d", target);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!commands_dispatcher_ctx->command_handlers[target].registered)
+    {
+        LOGGER_LOG_WARN(TAG, "No registered command handler for target %d to unregister", target);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    commands_dispatcher_ctx->command_handlers[target] = (handler_entry_t){
+        .handler = NULL,
+        .handler_arg = NULL,
+        .registered = false
+    };
+    LOGGER_LOG_INFO(TAG, "Unregistered command handler for target: %d", target);
+
+    return ESP_OK;
+}

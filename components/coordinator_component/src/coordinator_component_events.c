@@ -13,8 +13,6 @@ static const char* TAG = "COORDINATOR_EVENTS";
 
 float coordinator_current_temperature = 0.0f;
 
-static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data);
-
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     const coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
@@ -31,7 +29,7 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
             LOGGER_LOG_WARN(TAG, "Temperature Processor Event Data is NULL");
             return;
         }
-
+        //TODO Convert to correct type
         const float* temperature = (float*)event_data;
         coordinator_current_temperature = *temperature;
         LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", coordinator_current_temperature);
@@ -68,101 +66,6 @@ static esp_err_t coordinator_command_handler(void* handler_arg, void* command_da
         return ESP_ERR_INVALID_ARG;
     }
     return ESP_OK;
-}
-
-static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, const int32_t id, void* event_data)
-{
-    /*coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
-    switch (id)
-    {
-    case COORDINATOR_EVENT_START_PROFILE:
-        {
-            const size_t profile_index = *((size_t*)event_data);
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile Index %zu", profile_index);
-            const esp_err_t err = start_heating_profile(ctx, profile_index);
-            if (err != ESP_OK)
-            {
-                CHECK_ERR_LOG(
-                    post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err, COORDINATOR_ERROR_NOT_STARTED),
-                    "Failed to send coordinator error event for start profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to start heating profile index %zu: %s",
-                                 profile_index,
-                                 esp_err_to_name(err));
-                return;
-            }
-            break;
-        }
-    case COORDINATOR_EVENT_PAUSE_PROFILE:
-        {
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Pause Profile");
-            const esp_err_t err = pause_heating_profile(ctx);
-            if (err != ESP_OK)
-            {
-                CHECK_ERR_LOG(
-                    post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err,
-                        COORDINATOR_ERROR_PROFILE_NOT_PAUSED),
-                    "Failed to send coordinator error event for pause profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to pause heating profile: %s",
-                                 esp_err_to_name(err));
-                return;
-            }
-            break;
-        }
-    case COORDINATOR_EVENT_STOP_PROFILE:
-        {
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Stop Profile");
-            const esp_err_t err = stop_heating_profile(ctx);
-            if (err != ESP_OK)
-            {
-                CHECK_ERR_LOG(
-                    post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err,
-                        COORDINATOR_ERROR_PROFILE_NOT_STOPPED),
-                    "Failed to send coordinator error event for stop profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to stop heating profile: %s",
-                                 esp_err_to_name(err));
-                return;
-            }
-            break;
-        }
-    case COORDINATOR_EVENT_RESUME_PROFILE:
-        {
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Resume Profile");
-            esp_err_t err = resume_heating_profile(ctx);
-            if (err != ESP_OK)
-            {
-                CHECK_ERR_LOG(
-                    post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err,
-                        COORDINATOR_ERROR_PROFILE_NOT_RESUMED),
-                    "Failed to send coordinator error event for resume profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to resume heating profile: %s",
-                                 esp_err_to_name(err));
-                return;
-            }
-            break;
-        }
-    case COORDINATOR_EVENT_GET_STATUS_REPORT:
-        {
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Get Status Report");
-            heating_task_state_t state;
-            get_heating_task_state(ctx, &state);
-            CHECK_ERR_LOG(
-                post_coordinator_event(COORDINATOR_EVENT_GET_STATUS_REPORT, &state, sizeof(heating_task_state_t)),
-                "Failed to send coordinator status report event");
-            break;
-        }
-    case COORDINATOR_EVENT_GET_CURRENT_PROFILE:
-        {
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Get Current Profile");
-            size_t profile_index;
-            get_current_heating_profile(ctx, &profile_index);
-            CHECK_ERR_LOG(post_coordinator_event(COORDINATOR_EVENT_GET_CURRENT_PROFILE, &profile_index, sizeof(size_t)),
-                          "Failed to send coordinator current profile event");
-            break;
-        }
-    default:
-        LOGGER_LOG_WARN(TAG, "Unknown Coordinator Event ID: %d", id);
-        break;
-    }*/
 }
 
 esp_err_t post_heater_controller_event(const heater_controller_event_t event_type, void* event_data,
@@ -204,18 +107,18 @@ esp_err_t post_coordinator_event(const coordinator_event_id_t event_type, void* 
 
 esp_err_t init_coordinator_events(coordinator_ctx_t* ctx)
 {
-    CHECK_ERR_LOG_RET(event_manager_subscribe(
-                          COORDINATOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &coordinator_event_handler,
-                          ctx),
-                      "Failed to subscribe to coordinator events");
-
     CHECK_ERR_LOG_RET(register_command_handler(
                           COMMAND_TARGET_COORDINATOR,
                           &coordinator_command_handler,
                           ctx),
                       "Failed to register coordinator command handler");
+
+    CHECK_ERR_LOG_RET(event_manager_subscribe(
+                          TEMP_PROCESSOR_EVENT,
+                          PROCESS_TEMPERATURE_EVENT_DATA,
+                          &temperature_processor_event_handler,
+                          ctx),
+                      "Failed to subscribe to temperature processor events");
 
     ctx->events_initialized = true;
 
@@ -228,10 +131,7 @@ esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx)
     {
         return ESP_OK;
     }
-    CHECK_ERR_LOG_RET(event_manager_unsubscribe(
-                          COORDINATOR_EVENT,
-                          ESP_EVENT_ANY_ID,
-                          &coordinator_event_handler),
+    CHECK_ERR_LOG_RET(unregister_command_handler(COMMAND_TARGET_COORDINATOR),
                       "Failed to unsubscribe from coordinator events");
 
 

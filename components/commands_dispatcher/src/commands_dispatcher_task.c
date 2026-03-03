@@ -36,6 +36,7 @@ static void commands_dispatcher_task(void* args)
                 if (handler_entry->registered && handler_entry->handler != NULL)
                 {
                     const esp_err_t err = handler_entry->handler(
+                        handler_entry->handler_arg,
                         received_command.data,
                         received_command.data_size);
                     if (err != ESP_OK)

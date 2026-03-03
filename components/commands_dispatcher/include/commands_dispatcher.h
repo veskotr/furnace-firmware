@@ -58,6 +58,7 @@ esp_err_t register_command_handler(
     command_target_t target,
     command_handler_t handler,
     void* handler_arg);
+esp_err_t unregister_command_handler(command_target_t target);
 
 esp_err_t commands_dispatcher_shutdown(void);
 
