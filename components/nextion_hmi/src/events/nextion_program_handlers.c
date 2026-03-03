@@ -48,6 +48,21 @@ static size_t tokenize_payload(const char *payload, char *buf, size_t buf_size,
     return count;
 }
 
+static bool tokenize_and_validate(const char *payload, const char *label,
+                                  char *buf, size_t buf_size,
+                                  char **tokens, size_t max_tokens)
+{
+    size_t count = tokenize_payload(payload, buf, buf_size, tokens, max_tokens);
+    if (count < max_tokens) {
+        char err[64];
+        snprintf(err, sizeof(err), "%s: got %u fields, need %u",
+                 label, (unsigned)count, (unsigned)max_tokens);
+        nextion_show_error(err);
+        return false;
+    }
+    return true;
+}
+
 /* ── Stage field parsing ────────────────────────────────────────────── */
 
 typedef struct {
@@ -144,6 +159,33 @@ static void sync_program_buffer(void)
     nextion_set_text_chunked("programBuffer", payload);
 }
 
+/* ── Stage-field Nextion senders ────────────────────────────────────── */
+
+static void send_int_field(const char *prefix, uint8_t field_num,
+                           int value, bool is_set)
+{
+    char cmd[64];
+    if (is_set) {
+        snprintf(cmd, sizeof(cmd), "%s%u.txt=\"%d\"", prefix, (unsigned)field_num, value);
+    } else {
+        snprintf(cmd, sizeof(cmd), "%s%u.txt=\"\"", prefix, (unsigned)field_num);
+    }
+    nextion_send_cmd(cmd);
+}
+
+static void send_delta_field(uint8_t field_num, int delta_x10, bool is_set)
+{
+    char cmd[64];
+    if (is_set) {
+        char delta_buf[16];
+        format_delta_x10(delta_x10, delta_buf, sizeof(delta_buf));
+        snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"%s\"", (unsigned)field_num, delta_buf);
+    } else {
+        snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"\"", (unsigned)field_num);
+    }
+    nextion_send_cmd(cmd);
+}
+
 /* ── Page navigation ───────────────────────────────────────────────── */
 
 static void programs_page_apply(uint8_t page)
@@ -174,46 +216,11 @@ static void programs_page_apply(uint8_t page)
         const ProgramStage *stage = &draft.stages[stage_idx];
         uint8_t field_num = i + 1;
 
-        if (stage->is_set) {
-            if (stage->t_set) {
-                snprintf(cmd, sizeof(cmd), "t%u.txt=\"%d\"", (unsigned)field_num, stage->t_min);
-            } else {
-                snprintf(cmd, sizeof(cmd), "t%u.txt=\"\"", (unsigned)field_num);
-            }
-            nextion_send_cmd(cmd);
-
-            if (stage->target_set) {
-                snprintf(cmd, sizeof(cmd), "targetTMax%u.txt=\"%d\"", (unsigned)field_num, stage->target_t_c);
-            } else {
-                snprintf(cmd, sizeof(cmd), "targetTMax%u.txt=\"\"", (unsigned)field_num);
-            }
-            nextion_send_cmd(cmd);
-
-            if (stage->t_delta_set) {
-                snprintf(cmd, sizeof(cmd), "tDelta%u.txt=\"%d\"", (unsigned)field_num, stage->t_delta_min);
-            } else {
-                snprintf(cmd, sizeof(cmd), "tDelta%u.txt=\"\"", (unsigned)field_num);
-            }
-            nextion_send_cmd(cmd);
-
-            if (stage->delta_t_set) {
-                char delta_buf[16];
-                format_delta_x10(stage->delta_t_per_min_x10, delta_buf, sizeof(delta_buf));
-                snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"%s\"", (unsigned)field_num, delta_buf);
-            } else {
-                snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"\"", (unsigned)field_num);
-            }
-            nextion_send_cmd(cmd);
-        } else {
-            snprintf(cmd, sizeof(cmd), "t%u.txt=\"\"", (unsigned)field_num);
-            nextion_send_cmd(cmd);
-            snprintf(cmd, sizeof(cmd), "targetTMax%u.txt=\"\"", (unsigned)field_num);
-            nextion_send_cmd(cmd);
-            snprintf(cmd, sizeof(cmd), "tDelta%u.txt=\"\"", (unsigned)field_num);
-            nextion_send_cmd(cmd);
-            snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"\"", (unsigned)field_num);
-            nextion_send_cmd(cmd);
-        }
+        bool set = stage->is_set;
+        send_int_field("t",          field_num, stage->t_min,               set && stage->t_set);
+        send_int_field("targetTMax", field_num, stage->target_t_c,          set && stage->target_set);
+        send_int_field("tDelta",     field_num, stage->t_delta_min,         set && stage->t_delta_set);
+        send_delta_field(             field_num, stage->delta_t_per_min_x10, set && stage->delta_t_set);
     }
 }
 
@@ -300,14 +307,8 @@ void handle_save_prog(const char *payload)
 
     char buffer[512];
     char *tokens[PAGE_TOKEN_COUNT] = {0};
-    size_t token_count = tokenize_payload(payload, buffer, sizeof(buffer),
-                                          tokens, PAGE_TOKEN_COUNT);
-
-    if (token_count < PAGE_TOKEN_COUNT) {
-        char err[64];
-        snprintf(err, sizeof(err), "Missing fields: got %u, need %d",
-                 (unsigned)token_count, PAGE_TOKEN_COUNT);
-        nextion_show_error(err);
+    if (!tokenize_and_validate(payload, "Save", buffer, sizeof(buffer),
+                               tokens, PAGE_TOKEN_COUNT)) {
         return;
     }
 
@@ -408,14 +409,8 @@ void handle_show_graph(const char *payload)
 
     char buffer[512];
     char *tokens[PAGE_TOKEN_COUNT] = {0};
-    size_t token_count = tokenize_payload(payload, buffer, sizeof(buffer),
-                                          tokens, PAGE_TOKEN_COUNT);
-
-    if (token_count < PAGE_TOKEN_COUNT) {
-        char err[64];
-        snprintf(err, sizeof(err), "Graph: got %u fields, need %d",
-                 (unsigned)token_count, PAGE_TOKEN_COUNT);
-        nextion_show_error(err);
+    if (!tokenize_and_validate(payload, "Graph", buffer, sizeof(buffer),
+                               tokens, PAGE_TOKEN_COUNT)) {
         return;
     }
 
@@ -481,14 +476,8 @@ void handle_autofill(const char *payload)
 
     char buffer[512];
     char *tokens[PAGE_TOKEN_COUNT] = {0};
-    size_t token_count = tokenize_payload(payload, buffer, sizeof(buffer),
-                                          tokens, PAGE_TOKEN_COUNT);
-
-    if (token_count < PAGE_TOKEN_COUNT) {
-        char err[64];
-        snprintf(err, sizeof(err), "Autofill: got %u fields, need %d",
-                 (unsigned)token_count, PAGE_TOKEN_COUNT);
-        nextion_show_error(err);
+    if (!tokenize_and_validate(payload, "Autofill", buffer, sizeof(buffer),
+                               tokens, PAGE_TOKEN_COUNT)) {
         return;
     }
 
