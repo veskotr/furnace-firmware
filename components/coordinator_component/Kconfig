@@ -25,4 +25,24 @@ menu "Coordinator"
             has been reached AND the measured temperature drops below
             this value.
 
+    config COORDINATOR_SETTLE_WINDOW_MIN
+        int "Settle window after stage time expires (minutes)"
+        default 3
+        range 1 10
+        help
+            When a stage's time has elapsed and the temperature is within
+            tolerance of the target, the controller gives this many extra
+            minutes for the PID to converge to the exact target before
+            advancing to the next stage.
+
+    config COORDINATOR_MAX_STAGE_EXTENSION_MIN
+        int "Max stage extension when temp not reached (minutes)"
+        default 30
+        range 5 120
+        help
+            When a stage's time has elapsed but the temperature is NOT
+            within tolerance of the target, the stage is extended up to
+            this many extra minutes. If the temperature still hasn't
+            been reached, the stage advances with a warning.
+
 endmenu

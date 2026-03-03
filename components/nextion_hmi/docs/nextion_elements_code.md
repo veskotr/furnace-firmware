@@ -203,6 +203,10 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 		vis websiteQr,0
 		vis wirelessCfgB,0
 		vis bluetoothCfgB,0
+		vis confirmBdy,0
+		vis confirmTxt,0
+		vis confirmFactoryB,0
+		vis confirmCancel,0
 		// Only populate time fields on first preinit (page entry)
 		if(timeInit.val==0)
 		{
@@ -323,6 +327,32 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 - bluetoothCfgB
 	- Explanation: Bluetooth configuration button. Hidden on preinit; ESP32 shows via vis bluetoothCfgB,1 when CONFIG_NEXTION_HAS_BLUETOOTH is enabled.
 	- Nextion code: TODO (future feature, button visible only when Bluetooth is available)
+
+- restartB
+	- Explanation: Restart ESP32 and Nextion display. ESP32 sends Nextion `rest` command then calls esp_restart(). Blocked while a program is running (router guard).
+	- Nextion code: Touch Release Event
+		prints "restart",0
+		printh 0d 0a
+
+- factoryResetB
+	- Explanation: Open factory reset confirmation dialog. Does NOT directly reset — ESP32 shows confirmBdy/confirmTxt/confirmFactoryB/confirmCancel. Blocked while a program is running.
+	- Nextion code: Touch Release Event
+		prints "factory_reset",0
+		printh 0d 0a
+
+- confirmReset
+	- Explanation: Confirm factory reset button. ESP32 deletes all tracked programs from SD, resets Nextion, and reboots ESP32.
+	- Nextion code: Touch Release Event
+		prints "factory_reset_confirm",0
+		printh 0d 0a
+
+- confirmCancel
+	- Explanation: Cancel factory reset. Hides confirmation dialog locally without ESP32 involvement.
+	- Nextion code: Touch Release Event
+		vis confirmBdy,0
+		vis confirmTxt,0
+		vis confirmReset,0
+		vis confirmCancel,0
 
 Programs Page
 
@@ -676,6 +706,7 @@ Method 2 Architecture:
 		prints progNameInput.txt,0
 		printh 0d 0a
 
+- Confirm dialog
 - confirmBdy
 	- Explanation: Confirmation dialog background. Hidden on page entry. ESP32 shows when delete is requested.
 	- Nextion code: None (ESP32 controls visibility)
@@ -689,6 +720,19 @@ Method 2 Architecture:
 	- Nextion code: Touch Release Event
 		prints "confirm_delete",0
 		printh 0d 0a
+
+- confirmReset
+	- Explanation: Confirm reset button. Sends event to ESP32 which resets data and hides dialog.
+	- Nextion code: Touch Release Event
+		prints "confirm_reset",0
+		printh 0d 0a
+
+- confirmEnd
+	- Explanation: Confirm end program button. Sends event to ESP32 which ends program execution and hides dialog.
+	- Nextion code: Touch Release Event
+		prints "confirm_end",0
+		printh 0d 0a
+
 
 - confirmCancel
 	- Explanation: Cancel deletion button. Hides confirmation dialog locally without ESP32 involvement.

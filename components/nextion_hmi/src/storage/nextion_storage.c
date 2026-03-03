@@ -17,6 +17,67 @@ static const char *TAG = "nextion_storage";
 
 static volatile bool s_storage_active = false;
 
+/* ── Program name registry (volatile, populated during session) ───── */
+#define REGISTRY_NAME_LEN 64
+static char s_registry[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+static int  s_registry_count = 0;
+
+static void registry_add(const char *display_name)
+{
+    if (!display_name || display_name[0] == '\0') return;
+    for (int i = 0; i < s_registry_count; i++) {
+        if (strcmp(s_registry[i], display_name) == 0) return;
+    }
+    if (s_registry_count >= CONFIG_COORDINATOR_MAX_PROFILES_STORED) {
+        LOGGER_LOG_WARN(TAG, "Program registry full, cannot track '%s'", display_name);
+        return;
+    }
+    strncpy(s_registry[s_registry_count], display_name, REGISTRY_NAME_LEN - 1);
+    s_registry[s_registry_count][REGISTRY_NAME_LEN - 1] = '\0';
+    s_registry_count++;
+    LOGGER_LOG_INFO(TAG, "Registry add '%s' (count=%d)", display_name, s_registry_count);
+}
+
+static void registry_remove(const char *display_name)
+{
+    for (int i = 0; i < s_registry_count; i++) {
+        if (strcmp(s_registry[i], display_name) == 0) {
+            for (int j = i; j < s_registry_count - 1; j++) {
+                memcpy(s_registry[j], s_registry[j + 1], REGISTRY_NAME_LEN);
+            }
+            s_registry_count--;
+            return;
+        }
+    }
+}
+
+void nextion_storage_register_program(const char *display_name)
+{
+    registry_add(display_name);
+}
+
+int nextion_storage_delete_all_programs(void)
+{
+    /* Copy names first — delete_program modifies the registry */
+    char names[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+    int count = s_registry_count;
+    memcpy(names, s_registry, sizeof(s_registry));
+
+    int deleted = 0;
+    char err[64];
+    for (int i = 0; i < count; i++) {
+        if (nextion_storage_delete_program(names[i], err, sizeof(err))) {
+            deleted++;
+        } else {
+            LOGGER_LOG_WARN(TAG, "Failed to delete '%s': %s", names[i], err);
+        }
+    }
+    s_registry_count = 0;
+    memset(s_registry, 0, sizeof(s_registry));
+    LOGGER_LOG_INFO(TAG, "Deleted %d / %d registered programs", deleted, count);
+    return deleted;
+}
+
 bool nextion_storage_active(void)
 {
     return s_storage_active;
@@ -256,6 +317,9 @@ cleanup:
         nextion_uart_unlock();
     }
     s_storage_active = false;
+    if (success) {
+        registry_add(draft->name);
+    }
     return success;
 }
 
@@ -304,6 +368,7 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
         nextion_uart_unlock();
     }
     s_storage_active = false;
+    registry_remove(name);
     return true;
 }
 
@@ -371,6 +436,12 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
             }
         }
         line = strtok(NULL, "\n");
+    }
+
+    /* Register parsed program so factory reset can find it */
+    const char *parsed_name = program_draft_get_name();
+    if (parsed_name && parsed_name[0] != '\0') {
+        registry_add(parsed_name);
     }
 
     return true;

@@ -3,8 +3,13 @@
 #include "sdkconfig.h"
 #include "nextion_parse_utils.h"
 #include "nextion_transport_internal.h"
+#include "nextion_storage_internal.h"
 #include "nextion_ui_internal.h"
 #include "logger_component.h"
+#include "esp_system.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -122,4 +127,59 @@ void handle_save_settings(const char *payload)
     }
 
     nextion_clear_error();
+}
+
+/* ── Restart ───────────────────────────────────────────────────────── */
+
+void handle_restart(void)
+{
+    LOGGER_LOG_INFO(TAG, "Restart requested");
+
+    /* Reset the Nextion display first (best-effort) */
+    nextion_send_cmd("rest");
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    esp_restart();
+    /* does not return */
+}
+
+/* ── Factory reset ─────────────────────────────────────────────────── */
+
+void handle_factory_reset_request(void)
+{
+    LOGGER_LOG_INFO(TAG, "Factory reset requested — showing confirm dialog");
+
+    nextion_send_cmd("confirmTxt.txt=\"Factory reset? All data will be erased.\"");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    nextion_send_cmd("vis confirmBdy,1");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    nextion_send_cmd("vis confirmTxt,1");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    nextion_send_cmd("vis confirmFactoryB,1");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    nextion_send_cmd("vis confirmCancel,1");
+}
+
+void handle_factory_reset_confirm(void)
+{
+    LOGGER_LOG_INFO(TAG, "Factory reset confirmed — deleting all programs");
+
+    /* Hide the dialog */
+    nextion_send_cmd("vis confirmBdy,0");
+    nextion_send_cmd("vis confirmTxt,0");
+    nextion_send_cmd("vis confirmFactoryB,0");
+    nextion_send_cmd("vis confirmCancel,0");
+
+    /* Delete all tracked programs from SD */
+    int deleted = nextion_storage_delete_all_programs();
+    LOGGER_LOG_INFO(TAG, "Factory reset: %d programs deleted", deleted);
+
+    /* Brief pause so the user sees the dialog close */
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    /* Reset Nextion display and reboot ESP32 */
+    nextion_send_cmd("rest");
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+    /* does not return */
 }

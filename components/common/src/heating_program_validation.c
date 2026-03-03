@@ -276,3 +276,91 @@ bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_
 
     return true;
 }
+
+/* ── Relaxed validation for running (not saving) a program ─────────
+ *
+ * Only checks that the program's predicted values stay within the
+ * device hardware limits.  Does NOT check mathematical consistency
+ * (time × delta_T = temp difference) because the real execution
+ * starts from the actual ambient temperature, not a fixed 23 °C.
+ * ----------------------------------------------------------------- */
+bool program_validate_draft_for_run(const ProgramDraft *draft,
+                                    char *error_msg, size_t error_len)
+{
+    if (!draft) {
+        set_error(error_msg, error_len, "Internal config error");
+        return false;
+    }
+
+    if (draft->name[0] == '\0') {
+        set_error(error_msg, error_len, "Pick a program from the browser");
+        return false;
+    }
+
+    /* Check name has at least one non-space character */
+    bool has_non_space = false;
+    for (size_t i = 0; draft->name[i] != '\0'; ++i) {
+        if (draft->name[i] != ' ') {
+            has_non_space = true;
+            break;
+        }
+    }
+    if (!has_non_space) {
+        set_error(error_msg, error_len, "Pick a program from the browser");
+        return false;
+    }
+
+    int total_time = 0;
+    bool any_stage = false;
+
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        const ProgramStage *stage = &draft->stages[i];
+        if (!stage->is_set) {
+            continue;
+        }
+
+        any_stage = true;
+        int stage_num = i + 1;
+
+        /* All fields must be filled */
+        if (!stage->t_set || !stage->target_set || !stage->delta_t_set) {
+            snprintf(error_msg, error_len, "Stage %d: Incomplete fields", stage_num);
+            return false;
+        }
+
+        /* Individual range checks against device limits */
+        if (!validate_time_in_range(stage->t_min, stage_num, error_msg, error_len)) {
+            return false;
+        }
+
+        if (!validate_temp_in_range(stage->target_t_c, stage_num, error_msg, error_len)) {
+            return false;
+        }
+
+        if (!validate_delta_t_in_range(stage->delta_t_per_min_x10, stage_num,
+                                       error_msg, error_len)) {
+            return false;
+        }
+
+        total_time += stage->t_min;
+
+        if (total_time > CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN) {
+            snprintf(error_msg, error_len, "Total time %d exceeds max %d at stage %d",
+                total_time, CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN, stage_num);
+            return false;
+        }
+    }
+
+    if (!any_stage) {
+        set_error(error_msg, error_len, "At least one stage required");
+        return false;
+    }
+
+    if (total_time < CONFIG_NEXTION_MIN_OPERATIONAL_TIME_MIN) {
+        snprintf(error_msg, error_len, "Program time %d below min %d",
+            total_time, CONFIG_NEXTION_MIN_OPERATIONAL_TIME_MIN);
+        return false;
+    }
+
+    return true;
+}

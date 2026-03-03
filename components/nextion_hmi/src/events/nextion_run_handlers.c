@@ -7,6 +7,7 @@
 #include "heating_program_models.h"
 #include "heating_program_models_internal.h"
 #include "heating_program_validation.h"
+#include "heating_program_graph_internal.h"
 #include "event_manager.h"
 #include "event_registry.h"
 #include "logger_component.h"
@@ -44,8 +45,9 @@ void handle_run_start(void)
 
     LOGGER_LOG_INFO(TAG, "prog_start: name='%s' temp=%d", snapshot.name, program_get_current_temp_c());
 
-    if (!program_validate_draft_with_temp(&snapshot, program_get_current_temp_c(),
-                                         error_msg, sizeof(error_msg))) {
+    /* Relaxed validation: only checks device limits, not math consistency.
+     * The program will execute from whatever the current ambient temp is. */
+    if (!program_validate_draft_for_run(&snapshot, error_msg, sizeof(error_msg))) {
         LOGGER_LOG_WARN(TAG, "prog_start validation failed: %s", error_msg);
         nextion_show_error(error_msg);
         return;
@@ -69,6 +71,11 @@ void handle_run_start(void)
 
 void handle_run_pause(void)
 {
+    if (!s_profile_active) {
+        nextion_show_error("No program running");
+        return;
+    }
+
     esp_err_t err = event_manager_post_blocking(
         COORDINATOR_EVENT,
         COORDINATOR_EVENT_PAUSE_PROFILE,
@@ -82,6 +89,11 @@ void handle_run_pause(void)
 
 void handle_run_stop(void)
 {
+    if (!s_profile_active) {
+        nextion_show_error("No program running");
+        return;
+    }
+
     nextion_send_cmd("confirmTxt.txt=\"End program? Can't resume.\"");
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_send_cmd("vis confirmBdy,1");
@@ -167,8 +179,29 @@ void nextion_event_handle_profile_started(void)
         : 1;
     s_waveform_active = true;
 
+    /* Clear both graph channels */
+    snprintf(cmd, sizeof(cmd), "cle %d,0", CONFIG_NEXTION_GRAPH_DISP_ID);
+    nextion_send_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cle %d,1", CONFIG_NEXTION_GRAPH_DISP_ID);
     nextion_send_cmd(cmd);
+
+    /* Render the projected/planned curve into channel 0 */
+    {
+        static uint8_t proj_samples[CONFIG_NEXTION_MAIN_GRAPH_WIDTH];
+        size_t count = program_build_graph(&draft, proj_samples, sizeof(proj_samples),
+                                           CONFIG_NEXTION_MAIN_GRAPH_WIDTH,
+                                           CONFIG_NEXTION_MAX_TEMPERATURE_C,
+                                           program_get_current_temp_c());
+        for (size_t i = 0; i < count; ++i) {
+            snprintf(cmd, sizeof(cmd), "add %d,0,%u",
+                     CONFIG_NEXTION_GRAPH_DISP_ID, (unsigned)proj_samples[i]);
+            nextion_send_cmd(cmd);
+            if ((i % 64) == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+        }
+        LOGGER_LOG_INFO(TAG, "Projected curve rendered (%u points)", (unsigned)count);
+    }
 }
 
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,

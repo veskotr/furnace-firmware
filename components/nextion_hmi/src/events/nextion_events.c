@@ -158,5 +158,9 @@ void nextion_event_handle_line(const char *line)
     p = strstr(clean, "save_settings:");
     if (p) { handle_save_settings(p + 14); return; }
 
+    if (strstr(clean, "factory_reset_confirm")) { handle_factory_reset_confirm(); return; }
+    if (strstr(clean, "factory_reset"))         { handle_factory_reset_request(); return; }
+    if (strstr(clean, "restart"))               { handle_restart(); return; }
+
     LOGGER_LOG_INFO(TAG, "Unhandled Nextion line: %s", clean);
 }

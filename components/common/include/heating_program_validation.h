@@ -16,6 +16,14 @@ bool program_validate_draft(const ProgramDraft *draft, char *error_msg, size_t e
 bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_c,
                                       char *error_msg, size_t error_len);
 
+// Relaxed validation for starting/running a program.
+// Checks device limits (max temperature, max time, max delta-T) and field
+// completeness, but does NOT enforce mathematical consistency between time,
+// delta-T, and target temperature.  This allows programs to execute freely
+// from any ambient starting temperature.
+bool program_validate_draft_for_run(const ProgramDraft *draft,
+                                    char *error_msg, size_t error_len);
+
 // Individual field range helpers — used by both validate_draft and autofill
 bool validate_temp_in_range(int target_t_c, int stage_num, char *err, size_t err_len);
 bool validate_time_in_range(int t_min, int stage_num, char *err, size_t err_len);

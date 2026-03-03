@@ -36,6 +36,7 @@ static void heating_profile_task(void* args)
     LOGGER_LOG_INFO(TAG, "Coordinator task started");
 
     uint32_t last_wake_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    profile_tick_result_t tick_result = {0};
 
     while (ctx->running)
     {
@@ -56,23 +57,38 @@ static void heating_profile_task(void* args)
             continue;   /* Skip PID computation while paused */
         }
 
-        const profile_controller_error_t err = get_target_temperature_at_time(
-            ctx->heating_task_state.current_time_elapsed_ms,
-            &ctx->heating_task_state.target_temperature);
-        LOGGER_LOG_INFO(TAG, "Elapsed Time: %d ms, Target Temperature: %.2f C",
-                        ctx->heating_task_state.current_time_elapsed_ms,
-                        ctx->heating_task_state.target_temperature);
-        // TODO: Handle error cases
+        const profile_controller_error_t err = profile_tick(
+            last_update_duration,
+            ctx->current_temperature,
+            &tick_result);
+        ctx->heating_task_state.target_temperature = tick_result.setpoint;
+
+        LOGGER_LOG_INFO(TAG, "Elapsed: %lu ms, Stage: %d, Phase: %d, Setpoint: %.2f C",
+                        (unsigned long)ctx->heating_task_state.current_time_elapsed_ms,
+                        tick_result.current_stage_index,
+                        (int)tick_result.phase,
+                        tick_result.setpoint);
+
         if (err != PROFILE_CONTROLLER_ERROR_NONE)
         {
-            LOGGER_LOG_WARN(TAG, "Failed to get target temperature at time %d ms, error: %d",
-                            ctx->heating_task_state.current_time_elapsed_ms,
-                            err);
+            LOGGER_LOG_WARN(TAG, "profile_tick error: %d", err);
             continue;
         }
+
+        /* Log stage transitions */
+        if (tick_result.stage_changed) {
+            LOGGER_LOG_INFO(TAG, "Stage changed → stage %d, phase %d",
+                            tick_result.current_stage_index, (int)tick_result.phase);
+        }
+
+        /* Warn if a stage was forced to advance */
+        if (tick_result.extension_warning) {
+            LOGGER_LOG_WARN(TAG, "Stage extension limit reached — forced advance");
+        }
+
         // Calculate power output based on current and target temperature
         float power_output = pid_controller_compute(ctx->current_temperature,
-                                                    ctx->heating_task_state.target_temperature,
+                                                    tick_result.setpoint,
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
@@ -84,7 +100,7 @@ static void heating_profile_task(void* args)
         coordinator_status_data_t status = {
             .profile_index      = ctx->heating_task_state.profile_index,
             .current_temperature = ctx->current_temperature,
-            .target_temperature  = ctx->heating_task_state.target_temperature,
+            .target_temperature  = tick_result.setpoint,
             .power_output        = power_output,
             .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
             .total_ms            = ctx->heating_task_state.total_time_ms,
@@ -92,20 +108,10 @@ static void heating_profile_task(void* args)
         post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE,
                                &status, sizeof(status));
 
-        /* ── Profile completion check ────────────────────────────────
-         * Complete when BOTH conditions are true:
-         *   1. We've passed all heating stages (in cooldown phase)
-         *   2. Actual measured temperature is below the threshold
-         * ──────────────────────────────────────────────────────────── */
-        bool in_cooldown = ctx->heating_task_state.current_time_elapsed_ms
-                           > ctx->heating_task_state.stages_only_ms;
-        bool temp_below_threshold = ctx->current_temperature
-                                    < (float)CONFIG_COORDINATOR_PROFILE_COMPLETE_TEMP_C;
-
-        if (in_cooldown && temp_below_threshold) {
-            LOGGER_LOG_INFO(TAG, "Profile complete: in cooldown and temp %.1f C < %d C",
-                            ctx->current_temperature,
-                            CONFIG_COORDINATOR_PROFILE_COMPLETE_TEMP_C);
+        /* ── Profile completion — driven by profile_tick() state machine ── */
+        if (tick_result.profile_complete) {
+            LOGGER_LOG_INFO(TAG, "Profile complete (profile_tick): temp %.1f C",
+                            ctx->current_temperature);
 
             /* Set power to zero before signaling completion */
             float zero_power = 0.0f;
