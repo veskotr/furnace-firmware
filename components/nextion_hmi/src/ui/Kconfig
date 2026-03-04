@@ -24,7 +24,7 @@ menu "Display Configuration"
 
     config NEXTION_PROGRAMS_GRAPH_ID
         int "Programs graph Nextion component ID"
-        default 51
+        default 50
         help
             The object ID of the waveform component on the programs page.
 

@@ -97,6 +97,18 @@ menu "MODBUS Temperature Monitor (MS9024)"
         default 10
         range 3 100
 
+    config MODBUS_TEMP_REPAIR_BAD_UNIT
+        bool "ONE-SHOT: Repair bad MS9024 transmitter registers"
+        default n
+        help
+            Enable this ONCE to write known-good register values to a
+            bad MS9024 transmitter whose registers have been accidentally
+            modified.  The repair writes to registers 27, 30, and 129
+            (values captured from a known-good reference unit).
+
+            After flashing and confirming the repair worked, DISABLE
+            this option again so it doesn't run on every boot.
+
     endif # MODBUS_TEMP_ENABLED
 
 endmenu

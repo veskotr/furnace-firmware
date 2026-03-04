@@ -193,6 +193,19 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 	- Explanation: Text buffer for settings page operations (converting timeDirty to text for send).
 	- Nextion code: None
 
+- ambientDirty (Variable, type=int, val=0, vscope=global)
+	- Explanation: Tracks if user edited the ambient temperature field. 0=not edited, 1=edited. MUST be global scope.
+	- Nextion code: None (set by ambientTemp touch event, sent with save, reset on preinit)
+
+- ambientTempH
+	- Explanation: Heading label for ambient temperature field. Default text: "Set ambient temp". ESP32 updates to "Set ambient temp (current: Y)" on page init, where Y is the live sensor reading.
+	- Nextion code: None (ESP32 sets via ambientTempH.txt="...")
+
+- ambientTemp
+	- Explanation: User-editable ambient/room temperature (°C). Populated by ESP32 on page init with NVS-backed preference value (default 23). Used as starting temperature for program save-time validation and graph rendering.
+	- Nextion code: Touch Press Event
+		ambientDirty.val=1
+
 - preinit
 	- Explanation: Hide error overlay and optional connectivity elements. Only populate time fields once per page visit (check timeInit flag). ESP32 selectively shows websiteQr/wirelessCfgB/bluetoothCfgB via handle_settings_init() based on NEXTION_HAS_WIFI and NEXTION_HAS_BLUETOOTH Kconfig options.
 	- Nextion code: Preinitialize Event
@@ -212,6 +225,7 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 		{
 		  timeDirty.val=0
 		  dateDirty.val=0
+		  ambientDirty.val=0
 		  cov rtc3,hourInput.txt,0
 		  cov rtc4,minutesInput.txt,0
 		  cov rtc5,secondsInput.txt,0
@@ -241,7 +255,7 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 	- Nextion code: TODO (local toggle, no ESP32 event)
 
 - saveSpecsB
-	- Explanation: Send time/date values to ESP32. Includes timeDirty and dateDirty flags as ASCII.
+	- Explanation: Send time/date/ambient values to ESP32. Includes timeDirty, dateDirty, and ambientDirty flags as ASCII. Total 10 comma-separated tokens.
 	- Nextion code: Touch Release Event
 		prints "save_settings:",0
 		cov timeDirty.val,settingsVar.txt,0
@@ -261,6 +275,11 @@ Time/date fields read from Nextion RTC and are only saved if user edits them (tr
 		prints monthInput.txt,0
 		printh 2c
 		prints yearInput.txt,0
+		printh 2c
+		cov ambientDirty.val,settingsVar.txt,0
+		prints settingsVar.txt,0
+		printh 2c
+		prints ambientTemp.txt,0
 		printh 0d 0a
 
 - cfg_t
@@ -508,7 +527,7 @@ Method 2 Architecture:
 
 
 - showGraph
-	- Explanation: Show graph preview. Sends current page data; ESP32 merges with draft and renders full graph.
+	- Explanation: Toggle graph preview. First click sends current page data to ESP32 which renders graph and sets button text to "Hide Graph". Second click hides graph and resets text to "Show Graph". Default button text: "Show Graph".
 	- Nextion code: Touch Release Event
 		prints "show_graph:",0
 		prints progNameInput.txt,0

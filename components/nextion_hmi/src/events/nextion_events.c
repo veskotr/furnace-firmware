@@ -29,12 +29,18 @@
 
 static const char *TAG = "nextion_events";
 
+/* ── Page tracking ─────────────────────────────────────────────────── */
+
+static nextion_page_id_t s_current_page = NEXTION_PAGE_ID_MAIN;
+
+nextion_page_id_t nextion_get_current_page(void) { return s_current_page; }
+
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
 static void update_main_status(void)
 {
     char cmd[64];
-    snprintf(cmd, sizeof(cmd), "currentTemp.txt=\"%d\"", program_get_current_temp_c());
+    snprintf(cmd, sizeof(cmd), "currentTemp.txt=\"%.2f\"", program_get_current_temp_f());
     nextion_send_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "currentKw.txt=\"%d\"", program_get_current_kw());
     nextion_send_cmd(cmd);
@@ -43,11 +49,13 @@ static void update_main_status(void)
 static void handle_nav_event(const char *destination)
 {
     if (strcmp(destination, "programs") == 0) {
+        s_current_page = NEXTION_PAGE_ID_PROGRAMS;
         program_handlers_nav_to_programs();
         return;
     }
 
     if (strcmp(destination, "main") == 0) {
+        s_current_page = NEXTION_PAGE_ID_MAIN;
         nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
         vTaskDelay(pdMS_TO_TICKS(30));
         update_main_status();
@@ -55,6 +63,7 @@ static void handle_nav_event(const char *destination)
     }
 
     if (strcmp(destination, "settings") == 0) {
+        s_current_page = NEXTION_PAGE_ID_SETTINGS;
         nextion_send_cmd("page " CONFIG_NEXTION_PAGE_SETTINGS);
         vTaskDelay(pdMS_TO_TICKS(50));
         handle_settings_init();
@@ -74,6 +83,7 @@ void nextion_update_main_status(void)
 void nextion_event_handle_init(void)
 {
     vTaskDelay(pdMS_TO_TICKS(500));
+    s_current_page = NEXTION_PAGE_ID_MAIN;
     nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
     vTaskDelay(pdMS_TO_TICKS(30));
     update_main_status();

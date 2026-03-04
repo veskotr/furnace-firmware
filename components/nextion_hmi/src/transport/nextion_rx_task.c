@@ -88,7 +88,7 @@ static void nextion_rx_task(void *arg)
                         hmi_coordinator_post_line(line_buf);
                         rx_lines++;
                     } else {
-                        LOGGER_LOG_INFO(TAG, "Nextion status byte: 0x%02X (ignored)",
+                        LOGGER_LOG_DEBUG(TAG, "Nextion status byte: 0x%02X (ignored)",
                                        (unsigned char)line_buf[0]);
                     }
                     line_len = 0;

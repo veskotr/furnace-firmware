@@ -3,6 +3,15 @@
 #include <stdbool.h>
 #include "event_registry.h"
 
+/* ── Page tracking ───────────────────────────────────────────────── */
+typedef enum {
+    NEXTION_PAGE_ID_MAIN,
+    NEXTION_PAGE_ID_PROGRAMS,
+    NEXTION_PAGE_ID_SETTINGS,
+} nextion_page_id_t;
+
+nextion_page_id_t nextion_get_current_page(void);
+
 void nextion_event_handle_line(const char *line);
 void nextion_event_handle_init(void);
 void nextion_update_main_status(void);

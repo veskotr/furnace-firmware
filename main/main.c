@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "sdkconfig.h"
 #include "health_monitor.h"
+#include "nvs_flash.h"
 
 #ifdef CONFIG_MODBUS_TEMP_ENABLED
 #include "modbus_temp_monitor.h"
@@ -19,6 +20,16 @@ static const char* TAG = "main";
 void app_main(void)
 {
     logger_init();
+
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_err = nvs_flash_init();
+    }
+    if (nvs_err != ESP_OK) {
+        LOGGER_LOG_ERROR(TAG, "NVS flash init failed: %s", esp_err_to_name(nvs_err));
+    }
+
     CHECK_ERR_LOG_CALL(event_manager_init(),
                        return,
                        "Failed to initialize event manager");

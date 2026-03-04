@@ -249,7 +249,7 @@ void program_handlers_page_next(void)
 
 static int starting_temp_for_current_page(void)
 {
-    int current_temp = program_get_current_temp_c();
+    int current_temp = program_get_ambient_temp_c();
     ProgramDraft draft;
     program_draft_get(&draft);
     for (int i = 0; i < (s_programs_page - 1) * PROGRAMS_PAGE_STAGE_COUNT; ++i) {
@@ -280,7 +280,7 @@ static bool render_graph_to_nextion(const ProgramDraft *draft, int graph_id,
 
     size_t count = program_build_graph(draft, samples, sizeof(samples), width,
                                        CONFIG_NEXTION_MAX_TEMPERATURE_C,
-                                       program_get_current_temp_c());
+                                       program_get_ambient_temp_c());
     if (count == 0) {
         nextion_show_error("Graph: no data");
         return false;
@@ -374,7 +374,7 @@ void handle_save_prog(const char *payload)
     char error_msg[64];
     ProgramDraft validated;
     program_draft_get(&validated);
-    if (!program_validate_draft_with_temp(&validated, program_get_current_temp_c(),
+    if (!program_validate_draft_with_temp(&validated, program_get_ambient_temp_c(),
                                          error_msg, sizeof(error_msg))) {
         nextion_show_error(error_msg);
         return;
@@ -403,6 +403,7 @@ void handle_show_graph(const char *payload)
 
     if (s_graph_visible) {
         nextion_send_cmd("vis graphDisp,0");
+        nextion_send_cmd("showGraph.txt=\"Show Graph\"");
         s_graph_visible = false;
         return;
     }
@@ -457,6 +458,7 @@ void handle_show_graph(const char *payload)
     }
 
     nextion_send_cmd("vis graphDisp,1");
+    nextion_send_cmd("showGraph.txt=\"Hide Graph\"");
     s_graph_visible = true;
 
     ProgramDraft graph_draft;

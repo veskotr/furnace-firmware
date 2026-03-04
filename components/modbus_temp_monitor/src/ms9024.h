@@ -63,3 +63,22 @@ esp_err_t ms9024_auto_correct_register(uart_port_t port, uint8_t slave,
  */
 void ms9024_log_config(uart_port_t port, uint8_t slave,
                        uint16_t pv_reg, int timeout_ms);
+
+/**
+ * @brief Comprehensive register scan for diagnostics.
+ *
+ * Reads all relevant register ranges (config, calibration, device info)
+ * and dumps them to the log. Run this on both a known-good and a suspect
+ * transmitter, then compare the output to find mismatched calibration.
+ */
+void ms9024_diagnostic_scan(uart_port_t port, uint8_t slave, int timeout_ms);
+
+/**
+ * @brief Repair a bad MS9024 by writing known-good register values.
+ *
+ * Writes the correct values to registers 27, 30, and 129 as captured
+ * from a known-good reference unit.
+ *
+ * @return ESP_OK if all writes verified successfully.
+ */
+esp_err_t ms9024_repair_from_good_unit(uart_port_t port, uint8_t slave, int timeout_ms);

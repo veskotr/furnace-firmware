@@ -81,6 +81,19 @@ static void modbus_temp_read_task(void *arg)
     /* Dump device configuration once */
     ms9024_log_config(UART_PORT, SLAVE_ADDR, PV_REG, RESP_TIMEOUT_MS);
 
+    /* Diagnostic scan available but disabled for normal operation (adds ~30s).
+     * Uncomment to compare register dumps between transmitter units:
+     * ms9024_diagnostic_scan(UART_PORT, SLAVE_ADDR, RESP_TIMEOUT_MS);
+     */
+
+#ifdef CONFIG_MODBUS_TEMP_REPAIR_BAD_UNIT
+    /* ONE-SHOT repair: write known-good values to a bad transmitter */
+    ms9024_repair_from_good_unit(UART_PORT, SLAVE_ADDR, RESP_TIMEOUT_MS);
+    /* Re-dump config after repair so we can see the changes took effect */
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ms9024_log_config(UART_PORT, SLAVE_ADDR, PV_REG, RESP_TIMEOUT_MS);
+#endif
+
     int consecutive_errors = 0;
     const TickType_t interval = pdMS_TO_TICKS(READ_INTERVAL);
 

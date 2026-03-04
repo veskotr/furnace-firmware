@@ -259,3 +259,154 @@ void ms9024_log_config(uart_port_t port, uint8_t slave,
 
     LOGGER_LOG_INFO(TAG, "═══════════════ end config ═══════════════");
 }
+
+/* =========================================================================
+ *  Comprehensive register scan — compare good vs. bad transmitter
+ * ========================================================================= */
+void ms9024_diagnostic_scan(uart_port_t port, uint8_t slave, int timeout_ms)
+{
+    LOGGER_LOG_INFO(TAG, "╔══════════════════════════════════════════════════╗");
+    LOGGER_LOG_INFO(TAG, "║  MS9024 FULL REGISTER SCAN  (compare units)     ║");
+    LOGGER_LOG_INFO(TAG, "╚══════════════════════════════════════════════════╝");
+
+    /*
+     * Scan strategy: read register ranges that contain configuration,
+     * calibration/trim, and device-info values. Registers that return
+     * an exception (illegal data address) are silently skipped.
+     *
+     * Typical MS9024 / NOVUS register layout:
+     *   0 –  50  : sensor config (type, wiring, filter, decimal pt …)
+     *  51 – 130  : device info, firmware, serial, cal trim
+     * 440 – 460  : extra config (C/F, alarms, etc.)
+     * 510 – 540  : float RAM area (offsets, cal values)
+     */
+
+    /* --- Helper: scan a contiguous range of 16-bit registers --- */
+    #define SCAN_RANGE(label, start, end)                                   \
+        do {                                                                \
+            LOGGER_LOG_INFO(TAG, "── %s (regs %d – %d) ──",               \
+                            label, (int)(start), (int)(end));               \
+            for (uint16_t r = (start); r <= (end); r++) {                   \
+                uint16_t v = 0;                                             \
+                if (ms9024_read_uint16(port, slave, r, &v, timeout_ms)      \
+                    == ESP_OK) {                                            \
+                    LOGGER_LOG_INFO(TAG,                                    \
+                        "  REG %3d = 0x%04X  (%5d)", r, v, v);            \
+                }                                                           \
+                vTaskDelay(pdMS_TO_TICKS(20));                              \
+            }                                                               \
+        } while (0)
+
+    /* Config area — sensor type, wiring, filter, decimal point, etc. */
+    SCAN_RANGE("CONFIG", 0, 50);
+
+    /* Device info / calibration / trim area */
+    SCAN_RANGE("CAL/INFO", 100, 130);
+
+    /* Extra config — C/F, alarms, setpoints */
+    SCAN_RANGE("EXTRA CFG", 440, 460);
+
+    /* Float RAM area — offsets, calibration values (reading as raw u16) */
+    SCAN_RANGE("FLOAT RAM", 510, 540);
+
+    #undef SCAN_RANGE
+
+    /* Also read float-decoded values for key calibration registers */
+    LOGGER_LOG_INFO(TAG, "── Float-decoded calibration registers ──");
+    static const struct { const char *name; uint16_t reg; } cal_floats[] = {
+        { "IN_OFFSET",  524 },   /* Input offset             */
+        { "REG_526",    526 },   /* Possible zero-trim       */
+        { "REG_528",    528 },   /* Possible span-trim       */
+        { "REG_530",    530 },   /* Possible user cal value  */
+        { "REG_532",    532 },   /* Possible user cal value  */
+        { "REG_534",    534 },   /* Possible user cal value  */
+        { "REG_536",    536 },   /* Possible user cal value  */
+        { "PV",         728 },   /* Process value            */
+        { "T2",         730 },   /* Cold junction / board T  */
+        { "AOUT",       726 },   /* Analog output            */
+    };
+    for (size_t i = 0; i < sizeof(cal_floats) / sizeof(cal_floats[0]); i++) {
+        float fv = 0.0f;
+        if (ms9024_read_float(port, slave, cal_floats[i].reg, &fv, timeout_ms)
+            == ESP_OK) {
+            LOGGER_LOG_INFO(TAG, "  %-12s (reg %3d) = %.4f",
+                            cal_floats[i].name, cal_floats[i].reg, fv);
+        } else {
+            LOGGER_LOG_WARN(TAG, "  %-12s (reg %3d) = READ FAILED / NaN",
+                            cal_floats[i].name, cal_floats[i].reg);
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+
+    LOGGER_LOG_INFO(TAG, "═══════════════ end diagnostic scan ═══════════════");
+    LOGGER_LOG_INFO(TAG, "⇒ Run this on BOTH the bad and a known-good unit,");
+    LOGGER_LOG_INFO(TAG, "  then diff the output to find the mismatch.");
+}
+
+/* =========================================================================
+ *  Repair a bad MS9024 — write known-good register values
+ *  Values captured from a known-good reference unit.
+ * ========================================================================= */
+esp_err_t ms9024_repair_from_good_unit(uart_port_t port, uint8_t slave, int timeout_ms)
+{
+    LOGGER_LOG_WARN(TAG, "╔══════════════════════════════════════════════════╗");
+    LOGGER_LOG_WARN(TAG, "║  MS9024 REPAIR MODE — writing good-unit values  ║");
+    LOGGER_LOG_WARN(TAG, "╚══════════════════════════════════════════════════╝");
+
+    /*
+     * Register diff between bad and good unit:
+     *   Reg 27:  bad=200  good=0     (likely CJC/offset/linearisation param)
+     *   Reg 30:  bad=0    good=2     (unknown config parameter)
+     *   Reg 129: bad=0    good=282   (unknown config/cal parameter)
+     *   Reg 26:  bad=127  good=50    (FIN filter — cosmetic, not causing offset)
+     */
+    static const struct { uint16_t reg; uint16_t good_val; const char *name; } repairs[] = {
+        {  27,    0, "REG27 (suspected offset/CJC)" },
+        {  30,    2, "REG30 (config param)"          },
+        { 129,  282, "REG129 (config/cal param)"     },
+    };
+
+    int ok = 0, fail = 0;
+
+    for (size_t i = 0; i < sizeof(repairs) / sizeof(repairs[0]); i++) {
+        /* Read current value first */
+        uint16_t current = 0;
+        esp_err_t err = ms9024_read_uint16(port, slave, repairs[i].reg,
+                                           &current, timeout_ms);
+        if (err != ESP_OK) {
+            LOGGER_LOG_ERROR(TAG, "  Cannot read %s (reg %d) — skipping",
+                            repairs[i].name, repairs[i].reg);
+            fail++;
+            continue;
+        }
+
+        if (current == repairs[i].good_val) {
+            LOGGER_LOG_INFO(TAG, "  %s (reg %d) already correct: %d",
+                           repairs[i].name, repairs[i].reg, current);
+            ok++;
+            continue;
+        }
+
+        LOGGER_LOG_WARN(TAG, "  %s (reg %d): current=%d, writing good=%d",
+                       repairs[i].name, repairs[i].reg,
+                       current, repairs[i].good_val);
+
+        err = ms9024_write_and_verify(port, slave, repairs[i].reg,
+                                      repairs[i].good_val,
+                                      repairs[i].name, timeout_ms);
+        if (err == ESP_OK) {
+            LOGGER_LOG_INFO(TAG, "  ✓ %s repaired successfully", repairs[i].name);
+            ok++;
+        } else {
+            LOGGER_LOG_ERROR(TAG, "  ✗ %s repair FAILED", repairs[i].name);
+            fail++;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));  /* Let MS9024 save to EEPROM */
+    }
+
+    LOGGER_LOG_WARN(TAG, "Repair complete: %d OK, %d FAILED", ok, fail);
+    LOGGER_LOG_WARN(TAG, "Power-cycle the MS9024 and re-check temperature.");
+    LOGGER_LOG_WARN(TAG, "REMEMBER: Disable CONFIG_MODBUS_TEMP_REPAIR_BAD_UNIT after repair!");
+
+    return (fail == 0) ? ESP_OK : ESP_FAIL;
+}

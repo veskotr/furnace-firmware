@@ -1,22 +1,43 @@
 #include "heating_program_models.h"
 #include "heating_program_models_internal.h"
 #include "nextion_hmi.h"
+#include "logger_component.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+
+static const char *TAG = "program_models";
 
 static ProgramDraft s_program_draft;
 static ProgramDraft s_run_program;   // Snapshot copied at run-start, read by coordinator
 static int s_current_temp_c = 23;
+static float s_current_temp_f = 23.0f;
+static int s_ambient_temp_c = 23;    // User-settable ambient temp, persisted to NVS
 static int s_current_kw = 0;
 static SemaphoreHandle_t s_program_mutex = NULL;
+
+#define NVS_NAMESPACE "user_prefs"
+#define NVS_KEY_AMBIENT "ambient_c"
 
 void program_models_init(void)
 {
     if (s_program_mutex == NULL) {
         s_program_mutex = xSemaphoreCreateRecursiveMutex();
         configASSERT(s_program_mutex);
+    }
+
+    /* Load ambient temperature from NVS (default 23 if not set) */
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
+        int32_t val = 23;
+        if (nvs_get_i32(nvs, NVS_KEY_AMBIENT, &val) == ESP_OK) {
+            s_ambient_temp_c = (int)val;
+            LOGGER_LOG_INFO(TAG, "Loaded ambient temp from NVS: %d", s_ambient_temp_c);
+        }
+        nvs_close(nvs);
     }
 }
 
@@ -109,6 +130,46 @@ int program_get_current_temp_c(void)
 {
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_current_temp_c;
+    xSemaphoreGiveRecursive(s_program_mutex);
+    return value;
+}
+
+void program_set_current_temp_f(float temp_f)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    s_current_temp_f = temp_f;
+    s_current_temp_c = (int)(temp_f + 0.5f);
+    xSemaphoreGiveRecursive(s_program_mutex);
+}
+
+float program_get_current_temp_f(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    float value = s_current_temp_f;
+    xSemaphoreGiveRecursive(s_program_mutex);
+    return value;
+}
+
+void program_set_ambient_temp_c(int temp_c)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    s_ambient_temp_c = temp_c;
+    xSemaphoreGiveRecursive(s_program_mutex);
+
+    /* Persist to NVS */
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_i32(nvs, NVS_KEY_AMBIENT, (int32_t)temp_c);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        LOGGER_LOG_INFO(TAG, "Saved ambient temp to NVS: %d", temp_c);
+    }
+}
+
+int program_get_ambient_temp_c(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    int value = s_ambient_temp_c;
     xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }

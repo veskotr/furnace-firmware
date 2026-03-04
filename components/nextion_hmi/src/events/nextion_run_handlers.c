@@ -14,12 +14,25 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 static const char *TAG = "nextion_run";
 
 /* ── Profile active state ───────────────────────────────────────────── */
 
 static bool     s_profile_active    = false;
+static bool     s_profile_paused    = false;
+
+/* ── Time tracking ──────────────────────────────────────────────────── */
+
+static uint32_t s_last_elapsed_ms   = 0;   // last received from coordinator
+static uint32_t s_total_ms          = 0;   // program total duration
+static uint32_t s_pause_extra_ms    = 0;   // accumulated pause time added to remaining
+static uint32_t s_pause_start_tick  = 0;   // tick count when pause began
+
+/* ── Graph: plot one point per minute ───────────────────────────────── */
+
+static uint32_t s_last_graph_min    = UINT32_MAX;  // last elapsed minute plotted
 
 /* ── Live waveform state ───────────────────────────────────────────── */
 
@@ -135,17 +148,27 @@ void nextion_event_handle_temp_update(float temperature, bool valid)
         return;
     }
 
-    int temp_c = (int)(temperature + 0.5f);
-    program_set_current_temp_c(temp_c);
+    program_set_current_temp_f(temperature);
 
-    char cmd[64];
-    snprintf(cmd, sizeof(cmd), "currentTemp.txt=\"%d\"", temp_c);
-    nextion_send_cmd(cmd);
+    char cmd[96];
+    nextion_page_id_t page = nextion_get_current_page();
+
+    if (page == NEXTION_PAGE_ID_MAIN) {
+        snprintf(cmd, sizeof(cmd), "currentTemp.txt=\"%.2f\"", temperature);
+        nextion_send_cmd(cmd);
+    } else if (page == NEXTION_PAGE_ID_SETTINGS) {
+        snprintf(cmd, sizeof(cmd),
+                 "ambientTempH.txt=\"Set ambient temp (%.2f)\"", temperature);
+        nextion_send_cmd(cmd);
+    }
 }
 
 void nextion_event_handle_profile_started(void)
 {
-    LOGGER_LOG_INFO(TAG, "Profile started — updating display");    s_profile_active = true;    nextion_send_cmd("machineState.txt=\"Running\"");
+    LOGGER_LOG_INFO(TAG, "Profile started — updating display");
+    s_profile_active = true;
+    s_profile_paused = false;
+    nextion_send_cmd("machineState.txt=\"Running\"");
     nextion_clear_error();
 
     ProgramDraft draft;
@@ -173,11 +196,30 @@ void nextion_event_handle_profile_started(void)
         s_waveform_total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
 
+    /* Init time tracking */
+    s_total_ms         = s_waveform_total_ms;
+    s_last_elapsed_ms  = 0;
+    s_pause_extra_ms   = 0;
+    s_last_graph_min   = UINT32_MAX;  /* force first graph point */
+
+    /* Init waveform */
     s_waveform_x = 0;
     s_waveform_ms_per_pixel = (s_waveform_total_ms > 0)
         ? (s_waveform_total_ms / WAVEFORM_USABLE_WIDTH)
         : 1;
     s_waveform_active = true;
+
+    /* Show initial times */
+    nextion_send_cmd("timeElapsed.txt=\"00:00:00\"");
+    {
+        uint32_t rs = s_total_ms / 1000;
+        uint32_t rh = rs / 3600;
+        uint32_t rm = (rs % 3600) / 60;
+        uint32_t rss = rs % 60;
+        snprintf(cmd, sizeof(cmd), "timeRamaining.txt=\"%02lu:%02lu:%02lu\"",
+                 (unsigned long)rh, (unsigned long)rm, (unsigned long)rss);
+        nextion_send_cmd(cmd);
+    }
 
     /* Clear both graph channels */
     snprintf(cmd, sizeof(cmd), "cle %d,0", CONFIG_NEXTION_GRAPH_DISP_ID);
@@ -204,30 +246,70 @@ void nextion_event_handle_profile_started(void)
     }
 }
 
+/* ── Helper: format and send time displays ──────────────────────────── */
+
+static void update_time_displays(uint32_t elapsed_ms, uint32_t remaining_ms)
+{
+    char cmd[64];
+
+    uint32_t es_total = elapsed_ms / 1000;
+    snprintf(cmd, sizeof(cmd), "timeElapsed.txt=\"%02lu:%02lu:%02lu\"",
+             (unsigned long)(es_total / 3600),
+             (unsigned long)((es_total % 3600) / 60),
+             (unsigned long)(es_total % 60));
+    nextion_send_cmd(cmd);
+
+    uint32_t rs_total = remaining_ms / 1000;
+    snprintf(cmd, sizeof(cmd), "timeRamaining.txt=\"%02lu:%02lu:%02lu\"",
+             (unsigned long)(rs_total / 3600),
+             (unsigned long)((rs_total % 3600) / 60),
+             (unsigned long)(rs_total % 60));
+    nextion_send_cmd(cmd);
+}
+
+/* ── Helper: add one waveform point (actual temp on channel 1) ──────── */
+
+static void plot_graph_point(float current_temp, uint32_t elapsed_ms)
+{
+    if (!s_waveform_active || s_waveform_ms_per_pixel == 0) return;
+
+    uint32_t target_x = elapsed_ms / s_waveform_ms_per_pixel;
+    if (target_x > (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH) {
+        target_x = (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH;
+    }
+
+    int temp_c = (int)(current_temp + 0.5f);
+    int y = 0;
+    if (CONFIG_NEXTION_MAX_TEMPERATURE_C > 0) {
+        y = (temp_c * CONFIG_NEXTION_MAIN_GRAPH_HEIGHT)
+            / CONFIG_NEXTION_MAX_TEMPERATURE_C;
+    }
+    if (y < 0) y = 0;
+    if (y > CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) y = CONFIG_NEXTION_MAIN_GRAPH_HEIGHT;
+
+    char cmd[64];
+    while (s_waveform_x < target_x) {
+        snprintf(cmd, sizeof(cmd), "add %d,1,%d",
+                 CONFIG_NEXTION_GRAPH_DISP_ID, y);
+        nextion_send_cmd(cmd);
+        s_waveform_x++;
+    }
+}
+
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                         float current_temp, float target_temp,
                                         float power_output)
 {
     char cmd[64];
 
-    /* ── Elapsed time (HH:MM:SS) ─────────────────────────────────── */
-    uint32_t elapsed_s = elapsed_ms / 1000;
-    uint32_t eh = elapsed_s / 3600;
-    uint32_t em = (elapsed_s % 3600) / 60;
-    uint32_t es = elapsed_s % 60;
-    snprintf(cmd, sizeof(cmd), "timeElapsed.txt=\"%02lu:%02lu:%02lu\"",
-             (unsigned long)eh, (unsigned long)em, (unsigned long)es);
-    nextion_send_cmd(cmd);
+    /* Cache for pause calculations */
+    s_last_elapsed_ms = elapsed_ms;
+    s_total_ms        = total_ms;
 
-    /* ── Remaining time (HH:MM:SS) ───────────────────────────────── */
-    uint32_t remaining_ms = (total_ms > elapsed_ms) ? (total_ms - elapsed_ms) : 0;
-    uint32_t remaining_s = remaining_ms / 1000;
-    uint32_t rh = remaining_s / 3600;
-    uint32_t rm = (remaining_s % 3600) / 60;
-    uint32_t rs = remaining_s % 60;
-    snprintf(cmd, sizeof(cmd), "timeRamaining.txt=\"%02lu:%02lu:%02lu\"",
-             (unsigned long)rh, (unsigned long)rm, (unsigned long)rs);
-    nextion_send_cmd(cmd);
+    /* ── Time displays ────────────────────────────────────────────── */
+    uint32_t remaining_ms = (total_ms + s_pause_extra_ms > elapsed_ms)
+                          ? (total_ms + s_pause_extra_ms - elapsed_ms) : 0;
+    update_time_displays(elapsed_ms, remaining_ms);
 
     /* ── Current power in kW ─────────────────────────────────────── */
     float kw = power_output * (float)CONFIG_NEXTION_HEATER_POWER_KW;
@@ -237,42 +319,30 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
     snprintf(cmd, sizeof(cmd), "currentKw.txt=\"%d.%d\"", kw_int, kw_frac);
     nextion_send_cmd(cmd);
 
-    /* ── Live waveform plotting (time-proportional) ─────────────── */
-    if (s_waveform_active && s_waveform_ms_per_pixel > 0) {
-        uint32_t target_x = elapsed_ms / s_waveform_ms_per_pixel;
-        if (target_x > (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH) {
-            target_x = (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH;
-        }
-
-        /* Advance the waveform to the correct x position.
-         * Fill any skipped pixels with the current value. */
-        int temp_c = (int)(current_temp + 0.5f);
-        int y = 0;
-        if (CONFIG_NEXTION_MAX_TEMPERATURE_C > 0) {
-            y = (temp_c * CONFIG_NEXTION_MAIN_GRAPH_HEIGHT)
-                / CONFIG_NEXTION_MAX_TEMPERATURE_C;
-        }
-        if (y < 0) y = 0;
-        if (y > CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) y = CONFIG_NEXTION_MAIN_GRAPH_HEIGHT;
-
-        while (s_waveform_x < target_x) {
-            snprintf(cmd, sizeof(cmd), "add %d,1,%d",
-                     CONFIG_NEXTION_GRAPH_DISP_ID, y);
-            nextion_send_cmd(cmd);
-            s_waveform_x++;
-        }
+    /* ── Live waveform: plot one point per elapsed minute ─────────── */
+    uint32_t elapsed_min = elapsed_ms / 60000;
+    if (elapsed_min != s_last_graph_min) {
+        s_last_graph_min = elapsed_min;
+        plot_graph_point(current_temp, elapsed_ms);
     }
 }
 
 void nextion_event_handle_profile_paused(void)
 {
     LOGGER_LOG_INFO(TAG, "Profile paused");
+    s_profile_paused = true;
+    s_pause_start_tick = xTaskGetTickCount();
     nextion_send_cmd("machineState.txt=\"Paused\"");
 }
 
 void nextion_event_handle_profile_resumed(void)
 {
     LOGGER_LOG_INFO(TAG, "Profile resumed");
+    /* Accumulate pause duration into extra remaining time */
+    uint32_t pause_duration_ms =
+        (xTaskGetTickCount() - s_pause_start_tick) * portTICK_PERIOD_MS;
+    s_pause_extra_ms += pause_duration_ms;
+    s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Running\"");
 }
 
@@ -280,6 +350,7 @@ void nextion_event_handle_profile_stopped(void)
 {
     LOGGER_LOG_INFO(TAG, "Profile stopped");
     s_profile_active = false;
+    s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Stopped\"");
     s_waveform_active = false;
 }
@@ -288,12 +359,48 @@ void nextion_event_handle_profile_completed(void)
 {
     LOGGER_LOG_INFO(TAG, "Profile completed");
     s_profile_active = false;
+    s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Completed\"");
     s_waveform_active = false;
 
     /* Zero out time remaining and power displays */
     nextion_send_cmd("timeRamaining.txt=\"00:00:00\"");
     nextion_send_cmd("currentKw.txt=\"0.0\"");
+}
+
+/* ── Periodic tick (called from HMI coordinator ~every 50ms) ─────────
+ *
+ * During pause the coordinator task stops sending STATUS_UPDATEs, so
+ * we maintain the time displays here:
+ *   - elapsed stays frozen (coordinator doesn't increment it)
+ *   - remaining increases (pause extends the total)
+ * Only update the display once per second to avoid UART spam.
+ * ------------------------------------------------------------------- */
+
+void nextion_run_tick(void)
+{
+    if (!s_profile_active || !s_profile_paused) {
+        return;
+    }
+
+    static uint32_t s_last_pause_display_tick = 0;
+    uint32_t now = xTaskGetTickCount();
+    if ((now - s_last_pause_display_tick) * portTICK_PERIOD_MS < 1000) {
+        return;   /* throttle to ~1 Hz */
+    }
+    s_last_pause_display_tick = now;
+
+    /* Remaining = original_total + all_pause_time - elapsed
+     * Current pause contribution = time since this pause started */
+    uint32_t current_pause_ms =
+        (now - s_pause_start_tick) * portTICK_PERIOD_MS;
+    uint32_t total_pause_ms = s_pause_extra_ms + current_pause_ms;
+
+    uint32_t remaining_ms = (s_total_ms + total_pause_ms > s_last_elapsed_ms)
+                          ? (s_total_ms + total_pause_ms - s_last_elapsed_ms)
+                          : 0;
+
+    update_time_displays(s_last_elapsed_ms, remaining_ms);
 }
 
 static const char *coordinator_error_to_str(coordinator_error_code_t code)

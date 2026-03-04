@@ -141,6 +141,19 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                           "Failed to send coordinator current profile event");
             break;
         }
+    /* Outbound / informational events — posted by us, consumed by HMI bridge.
+     * Nothing to do here; just avoid the "Unknown" warning. */
+    case COORDINATOR_EVENT_STATUS_UPDATE:
+    case COORDINATOR_EVENT_PROFILE_STARTED:
+    case COORDINATOR_EVENT_PROFILE_PAUSED:
+    case COORDINATOR_EVENT_PROFILE_RESUMED:
+    case COORDINATOR_EVENT_PROFILE_STOPPED:
+    case COORDINATOR_EVENT_PROFILE_COMPLETED:
+    case COORDINATOR_EVENT_NODE_STARTED:
+    case COORDINATOR_EVENT_NODE_COMPLETED:
+    case COORDINATOR_EVENT_ERROR_OCCURRED:
+        break;
+
     default:
         LOGGER_LOG_WARN(TAG, "Unknown Coordinator Event ID: %d", id);
         break;

@@ -5,8 +5,10 @@
 #include "nextion_transport_internal.h"
 #include "nextion_storage_internal.h"
 #include "nextion_ui_internal.h"
+#include "heating_program_models_internal.h"
 #include "logger_component.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -32,6 +34,12 @@ void handle_settings_init(void)
     snprintf(cmd, sizeof(cmd), "cfg_dTmax.txt=\"%s\"", delta_max_buf);
     nextion_send_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cfg_Power.txt=\"%d\"", CONFIG_NEXTION_HEATER_POWER_KW);
+    nextion_send_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd), "ambientTemp.txt=\"%d\"", program_get_ambient_temp_c());
+    nextion_send_cmd(cmd);
+    snprintf(cmd, sizeof(cmd), "ambientTempH.txt=\"Set ambient temp (%.2f)\"",
+             program_get_current_temp_f());
     nextion_send_cmd(cmd);
 
 #ifdef CONFIG_NEXTION_HAS_WIFI
@@ -61,10 +69,10 @@ void handle_save_settings(const char *payload)
     strncpy(buffer, payload, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
 
-    char *tokens[8] = {0};
+    char *tokens[10] = {0};
     size_t token_count = 0;
     char *cursor = buffer;
-    while (cursor && token_count < 8) {
+    while (cursor && token_count < 10) {
         char *comma = strchr(cursor, ',');
         if (comma) *comma = '\0';
         tokens[token_count++] = cursor;
@@ -76,18 +84,20 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "  token[%d]: [%s]", (int)i, tokens[i] ? tokens[i] : "NULL");
     }
 
-    if (token_count < 8) {
+    if (token_count < 10) {
         char err[64];
-        snprintf(err, sizeof(err), "Missing fields: got %d, need 8", (int)token_count);
+        snprintf(err, sizeof(err), "Missing fields: got %d, need 10", (int)token_count);
         nextion_show_error(err);
         return;
     }
 
     int time_dirty, date_dirty, hour, min, sec, day, month, year;
+    int ambient_dirty, ambient_temp;
     if (!parse_int(tokens[0], &time_dirty) || !parse_int(tokens[1], &date_dirty) ||
         !parse_int(tokens[2], &hour)       || !parse_int(tokens[3], &min)        ||
         !parse_int(tokens[4], &sec)        || !parse_int(tokens[5], &day)        ||
-        !parse_int(tokens[6], &month)      || !parse_int(tokens[7], &year)) {
+        !parse_int(tokens[6], &month)      || !parse_int(tokens[7], &year)       ||
+        !parse_int(tokens[8], &ambient_dirty) || !parse_int(tokens[9], &ambient_temp)) {
         nextion_show_error("Invalid settings data");
         return;
     }
@@ -126,6 +136,15 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "Settings saved (time/date unchanged)");
     }
 
+    if (ambient_dirty) {
+        if (ambient_temp < 0 || ambient_temp > CONFIG_NEXTION_MAX_TEMPERATURE_C) {
+            nextion_show_error("Invalid ambient temperature");
+            return;
+        }
+        program_set_ambient_temp_c(ambient_temp);
+        LOGGER_LOG_INFO(TAG, "Ambient temperature set to %d", ambient_temp);
+    }
+
     nextion_clear_error();
 }
 
@@ -155,7 +174,7 @@ void handle_factory_reset_request(void)
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_send_cmd("vis confirmTxt,1");
     vTaskDelay(pdMS_TO_TICKS(20));
-    nextion_send_cmd("vis confirmFactoryB,1");
+    nextion_send_cmd("vis confirmReset,1");
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_send_cmd("vis confirmCancel,1");
 }
@@ -167,12 +186,21 @@ void handle_factory_reset_confirm(void)
     /* Hide the dialog */
     nextion_send_cmd("vis confirmBdy,0");
     nextion_send_cmd("vis confirmTxt,0");
-    nextion_send_cmd("vis confirmFactoryB,0");
+    nextion_send_cmd("vis confirmReset,0");
     nextion_send_cmd("vis confirmCancel,0");
 
     /* Delete all tracked programs from SD */
     int deleted = nextion_storage_delete_all_programs();
     LOGGER_LOG_INFO(TAG, "Factory reset: %d programs deleted", deleted);
+
+    /* Erase all NVS user preferences */
+    esp_err_t nvs_err = nvs_flash_erase();
+    if (nvs_err == ESP_OK) {
+        LOGGER_LOG_INFO(TAG, "Factory reset: NVS erased");
+    } else {
+        LOGGER_LOG_WARN(TAG, "Factory reset: NVS erase failed: %s",
+                        esp_err_to_name(nvs_err));
+    }
 
     /* Brief pause so the user sees the dialog close */
     vTaskDelay(pdMS_TO_TICKS(300));

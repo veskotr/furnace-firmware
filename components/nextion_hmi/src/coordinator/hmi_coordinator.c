@@ -2,6 +2,7 @@
 
 #include "sdkconfig.h"
 #include "nextion_events_internal.h"
+#include "nextion_run_handlers.h"
 #include "nextion_file_reader_internal.h"
 #include "nextion_storage_internal.h"
 #include "heating_program_models_internal.h"
@@ -212,7 +213,8 @@ static void hmi_coordinator_task(void *arg)
         }
 
         if (got != pdTRUE) {
-            continue;   /* timeout, no command — loop back to check again */
+            nextion_run_tick();   /* pause-time display updates */
+            continue;
         }
 
         /* ── If deferring, buffer instead of sending ──────────────── */
@@ -221,8 +223,7 @@ static void hmi_coordinator_task(void *arg)
                 case HMI_CMD_TEMP_UPDATE:
                     /* Only keep the latest reading (RAM model still updated) */
                     if (cmd.temp.valid) {
-                        int temp_c = (int)(cmd.temp.average_temperature + 0.5f);
-                        program_set_current_temp_c(temp_c);
+                        program_set_current_temp_f(cmd.temp.average_temperature);
                     }
                     s_deferred_temp.temperature = cmd.temp.average_temperature;
                     s_deferred_temp.valid       = cmd.temp.valid;

@@ -23,6 +23,10 @@ void program_draft_get(ProgramDraft *out);
 const char *program_draft_get_name(void);
 void program_set_current_temp_c(int temp_c);
 int program_get_current_temp_c(void);
+void program_set_current_temp_f(float temp_f);
+float program_get_current_temp_f(void);
+void program_set_ambient_temp_c(int temp_c);
+int program_get_ambient_temp_c(void);
 void program_set_current_kw(int kw);
 int program_get_current_kw(void);
 

@@ -201,6 +201,10 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
         return ESP_FAIL;
     }
 
+    /* Set running BEFORE task creation — the new task checks ctx->running
+     * in its while-loop condition and may be scheduled before we return. */
+    ctx->running = true;
+
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                heating_profile_task,
                                coordinator_task_config.task_name,
@@ -210,9 +214,8 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
                                &ctx->task_handle) == pdPASS
                            ? ESP_OK
                            : ESP_FAIL,
-                           ctx->task_handle = NULL,
+                           ctx->task_handle = NULL; ctx->running = false,
                            "Failed to create coordinator task");
-    ctx->running = true;
 
     /* Start periodic PID tick timer */
     const esp_timer_create_args_t timer_args = {
