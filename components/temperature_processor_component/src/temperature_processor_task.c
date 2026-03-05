@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "temperature_monitor_component.h"
 #include "sdkconfig.h"
+#include "furnace_error_types.h"
 
 static const char* TAG = "TEMP_PROCESSOR_TASK";
 
@@ -66,15 +67,23 @@ static void temp_process_task(void* args)
         if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)
         {
             LOGGER_LOG_WARN(TAG, "Temperature processing encountered errors: type %d", result.error_type);
-            CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_ERROR, &result, sizeof(result)),
-                          "Failed to post temp process error");
+            furnace_error_t error = {
+                .severity = SEVERITY_WARNING,
+                .source = SOURCE_TEMP_PROCESSOR,
+                .error_code = (uint32_t)result.error_type
+            };
+            CHECK_ERR_LOG(post_processing_error(error), "Failed to post temp process error");
         }
         else
         {
             LOGGER_LOG_INFO(TAG, "Processed average temperature: %.2f C", average_temperature);
         }
-        CHECK_ERR_LOG(post_temp_processor_event(PROCESS_TEMPERATURE_EVENT_DATA, &average_temperature, sizeof(float)),
-                      "Failed to post temp process data");
+
+        temp_processor_data_t data = {
+            .average_temperature = average_temperature,
+            .valid = (result.error_type == PROCESS_TEMPERATURE_ERROR_NONE)
+        };
+        CHECK_ERR_LOG(post_temp_processor_event(data), "Failed to post temp process data");
         event_manager_post_health(TEMP_PROCESSOR_EVENT_HEARTBEAT);
     }
 

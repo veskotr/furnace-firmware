@@ -10,13 +10,11 @@
 
 static const char* TAG = "COORDINATOR_EVENTS";
 
-float coordinator_current_temperature = 0.0f;
-
 static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data);
 
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
-    const coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
+    coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
 
     if (id != PROCESS_TEMPERATURE_EVENT_DATA)
     {
@@ -31,9 +29,15 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
             return;
         }
 
-        const float* temperature = (float*)event_data;
-        coordinator_current_temperature = *temperature;
-        LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", coordinator_current_temperature);
+        const temp_processor_data_t* data = (temp_processor_data_t*)event_data;
+        if (!data->valid)
+        {
+            LOGGER_LOG_WARN(TAG, "Temperature processor data marked invalid");
+            return;
+        }
+        ctx->current_temperature = data->average_temperature;
+        ctx->heating_task_state.current_temperature = data->average_temperature;
+        LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", ctx->current_temperature);
     }
 }
 
@@ -44,19 +48,25 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
     {
     case COORDINATOR_EVENT_START_PROFILE:
         {
-            const size_t profile_index = *((size_t*)event_data);
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile Index %zu", profile_index);
-            const esp_err_t err = start_heating_profile(ctx, profile_index);
+            if (event_data == NULL)
+            {
+                LOGGER_LOG_WARN(TAG, "Start profile event data is NULL");
+                return;
+            }
+            const coordinator_start_profile_data_t* data = (coordinator_start_profile_data_t*)event_data;
+            LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile '%s'", data->program.name);
+            const esp_err_t err = start_heating_profile(ctx, &data->program);
             if (err != ESP_OK)
             {
                 CHECK_ERR_LOG(
                     post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err, COORDINATOR_ERROR_NOT_STARTED),
                     "Failed to send coordinator error event for start profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to start heating profile index %zu: %s",
-                                 profile_index,
+                LOGGER_LOG_ERROR(TAG, "Failed to start heating profile '%s': %s",
+                                 data->program.name,
                                  esp_err_to_name(err));
                 return;
             }
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_STARTED, NULL, 0);
             break;
         }
     case COORDINATOR_EVENT_PAUSE_PROFILE:
@@ -73,6 +83,7 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                                  esp_err_to_name(err));
                 return;
             }
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_PAUSED, NULL, 0);
             break;
         }
     case COORDINATOR_EVENT_STOP_PROFILE:
@@ -89,6 +100,7 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                                  esp_err_to_name(err));
                 return;
             }
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_STOPPED, NULL, 0);
             break;
         }
     case COORDINATOR_EVENT_RESUME_PROFILE:
@@ -105,6 +117,7 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                                  esp_err_to_name(err));
                 return;
             }
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_RESUMED, NULL, 0);
             break;
         }
     case COORDINATOR_EVENT_GET_STATUS_REPORT:
@@ -126,6 +139,19 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                           "Failed to send coordinator current profile event");
             break;
         }
+    /* Outbound / informational events — posted by us, consumed by HMI bridge.
+     * Nothing to do here; just avoid the "Unknown" warning. */
+    case COORDINATOR_EVENT_STATUS_UPDATE:
+    case COORDINATOR_EVENT_PROFILE_STARTED:
+    case COORDINATOR_EVENT_PROFILE_PAUSED:
+    case COORDINATOR_EVENT_PROFILE_RESUMED:
+    case COORDINATOR_EVENT_PROFILE_STOPPED:
+    case COORDINATOR_EVENT_PROFILE_COMPLETED:
+    case COORDINATOR_EVENT_NODE_STARTED:
+    case COORDINATOR_EVENT_NODE_COMPLETED:
+    case COORDINATOR_EVENT_ERROR_OCCURRED:
+        break;
+
     default:
         LOGGER_LOG_WARN(TAG, "Unknown Coordinator Event ID: %d", id);
         break;
@@ -178,6 +204,13 @@ esp_err_t init_coordinator_events(coordinator_ctx_t* ctx)
                           ctx),
                       "Failed to subscribe to coordinator events");
 
+    CHECK_ERR_LOG_RET(event_manager_subscribe(
+                          TEMP_PROCESSOR_EVENT,
+                          ESP_EVENT_ANY_ID,
+                          &temperature_processor_event_handler,
+                          ctx),
+                      "Failed to subscribe to temperature processor events");
+
     ctx->events_initialized = true;
 
     return ESP_OK;
@@ -194,6 +227,12 @@ esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx)
                           ESP_EVENT_ANY_ID,
                           &coordinator_event_handler),
                       "Failed to unsubscribe from coordinator events");
+
+    CHECK_ERR_LOG_RET(event_manager_unsubscribe(
+                          TEMP_PROCESSOR_EVENT,
+                          ESP_EVENT_ANY_ID,
+                          &temperature_processor_event_handler),
+                      "Failed to unsubscribe from temperature processor events");
 
 
     ctx->events_initialized = false;

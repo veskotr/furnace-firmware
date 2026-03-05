@@ -1,6 +1,10 @@
 #ifndef TEMPERATURE_MONITOR_TYPES_H
 #define TEMPERATURE_MONITOR_TYPES_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_err.h"
 #include "sdkconfig.h"
 
 

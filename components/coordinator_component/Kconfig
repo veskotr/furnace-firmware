@@ -8,4 +8,41 @@ menu "Coordinator"
         int "Max number of stored profiles"
         default 5
 
+    config COORDINATOR_PID_TICK_INTERVAL_MS
+        int "PID control loop tick interval (ms)"
+        default 1000
+        range 100 10000
+        help
+            How often the PID control loop runs (computes target temp,
+            runs PID, and sends power to the heater). 1000 ms = 1 Hz.
+
+    config COORDINATOR_PROFILE_COMPLETE_TEMP_C
+        int "Temperature threshold for profile completion (C)"
+        default 40
+        range 20 100
+        help
+            The profile is considered complete when the cooldown stage
+            has been reached AND the measured temperature drops below
+            this value.
+
+    config COORDINATOR_SETTLE_WINDOW_MIN
+        int "Settle window after stage time expires (minutes)"
+        default 3
+        range 1 10
+        help
+            When a stage's time has elapsed and the temperature is within
+            tolerance of the target, the controller gives this many extra
+            minutes for the PID to converge to the exact target before
+            advancing to the next stage.
+
+    config COORDINATOR_MAX_STAGE_EXTENSION_MIN
+        int "Max stage extension when temp not reached (minutes)"
+        default 30
+        range 5 120
+        help
+            When a stage's time has elapsed but the temperature is NOT
+            within tolerance of the target, the stage is extended up to
+            this many extra minutes. If the temperature still hasn't
+            been reached, the stage advances with a warning.
+
 endmenu
