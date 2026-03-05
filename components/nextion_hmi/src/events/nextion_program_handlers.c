@@ -6,7 +6,7 @@
 #include "nextion_storage_internal.h"
 #include "nextion_file_reader_internal.h"
 #include "nextion_ui_internal.h"
-#include "heating_program_models.h"
+#include "heating_program_types.h"
 #include "heating_program_models_internal.h"
 #include "heating_program_graph_internal.h"
 #include "heating_program_validation.h"

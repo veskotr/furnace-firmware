@@ -45,7 +45,7 @@ esp_err_t post_heater_controller_event(heater_controller_event_t event_type, voi
 // ============================================
 // Heating profile task management functions
 // ============================================
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, size_t profile_index);
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program);
 
 esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);
 

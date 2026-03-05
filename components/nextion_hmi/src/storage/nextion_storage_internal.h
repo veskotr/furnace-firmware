@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "heating_program_models.h"
+#include "heating_program_types.h"
 
 bool nextion_storage_active(void);
 bool nextion_storage_save_program(const ProgramDraft *draft, const char *original_name, char *error_msg, size_t error_len);

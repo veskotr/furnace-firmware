@@ -8,7 +8,7 @@ static const char *TAG = "COORDINATOR_CORE";
 
 static coordinator_ctx_t *g_coordinator_ctx;
 
-esp_err_t init_coordinator(const coordinator_config_t *config)
+esp_err_t init_coordinator(void)
 {
     if (g_coordinator_ctx != NULL && g_coordinator_ctx->running)
     {

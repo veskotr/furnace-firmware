@@ -54,21 +54,19 @@ static void coordinator_event_handler(void* handler_arg, esp_event_base_t base, 
                 return;
             }
             const coordinator_start_profile_data_t* data = (coordinator_start_profile_data_t*)event_data;
-            const size_t profile_index = data->profile_index;
-            LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile Index %zu", profile_index);
-            const esp_err_t err = start_heating_profile(ctx, profile_index);
+            LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile '%s'", data->program.name);
+            const esp_err_t err = start_heating_profile(ctx, &data->program);
             if (err != ESP_OK)
             {
                 CHECK_ERR_LOG(
                     post_coordinator_error_event(COORDINATOR_EVENT_ERROR_OCCURRED, &err, COORDINATOR_ERROR_NOT_STARTED),
                     "Failed to send coordinator error event for start profile failure");
-                LOGGER_LOG_ERROR(TAG, "Failed to start heating profile index %zu: %s",
-                                 profile_index,
+                LOGGER_LOG_ERROR(TAG, "Failed to start heating profile '%s': %s",
+                                 data->program.name,
                                  esp_err_to_name(err));
                 return;
             }
-            coordinator_start_profile_data_t started_data = { .profile_index = profile_index };
-            post_coordinator_event(COORDINATOR_EVENT_PROFILE_STARTED, &started_data, sizeof(started_data));
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_STARTED, NULL, 0);
             break;
         }
     case COORDINATOR_EVENT_PAUSE_PROFILE:

@@ -1,4 +1,4 @@
-#include "heating_program_models.h"
+#include "heating_program_types.h"
 #include "heating_program_models_internal.h"
 #include "nextion_hmi.h"
 #include "logger_component.h"

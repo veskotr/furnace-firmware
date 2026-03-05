@@ -5,7 +5,8 @@
 #include "pid_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
-#include "nextion_hmi.h"
+
+#include <string.h>
 
 static const char* TAG = "COORDINATOR_TASK";
 
@@ -27,6 +28,25 @@ static void pid_tick_timer_cb(void* arg)
     {
         xTaskNotifyGive(ctx->task_handle);
     }
+}
+
+/**
+ * @brief Build and post a coordinator status update event.
+ */
+static void post_status_update(const coordinator_ctx_t *ctx,
+                                float setpoint,
+                                float power_output)
+{
+    coordinator_status_data_t status = {
+        .profile_index       = ctx->heating_task_state.profile_index,
+        .current_temperature = ctx->current_temperature,
+        .target_temperature  = setpoint,
+        .power_output        = power_output,
+        .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
+        .total_ms            = ctx->heating_task_state.estimated_total_duration_ms,
+    };
+    post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE,
+                           &status, sizeof(status));
 }
 
 static void heating_profile_task(void* args)
@@ -97,16 +117,7 @@ static void heating_profile_task(void* args)
             "Failed to set heater target power level");
 
         /* Push status update to HMI (elapsed, remaining, power, temps) */
-        coordinator_status_data_t status = {
-            .profile_index      = ctx->heating_task_state.profile_index,
-            .current_temperature = ctx->current_temperature,
-            .target_temperature  = tick_result.setpoint,
-            .power_output        = power_output,
-            .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
-            .total_ms            = ctx->heating_task_state.total_time_ms,
-        };
-        post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE,
-                               &status, sizeof(status));
+        post_status_update(ctx, tick_result.setpoint, power_output);
 
         /* ── Profile completion — driven by profile_tick() state machine ── */
         if (tick_result.profile_complete) {
@@ -140,21 +151,20 @@ static const CoordinatorTaskConfig_t coordinator_task_config = {
     .task_priority = 5
 };
 
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_index)
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
         return ESP_OK;
     }
 
-    if (profile_index != 0)
-    {
-        LOGGER_LOG_ERROR(TAG, "Invalid program index: %d", profile_index);
+    if (!program) {
+        LOGGER_LOG_ERROR(TAG, "Program is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Fetch a fresh, thread-safe copy of the run slot
-    hmi_get_run_program(&ctx->run_program);
+    // Store a local copy of the program for the task lifetime
+    memcpy(&ctx->run_program, program, sizeof(ctx->run_program));
     ctx->has_program = true;
     const ProgramDraft *prog = &ctx->run_program;
 
@@ -175,13 +185,13 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
         total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
 
-    ctx->heating_task_state.profile_index = profile_index;
+    ctx->heating_task_state.profile_index = 0;
     ctx->heating_task_state.is_active = true;
     ctx->heating_task_state.is_paused = false;
     ctx->heating_task_state.is_completed = false;
     ctx->heating_task_state.current_time_elapsed_ms = 0;
-    ctx->heating_task_state.total_time_ms = total_ms;
-    ctx->heating_task_state.stages_only_ms = stages_ms;
+    ctx->heating_task_state.estimated_total_duration_ms = total_ms;
+    ctx->heating_task_state.heating_stages_duration_ms = stages_ms;
     ctx->heating_task_state.current_temperature = ctx->current_temperature;
     ctx->heating_task_state.heating_element_on = false;
     ctx->heating_task_state.fan_on = false;
@@ -195,8 +205,8 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const size_t profile_ind
 
     if (err != PROFILE_CONTROLLER_ERROR_NONE)
     {
-        LOGGER_LOG_ERROR(TAG, "Failed to load heating profile index %d, error: %d",
-                         profile_index,
+        LOGGER_LOG_ERROR(TAG, "Failed to load heating profile '%s', error: %d",
+                         prog->name,
                          err);
         return ESP_FAIL;
     }

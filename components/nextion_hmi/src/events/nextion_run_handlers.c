@@ -1,10 +1,11 @@
 #include "nextion_run_handlers.h"
 #include "nextion_events_internal.h"
+#include "nextion_hmi.h"
 
 #include "sdkconfig.h"
 #include "nextion_transport_internal.h"
 #include "nextion_ui_internal.h"
-#include "heating_program_models.h"
+#include "heating_program_types.h"
 #include "heating_program_models_internal.h"
 #include "heating_program_validation.h"
 #include "heating_program_graph_internal.h"
@@ -68,9 +69,9 @@ void handle_run_start(void)
 
     program_copy_draft_to_run_slot();
 
-    coordinator_start_profile_data_t data = {
-        .profile_index = 0
-    };
+    coordinator_start_profile_data_t data = {0};
+    hmi_get_run_program(&data.program);
+
     esp_err_t err = event_manager_post_blocking(
         COORDINATOR_EVENT,
         COORDINATOR_EVENT_START_PROFILE,

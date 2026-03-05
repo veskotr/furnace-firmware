@@ -129,10 +129,6 @@ static void coordinator_event_bridge(void *handler_arg, esp_event_base_t base,
     switch (id) {
         case COORDINATOR_EVENT_PROFILE_STARTED:
             cmd.type = HMI_CMD_PROFILE_STARTED;
-            if (event_data) {
-                const coordinator_start_profile_data_t *d = event_data;
-                (void)d;  // profile_index available if needed
-            }
             break;
 
         case COORDINATOR_EVENT_PROFILE_PAUSED:

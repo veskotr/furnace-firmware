@@ -66,8 +66,7 @@ void app_main(void)
     }
 #endif
 
-    const coordinator_config_t coordinator_config = { 0 };
-    CHECK_ERR_LOG_CALL(init_coordinator(&coordinator_config),
+    CHECK_ERR_LOG_CALL(init_coordinator(),
                        return,
                        "Failed to initialize coordinator");
 

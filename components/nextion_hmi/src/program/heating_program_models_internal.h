@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "heating_program_models.h"
+#include "heating_program_types.h"
 
 void program_models_init(void);
 void program_draft_clear(void);
