@@ -23,7 +23,7 @@ menu "Logging"
 
     config LOG_QUEUE_SIZE
         int "Queue size"
-        default 16
+        default 64
 
     config LOG_MAX_MESSAGE_LENGTH
         int "Max message length"

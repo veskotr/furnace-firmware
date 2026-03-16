@@ -75,15 +75,16 @@ ESP_EVENT_DECLARE_BASE(HEALTH_MONITOR_EVENT);
 typedef enum
 {
     HEALTH_MONITOR_EVENT_HEARTBEAT = 0,
+    HEALTH_MONITOR_EVENT_REGISTER,
+    HEALTH_MONITOR_EVENT_UNREGISTER,
 } health_monitor_event_id_t;
 
-typedef enum
+typedef struct
 {
-    TEMP_MONITOR_EVENT_HEARTBEAT = 0,
-    HEATER_CONTROLLER_EVENT_HEARTBEAT,
-    COORDINATOR_EVENT_HEARTBEAT,
-    TEMP_PROCESSOR_EVENT_HEARTBEAT,
-} health_monitor_component_id_t;
+    uint16_t component_id;
+    const char *component_name;
+    TickType_t timeout_ticks;
+} health_monitor_data_t;
 
 // ============================================================================
 // TEMPERATURE PROCESSOR EVENTS
@@ -105,6 +106,13 @@ typedef struct
 ESP_EVENT_DECLARE_BASE(FURNACE_ERROR_EVENT);
 
 #define FURNACE_ERROR_EVENT_ID 0
+
+// ============================================================================
+// DEVICE MANAGER EVENTS
+// ============================================================================
+ESP_EVENT_DECLARE_BASE(DEVICE_MANAGER_EVENT);
+
+#define DEVICE_MANAGER_UPDATED_EVENT 0
 
 // ============================================================================
 // INITIALIZATION FUNCTION

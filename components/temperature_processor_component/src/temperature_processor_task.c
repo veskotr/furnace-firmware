@@ -36,22 +36,13 @@ static void temp_process_task(void* args)
 
     temp_processor_context_t* ctx = (temp_processor_context_t*)args;
 
-    EventGroupHandle_t event_group = temp_monitor_get_event_group();
-    if (event_group == NULL)
-    {
-        LOGGER_LOG_ERROR(TAG, "Temperature monitor event group not available");
-        vTaskDelete(NULL);
-        ctx->task_handle = NULL;
-        return;
-    }
-
     while (ctx->processor_running)
     {
         // Wait for temperature ready event
-        xEventGroupWaitBits(event_group, TEMP_READY_EVENT_BIT, pdTRUE, pdFALSE, portMAX_DELAY);
+        //xEventGroupWaitBits(event_group, TEMP_READY_EVENT_BIT, pdTRUE, pdFALSE, portMAX_DELAY);
 
         // Process temperature samples from ring buffer
-        size_t samples_count = temp_ring_buffer_pop_all(samples_buffer, CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE);
+        //size_t samples_count = temp_ring_buffer_pop_all(samples_buffer, CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE);
 
         if (samples_count == 0)
         {

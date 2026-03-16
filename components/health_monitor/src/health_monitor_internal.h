@@ -23,7 +23,7 @@ typedef struct
     uint8_t miss_count;
     uint8_t max_misses;
 
-    bool required;
+    bool registered;
     heartbeat_state_t state;
 } heartbeat_entry_t;
 
@@ -34,6 +34,7 @@ typedef struct
     bool events_initialized;
     bool tasks_initialized;
     bool initialized;
+
     TaskHandle_t task_handle;
 } health_monitor_ctx_t;
 

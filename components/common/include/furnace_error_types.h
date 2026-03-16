@@ -23,7 +23,8 @@ typedef enum
     SOURCE_PID_CONTROLLER,
     SOURCE_SPI_MASTER,
     SOURCE_LOGGER,
-    SOURCE_UNKNOWN_COMPONENT
+    SOURCE_UNKNOWN_COMPONENT,
+    SOURCE_DEVICE_MANAGER,
 } furnace_error_source_t;
 
 typedef struct

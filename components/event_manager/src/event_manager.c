@@ -36,7 +36,9 @@ esp_err_t event_manager_init(void)
     }
     esp_event_loop_args_t loop_args = {
         .queue_size = CONFIG_EVENT_MANAGER_QUEUE_SIZE,
-        .task_name = event_manager_config.task_name};
+        .task_name = event_manager_config.task_name,
+        .task_priority = event_manager_config.task_priority,
+        .task_stack_size = event_manager_config.stack_size,};
 
     CHECK_ERR_LOG_RET(esp_event_loop_create(&loop_args, &g_event_manager_ctx.event_loop_handle),
                       "Failed to create event manager event loop");
@@ -117,12 +119,12 @@ esp_err_t event_manager_post(
     return ESP_OK;
 }
 
-esp_err_t event_manager_post_health(health_monitor_component_id_t component_id)
+esp_err_t event_manager_post_health(health_monitor_event_id_t event_id, health_monitor_data_t *event_data)
 {
     return event_manager_post(HEALTH_MONITOR_EVENT,
-        component_id,
-        NULL,
-        0,
+        event_id,
+        event_data,
+        sizeof(health_monitor_data_t),
         portMAX_DELAY
         );
 }

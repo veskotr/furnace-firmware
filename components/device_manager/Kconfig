@@ -1,0 +1,79 @@
+menu "Device Manager Configuration"
+
+    config DEVICE_MANAGER_COMPONENT_ID
+        int "Device Manager Component ID"
+        default 1
+        help
+            Unique identifier for the Device Manager component. This ID is used in communication protocols
+            to identify messages originating from the Device Manager.
+
+    config DEVICE_MANAGER_HEARTBEAT_TIMEOUT_MS
+        int "Device Manager Heartbeat Interval (ms)"
+        default 5000
+        help
+            Interval in milliseconds at which the Device Manager sends heartbeat messages to indicate it is alive.
+
+    config DEVICE_MANAGER_MODBUS_UART_NUMBER
+        int "Modbus UART Number"
+        default 2
+        help
+            UART number used for Modbus communication. This should correspond to the UART peripheral
+            configured in your hardware setup.
+
+    config DEVICE_MANAGER_MAX_DEVICES
+        int "Maximum number of devices"
+        default 32
+        help
+            Maximum number of devices that can be registered with the Device Manager.
+            This limits the size of the internal device registry and affects memory usage.
+
+    config DEVICE_MANAGER_MODBUS_TX_PIN
+        int "Modbus TX Pin"
+        default 27
+        help
+            GPIO pin number used for Modbus transmission (TX). This pin is used to send data to Modbus devices.
+
+    config DEVICE_MANAGER_MODBUS_RX_PIN
+        int "Modbus RX Pin"
+        default 26
+        help
+            GPIO pin number used for Modbus reception (RX). This pin is used to receive data
+            from Modbus devices.
+
+    config DEVICE_MANAGER_DE_PIN
+        int "Modbus DE Pin"
+        default 25
+        help
+            GPIO pin number used for Modbus Driver Enable (DE). This pin is used to control
+            the direction of data flow in RS-485 communication.
+
+    config DEVICE_MANAGER_MODBUS_BAUD_RATE
+        int "Modbus Baud Rate"
+        default 9600
+        help
+            Baud rate for Modbus communication. Common values are 9600, 19200, and 38400.
+
+    config DEVICE_MANAGER_TASK_STACK_SIZE
+        int "Device Manager Task Stack Size"
+        default 4096
+        help
+            Stack size for the Device Manager task. Adjust this value based on the expected workload and memory constraints.
+
+    config DEVICE_MANAGER_TASK_PRIORITY
+        int "Device Manager Task Priority"
+        default 5
+        help
+            Priority for the Device Manager task. Higher values indicate higher priority. Adjust this based on your application's needs.
+
+    config DEVICE_MANAGER_TASK_NAME
+        string "Device Manager Task Name"
+        default "device_manager_task"
+        help
+            Name for the Device Manager task. This is used for debugging and monitoring purposes.
+
+    config DEVICE_MANAGER_UPDATE_INTERVAL_MS
+        int "Device Manager Update Interval (ms)"
+        default 1000
+        help
+            Interval in milliseconds for the Device Manager to update device statuses and perform periodic tasks.
+endmenu
