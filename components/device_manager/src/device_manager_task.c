@@ -14,7 +14,7 @@ static const char* TAG = "DEVICE_MANAGER_TASK";
 static esp_err_t post_device_manager_event(uint16_t event_id, void* event_data, size_t event_data_size);
 static esp_err_t post_furnace_error(furnace_error_t furnace_error);
 
-static health_monitor_data_t health_monitor_data = {
+static const health_monitor_data_t health_monitor_data = {
     .component_id = CONFIG_DEVICE_MANAGER_COMPONENT_ID,
     .component_name = "Device Manager",
     .timeout_ticks = pdMS_TO_TICKS(CONFIG_DEVICE_MANAGER_HEARTBEAT_TIMEOUT_MS)
@@ -100,6 +100,7 @@ esp_err_t init_device_manager_task(device_manager_context_t* ctx)
                            ctx->running = false,
                            "Failed to create device manager task");
 
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &health_monitor_data);
 
     return ESP_OK;
 }

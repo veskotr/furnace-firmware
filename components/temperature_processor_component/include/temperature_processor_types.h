@@ -1,7 +1,0 @@
-#ifndef TEMPERATURE_PROCESSOR_TYPES_H
-#define TEMPERATURE_PROCESSOR_TYPES_H
-
-#include "esp_event.h"
-
-
-#endif // TEMPERATURE_PROCESSOR_TYPES_H

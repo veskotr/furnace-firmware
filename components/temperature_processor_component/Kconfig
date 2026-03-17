@@ -12,4 +12,15 @@ menu "Temperature Processor"
         string "Temperature processor task name"
         default "TEMP_PROCESSOR_TASK"
 
+    config TEMP_PROCESSOR_HEART_BEAT_TIMEOUT_MS
+        int "Temperature processor heartbeat interval in milliseconds"
+        default 5000
+
+    config TEMP_PROCESSOR_COMPONENT_ID
+        int "Temperature processor component ID"
+        default 2
+
+    config TEMP_PROCESSOR_TEMPERATURE_BUFFER_SIZE
+        int "Temperature processor buffer size"
+        default 10
 endmenu

@@ -1,11 +1,7 @@
-#ifndef TEMPERATURE_PROCESSOR_COMPONENT_H
-#define TEMPERATURE_PROCESSOR_COMPONENT_H
+#pragma once
 
 #include "esp_err.h"
-#include "esp_event.h"
 
-esp_err_t init_temp_processor(void);
+esp_err_t init_temp_processor(uint8_t number_of_temp_sensors);
 
 esp_err_t shutdown_temp_processor(void);
-
-#endif

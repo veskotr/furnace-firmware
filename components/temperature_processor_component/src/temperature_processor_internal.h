@@ -1,10 +1,10 @@
-#ifndef TEMPERATURE_PROCESSOR_INTERNAL_H
-#define TEMPERATURE_PROCESSOR_INTERNAL_H
+#pragma once
 
-#include "temperature_monitor_types.h"
 #include "esp_err.h"
 #include "event_registry.h"
 #include "furnace_error_types.h"
+#include "temp_sensor_device.h"
+#include "sdkconfig.h"
 
 typedef enum
 {
@@ -24,40 +24,30 @@ typedef struct
 
 typedef struct
 {
-    uint8_t anomaly_count;
-    temp_sensor_pair_t temp_sensor_pairs[CONFIG_TEMP_SENSORS_MAX_SENSORS];
-} temp_anomaly_result_t;
-
-typedef struct
-{
-    temp_anomaly_result_t anomaly_result;
-    process_temperature_error_type_t error_type;
-} process_temp_result_t;
-
-typedef struct
-{
-    process_temp_result_t process_temp_result_errors[CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE];
-    size_t number_of_error_results;
-    process_temperature_error_type_t error_type;
-} process_temp_samples_result_t;
-
-typedef struct
-{
     // Configuration
-    float temperatures_buffer[CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE];
+    float temperatures_buffer[CONFIG_TEMP_PROCESSOR_TEMPERATURE_BUFFER_SIZE];
+
+    temp_sensor_device_t *temp_sensor_devices[CONFIG_TEMP_SENSORS_MAX_SENSORS];
+
+    TaskHandle_t task_handle;
+
+    volatile uint8_t number_of_temp_sensors;
 
     volatile bool processor_running;
 
-    TaskHandle_t task_handle;
 } temp_processor_context_t;
 
 esp_err_t start_temp_processor_task(temp_processor_context_t* ctx);
 
 esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx);
 
-process_temp_samples_result_t process_temperature_samples(temp_processor_context_t* ctx, temp_sample_t* input_samples,
-                                                        size_t number_of_samples, float* output_temperature);
+esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_t number_of_samples,
+                                      float* output_temperature);
 
-esp_err_t post_temp_processor_event(temp_processor_data_t data);
+esp_err_t init_temp_processor_events(temp_processor_context_t* ctx);
 
-#endif // TEMPERATURE_PROCESSOR_INTERNAL_H
+esp_err_t shutdown_temp_processor_events(temp_processor_context_t* ctx);
+
+esp_err_t post_temp_processor_event(float average_temperature);
+
+esp_err_t post_processing_error(furnace_error_t furnace_error);

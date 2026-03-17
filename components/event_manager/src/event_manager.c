@@ -119,7 +119,7 @@ esp_err_t event_manager_post(
     return ESP_OK;
 }
 
-esp_err_t event_manager_post_health(health_monitor_event_id_t event_id, health_monitor_data_t *event_data)
+esp_err_t event_manager_post_health(const health_monitor_event_id_t event_id, health_monitor_data_t *event_data)
 {
     return event_manager_post(HEALTH_MONITOR_EVENT,
         event_id,

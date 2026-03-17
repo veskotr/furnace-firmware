@@ -6,8 +6,9 @@
 #include <stdbool.h>
 
 #include "esp_err.h"
+#include "device_manager.h"
 
-typedef struct
+struct temp_sensor_device
 {
     uint16_t id;
     float last_temperature;
@@ -15,4 +16,5 @@ typedef struct
     bool allocated;
     uint16_t modbus_address;
     uint16_t modbus_register;
-} temp_sensor_device_ctx;
+    device_t * device_handle;
+};

@@ -94,12 +94,6 @@ ESP_EVENT_DECLARE_BASE(TEMP_PROCESSOR_EVENT);
 
 #define PROCESS_TEMPERATURE_EVENT_DATA 0
 
-typedef struct
-{
-    float average_temperature;
-    bool valid;
-} temp_processor_data_t;
-
 // ============================================================================
 // FURNACE ERROR EVENTS
 // ============================================================================

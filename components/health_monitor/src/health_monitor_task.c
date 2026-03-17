@@ -46,7 +46,7 @@ static void health_monitor_task(void* arg)
                 if (hb->miss_count < hb->max_misses)
                     hb->miss_count++;
 
-                if (hb->required && hb->miss_count >= hb->max_misses)
+                if (hb->miss_count >= hb->max_misses)
                 {
                     hb->state = HB_STATE_FAILED;
                     system_healthy = false;

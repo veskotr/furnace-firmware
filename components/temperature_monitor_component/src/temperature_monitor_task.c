@@ -85,7 +85,7 @@ static void temp_monitor_task(void* args)
 
         post_temp_monitor_error_summary(ctx);
 
-        event_manager_post_health(TEMP_MONITOR_EVENT_HEARTBEAT);
+        //event_manager_post_health(TEMP_MONITOR_EVENT_HEARTBEAT);
         const uint32_t ticks_to_wait = (last_wake + period) - xTaskGetTickCount();
         if (ticks_to_wait > 0)
             ulTaskNotifyTake(pdTRUE, ticks_to_wait);

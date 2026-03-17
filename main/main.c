@@ -1,5 +1,4 @@
 #include "logger_component.h"
-#include "temperature_monitor_component.h"
 #include "temperature_processor_component.h"
 #include "coordinator_component.h"
 #include "event_manager.h"
@@ -55,12 +54,12 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(2000)); // Let the device manager start and initialize devices
 
-    device_t *temp_sensor_device;
+    temp_sensor_device_t *temp_sensor_device;
 
     CHECK_ERR_LOG(temp_sensor_create(&temp_sensor_device),
                   "Failed to create temp sensor device");
 
-    CHECK_ERR_LOG(device_manager_set_device_state(temp_sensor_device, DEVICE_STATE_IDLE),
+    CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_IDLE),
                   "Failed to set temp sensor device state to running");
 
 
@@ -70,7 +69,7 @@ void app_main(void)
         .params = NULL
     };
 
-    CHECK_ERR_LOG(device_manager_write_device(temp_sensor_device, &write_cmd),
+    CHECK_ERR_LOG(temp_sensor_write_device(temp_sensor_device, &write_cmd),
         "Failed to write to temp sensor device");
 
     /*vTaskDelay(pdMS_TO_TICKS(2000));
@@ -83,13 +82,13 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    CHECK_ERR_LOG(device_manager_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
+    CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
                   "Failed to set temp sensor device state to running");
 
     while (1)
     {
         float temperature;
-        CHECK_ERR_LOG(device_manager_read_device(temp_sensor_device, &temperature),
+        CHECK_ERR_LOG(temp_sensor_read_device(temp_sensor_device, &temperature),
                       "Failed to read temperature from device");
         LOGGER_LOG_INFO(TAG, "Temperature: %.1f C", temperature);
         vTaskDelay(pdMS_TO_TICKS(500));
