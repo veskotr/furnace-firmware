@@ -8,6 +8,8 @@
 
 #include <string.h>
 
+#include "commands_dispatcher.h"
+
 static const char* TAG = "COORDINATOR_TASK";
 
 typedef struct
@@ -133,7 +135,7 @@ static void heating_profile_task(void* args)
 
             /* Set power to zero before signaling completion */
             float zero_power = 0.0f;
-            post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL,
+            post_heater_controller_event(COMMAND_TYPE_HEATER_SET_POWER,
                                          &zero_power, sizeof(zero_power));
 
             ctx->heating_task_state.is_completed = true;
@@ -152,7 +154,7 @@ static void heating_profile_task(void* args)
     vTaskDelete(NULL);
 }
 
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program)
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *program)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
@@ -167,7 +169,7 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *prog
     // Store a local copy of the program for the task lifetime
     memcpy(&ctx->run_program, program, sizeof(ctx->run_program));
     ctx->has_program = true;
-    const ProgramDraft *prog = &ctx->run_program;
+    const program_draft_t *prog = &ctx->run_program;
 
     // Calculate total duration from stages
     uint32_t stages_ms = 0;
@@ -327,8 +329,17 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 
     /* Zero out heater power so the heater PWM task stops toggling */
     float zero_power = 0.0f;
-    post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL,
-                                 &zero_power, sizeof(zero_power));
+    heater_command_data_t heater_cmd = {
+        .type = COMMAND_TYPE_HEATER_SET_POWER,
+        .power_level = zero_power
+    };
+
+    command_t cmd = {
+        .target = COMMAND_TARGET_HEATER,
+        .data = &heater_cmd,
+        .data_size = sizeof(heater_cmd)
+    };
+    commands_dispatcher_dispatch_command(&cmd);
 
     shutdown_profile_controller();
 

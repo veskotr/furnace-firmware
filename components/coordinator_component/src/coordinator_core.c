@@ -43,7 +43,7 @@ esp_err_t coordinator_list_heating_profiles(void)
     }
 
     LOGGER_LOG_INFO(TAG, "Available Programs:");
-    const ProgramDraft *prog = &g_coordinator_ctx->run_program;
+    const program_draft_t *prog = &g_coordinator_ctx->run_program;
     LOGGER_LOG_INFO(TAG, "Program Index: 0, Name: %s", prog->name);
     return ESP_OK;
 }

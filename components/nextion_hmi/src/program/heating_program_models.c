@@ -1,4 +1,4 @@
-#include "heating_program_types.h"
+#include "core_types.h"
 #include "heating_program_models_internal.h"
 #include "nextion_hmi.h"
 #include "logger_component.h"
@@ -11,8 +11,8 @@
 
 static const char *TAG = "program_models";
 
-static ProgramDraft s_program_draft;
-static ProgramDraft s_run_program;   // Snapshot copied at run-start, read by coordinator
+static program_draft_t s_program_draft;
+static program_draft_t s_run_program;   // Snapshot copied at run-start, read by coordinator
 static int s_current_temp_c = 23;
 static float s_current_temp_f = 23.0f;
 static int s_ambient_temp_c = 23;    // User-settable ambient temp, persisted to NVS
@@ -75,7 +75,7 @@ bool program_draft_set_stage(uint8_t stage_number,
 
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
 
-    ProgramStage *stage = &s_program_draft.stages[stage_number - 1];
+    program_stage_t *stage = &s_program_draft.stages[stage_number - 1];
     stage->t_min = t_min;
     stage->target_t_c = target_t_c;
     stage->t_delta_min = t_delta_min;
@@ -96,11 +96,11 @@ void program_draft_clear_stage(uint8_t stage_number)
         return;
     }
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
-    memset(&s_program_draft.stages[stage_number - 1], 0, sizeof(ProgramStage));
+    memset(&s_program_draft.stages[stage_number - 1], 0, sizeof(program_stage_t));
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 
-void program_draft_get(ProgramDraft *out)
+void program_draft_get(program_draft_t *out)
 {
     if (!out) {
         return;
@@ -112,7 +112,7 @@ void program_draft_get(ProgramDraft *out)
 
 const char *program_draft_get_name(void)
 {
-    static char name_buf[sizeof(((ProgramDraft *)0)->name)];
+    static char name_buf[sizeof(((program_draft_t *)0)->name)];
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memcpy(name_buf, s_program_draft.name, sizeof(name_buf));
     xSemaphoreGiveRecursive(s_program_mutex);
@@ -121,40 +121,30 @@ const char *program_draft_get_name(void)
 
 void program_set_current_temp_c(int temp_c)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_current_temp_c = temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 int program_get_current_temp_c(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_current_temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_current_temp_f(float temp_f)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_current_temp_f = temp_f;
     s_current_temp_c = (int)(temp_f + 0.5f);
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 float program_get_current_temp_f(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     float value = s_current_temp_f;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_ambient_temp_c(int temp_c)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_ambient_temp_c = temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
 
     /* Persist to NVS */
     nvs_handle_t nvs;
@@ -168,24 +158,18 @@ void program_set_ambient_temp_c(int temp_c)
 
 int program_get_ambient_temp_c(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_ambient_temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_current_kw(int kw)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_current_kw = kw;
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 int program_get_current_kw(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_current_kw;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
@@ -193,16 +177,12 @@ int program_get_current_kw(void)
 // Run slot — used by coordinator during program execution
 // ============================================================================
 
-void hmi_get_run_program(ProgramDraft *out)
+void hmi_get_run_program(program_draft_t *out)
 {
+    if (!out) {
+        return;
+    }
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memcpy(out, &s_run_program, sizeof(*out));
-    xSemaphoreGiveRecursive(s_program_mutex);
-}
-
-void program_copy_draft_to_run_slot(void)
-{
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
-    memcpy(&s_run_program, &s_program_draft, sizeof(s_run_program));
     xSemaphoreGiveRecursive(s_program_mutex);
 }

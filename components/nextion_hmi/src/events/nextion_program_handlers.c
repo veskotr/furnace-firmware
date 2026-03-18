@@ -4,9 +4,8 @@
 #include "nextion_parse_utils.h"
 #include "nextion_transport_internal.h"
 #include "nextion_storage_internal.h"
-#include "nextion_file_reader_internal.h"
 #include "nextion_ui_internal.h"
-#include "heating_program_types.h"
+#include "core_types.h"
 #include "heating_program_models_internal.h"
 #include "heating_program_graph_internal.h"
 #include "heating_program_validation.h"
@@ -151,7 +150,7 @@ static void sync_program_buffer(void)
 {
     static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE];
     memset(payload, 0, sizeof(payload));
-    ProgramDraft draft;
+    program_draft_t draft;
     program_draft_get(&draft);
     if (!nextion_serialize_program(&draft, payload, sizeof(payload))) {
         return;
@@ -209,11 +208,11 @@ static void programs_page_apply(uint8_t page)
         nextion_send_cmd(cmd);
     }
 
-    ProgramDraft draft;
+    program_draft_t draft;
     program_draft_get(&draft);
     for (uint8_t i = 0; i < PROGRAMS_PAGE_STAGE_COUNT; ++i) {
         uint8_t stage_idx = (uint8_t)((page - 1) * PROGRAMS_PAGE_STAGE_COUNT + i);
-        const ProgramStage *stage = &draft.stages[stage_idx];
+        const program_stage_t *stage = &draft.stages[stage_idx];
         uint8_t field_num = i + 1;
 
         bool set = stage->is_set;
@@ -250,7 +249,7 @@ void program_handlers_page_next(void)
 static int starting_temp_for_current_page(void)
 {
     int current_temp = program_get_ambient_temp_c();
-    ProgramDraft draft;
+    program_draft_t draft;
     program_draft_get(&draft);
     for (int i = 0; i < (s_programs_page - 1) * PROGRAMS_PAGE_STAGE_COUNT; ++i) {
         if (draft.stages[i].is_set && draft.stages[i].target_set) {
@@ -262,7 +261,7 @@ static int starting_temp_for_current_page(void)
 
 /* ── Graph rendering helper ─────────────────────────────────────────── */
 
-static bool render_graph_to_nextion(const ProgramDraft *draft, int graph_id,
+static bool render_graph_to_nextion(const program_draft_t *draft, int graph_id,
                                     int width, int height)
 {
     static uint8_t samples[
@@ -372,7 +371,7 @@ void handle_save_prog(const char *payload)
     sync_program_buffer();
 
     char error_msg[64];
-    ProgramDraft validated;
+    program_draft_t validated;
     program_draft_get(&validated);
     if (!program_validate_draft_with_temp(&validated, program_get_ambient_temp_c(),
                                          error_msg, sizeof(error_msg))) {
@@ -461,7 +460,7 @@ void handle_show_graph(const char *payload)
     nextion_send_cmd("showGraph.txt=\"Hide Graph\"");
     s_graph_visible = true;
 
-    ProgramDraft graph_draft;
+    program_draft_t graph_draft;
     program_draft_get(&graph_draft);
     render_graph_to_nextion(&graph_draft, CONFIG_NEXTION_PROGRAMS_GRAPH_ID,
                             CONFIG_NEXTION_PROGRAMS_GRAPH_WIDTH,
@@ -838,7 +837,7 @@ void handle_program_select(const char *filename)
         return;
     }
 
-    ProgramDraft parsed;
+    program_draft_t parsed;
     program_draft_get(&parsed);
     char cmd[96];
     snprintf(cmd, sizeof(cmd), "progNameDisp.txt=\"%s\"", parsed.name);
@@ -846,7 +845,7 @@ void handle_program_select(const char *filename)
 
     int total_time = 0;
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &parsed.stages[i];
+        const program_stage_t *stage = &parsed.stages[i];
         if (!stage->is_set) {
             continue;
         }

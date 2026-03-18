@@ -8,7 +8,7 @@ static const char *TAG = "TEMP_PROFILE_CONTROLLER";
 
 typedef struct {
     float initial_temperature;
-    const ProgramDraft *program;    // Points to the ProgramDraft being executed
+    const program_draft_t *program;    // Points to the ProgramDraft being executed
 } temperature_profile_controller_context_t;
 
 static temperature_profile_controller_context_t *g_temp_profile_controller_ctx = NULL;
@@ -94,13 +94,13 @@ profile_controller_error_t get_target_temperature_at_time(const uint32_t time_ms
         return PROFILE_CONTROLLER_ERROR_NO_PROFILE_LOADED;
     }
 
-    const ProgramDraft *prog = g_temp_profile_controller_ctx->program;
+    const program_draft_t *prog = g_temp_profile_controller_ctx->program;
     uint32_t elapsed_time = 0;
     float start_temp = g_temp_profile_controller_ctx->initial_temperature;
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i)
     {
-        const ProgramStage *stage = &prog->stages[i];
+        const program_stage_t *stage = &prog->stages[i];
         if (!stage->is_set)
         {
             continue;
@@ -153,7 +153,7 @@ void profile_tick_reset(void)
 /**
  * @brief Build the ordered list of active stage indices once.
  */
-static void build_active_stage_list(const ProgramDraft *prog)
+static void build_active_stage_list(const program_draft_t *prog)
 {
     s_tick.num_active_stages = 0;
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
@@ -192,8 +192,8 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
     }
 
     int idx = s_tick.active_stages[s_tick.active_pos];
-    const ProgramDraft *prog = g_temp_profile_controller_ctx->program;
-    const ProgramStage *stage = &prog->stages[idx];
+    const program_draft_t *prog = g_temp_profile_controller_ctx->program;
+    const program_stage_t *stage = &prog->stages[idx];
 
     s_tick.stage_index      = idx;
     s_tick.stage_elapsed_ms = 0;
@@ -217,7 +217,7 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
         return PROFILE_CONTROLLER_ERROR_NO_PROFILE_LOADED;
     }
 
-    const ProgramDraft *prog = g_temp_profile_controller_ctx->program;
+    const program_draft_t *prog = g_temp_profile_controller_ctx->program;
 
     /* Initialize result */
     result->current_stage_index = -1;

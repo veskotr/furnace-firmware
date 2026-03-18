@@ -170,12 +170,12 @@ static bool validate_stage_math(
     return true;
 }
 
-bool program_validate_draft(const ProgramDraft *draft, char *error_msg, size_t error_len)
+bool program_validate_draft(const program_draft_t *draft, char *error_msg, size_t error_len)
 {
     return program_validate_draft_with_temp(draft, 0, error_msg, error_len);
 }
 
-bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_c,
+bool program_validate_draft_with_temp(const program_draft_t *draft, int start_temp_c,
                                       char *error_msg, size_t error_len)
 {
     if (!draft) {
@@ -214,7 +214,7 @@ bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_
     int current_temp = start_temp_c;
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
+        const program_stage_t *stage = &draft->stages[i];
         if (!stage->is_set) {
             continue;
         }
@@ -284,7 +284,7 @@ bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_
  * (time × delta_T = temp difference) because the real execution
  * starts from the actual ambient temperature, not a fixed 23 °C.
  * ----------------------------------------------------------------- */
-bool program_validate_draft_for_run(const ProgramDraft *draft,
+bool program_validate_draft_for_run(const program_draft_t *draft,
                                     char *error_msg, size_t error_len)
 {
     if (!draft) {
@@ -314,7 +314,7 @@ bool program_validate_draft_for_run(const ProgramDraft *draft,
     bool any_stage = false;
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
+        const program_stage_t *stage = &draft->stages[i];
         if (!stage->is_set) {
             continue;
         }

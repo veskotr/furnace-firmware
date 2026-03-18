@@ -2,8 +2,6 @@
 #define COORDINATOR_COMPONENT_TYPES_H
 
 #include <stdbool.h>
-#include <inttypes.h>
-#include "heating_program_types.h"
 
 typedef struct
 {

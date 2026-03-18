@@ -105,7 +105,7 @@ static void sanitize_filename(const char *name, char *out, size_t out_len)
     out[idx] = '\0';
 }
 
-bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_len)
+bool nextion_serialize_program(const program_draft_t *draft, char *out, size_t out_len)
 {
     size_t used = 0;
     int written = snprintf(out, out_len, "name=%s\n", draft->name);
@@ -115,7 +115,7 @@ bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_
     used += (size_t)written;
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
+        const program_stage_t *stage = &draft->stages[i];
         if (!stage->is_set) {
             continue;
         }
@@ -172,7 +172,7 @@ static int wait_for_response(uint8_t *buf, size_t max_len, int timeout_ms)
     return received;
 }
 
-bool nextion_storage_save_program(const ProgramDraft *draft, const char *original_name, char *error_msg, size_t error_len)
+bool nextion_storage_save_program(const program_draft_t *draft, const char *original_name, char *error_msg, size_t error_len)
 {
     if (!draft || draft->name[0] == '\0') {
         set_error(error_msg, error_len, "Missing program name");
