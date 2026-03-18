@@ -148,8 +148,7 @@ static void nextion_set_text_chunked(const char *obj_name, const char *text)
 
 static void sync_program_buffer(void)
 {
-    static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE];
-    memset(payload, 0, sizeof(payload));
+    static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE] = {0};
     program_draft_t draft;
     program_draft_get(&draft);
     if (!nextion_serialize_program(&draft, payload, sizeof(payload))) {

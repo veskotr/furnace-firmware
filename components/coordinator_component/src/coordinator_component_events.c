@@ -27,14 +27,14 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
             return;
         }
 
-        const temp_processor_data_t* data = (temp_processor_data_t*)event_data;
-        if (!data->valid)
+        const float temperature = *((float*)event_data);
+        if (temperature == -0.0f)  // Check for invalid temperature reading (e.g., sensor error)
         {
             LOGGER_LOG_WARN(TAG, "Temperature processor data marked invalid");
             return;
         }
-        ctx->current_temperature = data->average_temperature;
-        ctx->heating_task_state.current_temperature = data->average_temperature;
+        ctx->current_temperature = temperature;
+        ctx->heating_task_state.current_temperature = temperature;
         LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", ctx->current_temperature);
     }
 }

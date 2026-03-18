@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "event_manager.h"
 #include "temperature_processor_internal.h"
 #include "freertos/FreeRTOS.h"
