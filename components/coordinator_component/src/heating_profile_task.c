@@ -1,8 +1,14 @@
 #include "utils.h"
+#include "sdkconfig.h"
+#include "esp_timer.h"
 #include "temperature_profile_controller.h"
 #include "pid_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
+
+#include <string.h>
+
+#include "commands_dispatcher.h"
 
 static const char* TAG = "COORDINATOR_TASK";
 
@@ -19,44 +25,98 @@ static const CoordinatorTaskConfig_t coordinator_task_config = {
     .task_priority = CONFIG_COORDINATOR_TASK_PRIORITY
 };
 
+/**
+ * @brief esp_timer callback — wakes the heating profile task at a fixed interval.
+ *        Runs in ISR context on ESP32, so only xTaskNotifyGive is safe here.
+ */
+static void pid_tick_timer_cb(void* arg)
+{
+    coordinator_ctx_t* ctx = (coordinator_ctx_t*)arg;
+    if (ctx->task_handle != NULL)
+    {
+        xTaskNotifyGive(ctx->task_handle);
+    }
+}
+
+/**
+ * @brief Build and post a coordinator status update event.
+ */
+static void post_status_update(const coordinator_ctx_t *ctx,
+                                float setpoint,
+                                float power_output)
+{
+    coordinator_status_data_t status = {
+        .profile_index       = ctx->heating_task_state.profile_index,
+        .current_temperature = ctx->current_temperature,
+        .target_temperature  = setpoint,
+        .power_output        = power_output,
+        .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
+        .total_ms            = ctx->heating_task_state.estimated_total_duration_ms,
+    };
+    post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE,
+                           &status, sizeof(status));
+}
+
 static void heating_profile_task(void* args)
 {
     coordinator_ctx_t* ctx = (coordinator_ctx_t*)args;
 
     LOGGER_LOG_INFO(TAG, "Coordinator task started");
 
-    static uint32_t last_wake_time = 0;
-    static uint32_t current_time = 0;
-    static uint32_t last_update_duration = 0;
+    uint32_t last_wake_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    profile_tick_result_t tick_result = {0};
 
     while (ctx->running)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        uint32_t last_update_duration = 0;
         if (!ctx->paused)
         {
-            current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
             last_update_duration = current_time - last_wake_time;
             ctx->heating_task_state.current_time_elapsed_ms += last_update_duration;
             last_wake_time = current_time;
         }
+        else
+        {
+            /* While paused, keep last_wake_time current so the first
+               iteration after resume doesn't accumulate paused time. */
+            last_wake_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            continue;   /* Skip PID computation while paused */
+        }
 
-        const profile_controller_error_t err = get_target_temperature_at_time(
-            ctx->heating_task_state.current_time_elapsed_ms,
-            &ctx->heating_task_state.target_temperature);
-        LOGGER_LOG_INFO(TAG, "Elapsed Time: %d ms, Target Temperature: %.2f C",
-                        ctx->heating_task_state.current_time_elapsed_ms,
-                        ctx->heating_task_state.target_temperature);
-        // TODO: Handle error cases
+        const profile_controller_error_t err = profile_tick(
+            last_update_duration,
+            ctx->current_temperature,
+            &tick_result);
+        ctx->heating_task_state.target_temperature = tick_result.setpoint;
+
+        LOGGER_LOG_INFO(TAG, "Elapsed: %lu ms, Stage: %d, Phase: %d, Setpoint: %.2f C",
+                        (unsigned long)ctx->heating_task_state.current_time_elapsed_ms,
+                        tick_result.current_stage_index,
+                        (int)tick_result.phase,
+                        tick_result.setpoint);
+
         if (err != PROFILE_CONTROLLER_ERROR_NONE)
         {
-            LOGGER_LOG_WARN(TAG, "Failed to get target temperature at time %d ms, error: %d",
-                            ctx->heating_task_state.current_time_elapsed_ms,
-                            err);
+            LOGGER_LOG_WARN(TAG, "profile_tick error: %d", err);
             continue;
         }
+
+        /* Log stage transitions */
+        if (tick_result.stage_changed) {
+            LOGGER_LOG_INFO(TAG, "Stage changed → stage %d, phase %d",
+                            tick_result.current_stage_index, (int)tick_result.phase);
+        }
+
+        /* Warn if a stage was forced to advance */
+        if (tick_result.extension_warning) {
+            LOGGER_LOG_WARN(TAG, "Stage extension limit reached — forced advance");
+        }
+
         // Calculate power output based on current and target temperature
         float power_output = pid_controller_compute(ctx->current_temperature,
-                                                    ctx->heating_task_state.target_temperature,
+                                                    tick_result.setpoint,
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
@@ -64,6 +124,25 @@ static void heating_profile_task(void* args)
         /*CHECK_ERR_LOG(
             post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL, &power_output, sizeof(power_output)),
             "Failed to set heater target power level");*/
+
+        /* Push status update to HMI (elapsed, remaining, power, temps) */
+        post_status_update(ctx, tick_result.setpoint, power_output);
+
+        /* ── Profile completion — driven by profile_tick() state machine ── */
+        if (tick_result.profile_complete) {
+            LOGGER_LOG_INFO(TAG, "Profile complete (profile_tick): temp %.1f C",
+                            ctx->current_temperature);
+
+            /* Set power to zero before signaling completion */
+            float zero_power = 0.0f;
+            post_heater_controller_event(COMMAND_TYPE_HEATER_SET_POWER,
+                                         &zero_power, sizeof(zero_power));
+
+            ctx->heating_task_state.is_completed = true;
+            post_coordinator_event(COORDINATOR_EVENT_PROFILE_COMPLETED, NULL, 0);
+            ctx->running = false;
+            break;
+        }
 
         LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C",
                         ctx->current_temperature);
@@ -75,32 +154,53 @@ static void heating_profile_task(void* args)
     vTaskDelete(NULL);
 }
 
-esp_err_t start_heating_profile(coordinator_ctx_t *ctx, const size_t profile_index)
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *program)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
         return ESP_OK;
     }
 
-    if (profile_index >= ctx->num_profiles)
-    {
-        LOGGER_LOG_ERROR(TAG, "Invalid profile index: %d", profile_index);
+    if (!program) {
+        LOGGER_LOG_ERROR(TAG, "Program is NULL");
         return ESP_ERR_INVALID_ARG;
     }
 
-    ctx->heating_task_state.profile_index = profile_index;
+    // Store a local copy of the program for the task lifetime
+    memcpy(&ctx->run_program, program, sizeof(ctx->run_program));
+    ctx->has_program = true;
+    const program_draft_t *prog = &ctx->run_program;
+
+    // Calculate total duration from stages
+    uint32_t stages_ms = 0;
+    float last_stage_temp = ctx->current_temperature;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        if (prog->stages[i].is_set) {
+            stages_ms += (uint32_t)prog->stages[i].t_min * 60U * 1000U;
+            last_stage_temp = (float)prog->stages[i].target_t_c;
+        }
+    }
+    uint32_t total_ms = stages_ms;
+    /* Add implicit cooldown duration */
+    if (last_stage_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
+        float cooldown_min = (last_stage_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+        if (cooldown_min < 1.0f) cooldown_min = 1.0f;
+        total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
+    }
+
+    ctx->heating_task_state.profile_index = 0;
     ctx->heating_task_state.is_active = true;
     ctx->heating_task_state.is_paused = false;
     ctx->heating_task_state.is_completed = false;
     ctx->heating_task_state.current_time_elapsed_ms = 0;
-    ctx->heating_task_state.total_time_ms = ctx->heating_profiles[profile_index].first_node
-        ->duration_ms;
+    ctx->heating_task_state.estimated_total_duration_ms = total_ms;
+    ctx->heating_task_state.heating_stages_duration_ms = stages_ms;
     ctx->heating_task_state.current_temperature = ctx->current_temperature;
     ctx->heating_task_state.heating_element_on = false;
     ctx->heating_task_state.fan_on = false;
 
     const temp_profile_config_t temp_profile_config = {
-        .heating_profile = &ctx->heating_profiles[profile_index],
+        .program = prog,
         .initial_temperature = ctx->current_temperature
     };
 
@@ -108,11 +208,15 @@ esp_err_t start_heating_profile(coordinator_ctx_t *ctx, const size_t profile_ind
 
     if (err != PROFILE_CONTROLLER_ERROR_NONE)
     {
-        LOGGER_LOG_ERROR(TAG, "Failed to load heating profile index %d, error: %d",
-                         profile_index,
+        LOGGER_LOG_ERROR(TAG, "Failed to load heating profile '%s', error: %d",
+                         prog->name,
                          err);
         return ESP_FAIL;
     }
+
+    /* Set running BEFORE task creation — the new task checks ctx->running
+     * in its while-loop condition and may be scheduled before we return. */
+    ctx->running = true;
 
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                heating_profile_task,
@@ -123,18 +227,31 @@ esp_err_t start_heating_profile(coordinator_ctx_t *ctx, const size_t profile_ind
                                &ctx->task_handle) == pdPASS
                            ? ESP_OK
                            : ESP_FAIL,
-                           ctx->task_handle = NULL,
+                           ctx->task_handle = NULL; ctx->running = false,
                            "Failed to create coordinator task");
-    ctx->running = true;
+
+    /* Start periodic PID tick timer */
+    const esp_timer_create_args_t timer_args = {
+        .callback = pid_tick_timer_cb,
+        .arg = ctx,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "pid_tick"
+    };
+    esp_err_t timer_err = esp_timer_create(&timer_args, &ctx->pid_tick_timer);
+    if (timer_err == ESP_OK) {
+        esp_timer_start_periodic(ctx->pid_tick_timer,
+                                 (uint64_t)CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS * 1000ULL);
+        LOGGER_LOG_INFO(TAG, "PID tick timer started (%d ms)", CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS);
+    } else {
+        LOGGER_LOG_ERROR(TAG, "Failed to create PID tick timer: %s", esp_err_to_name(timer_err));
+    }
 
     LOGGER_LOG_INFO(TAG, "Coordinator task initialized");
 
     return ESP_OK;
 }
 
-
-
-esp_err_t pause_heating_profile(coordinator_ctx_t *ctx)
+esp_err_t pause_heating_profile(coordinator_ctx_t* ctx)
 {
     if (!ctx->running)
     {
@@ -148,17 +265,27 @@ esp_err_t pause_heating_profile(coordinator_ctx_t *ctx)
     return ESP_OK;
 }
 
-esp_err_t resume_heating_profile(coordinator_ctx_t *ctx)
+esp_err_t resume_heating_profile(coordinator_ctx_t* ctx)
 {
     if (!ctx->running)
     {
         return ESP_ERR_INVALID_STATE;
     }
 
+    /* Reset PID state so it starts fresh from the current temperature.
+     * During pause the furnace may have cooled — stale integral and
+     * derivative terms would cause a large power spike on resume. */
+    pid_controller_reset();
+
+    /* Update the current temperature snapshot so the first PID tick
+     * after resume uses the real measured value. */
+    ctx->heating_task_state.current_temperature = ctx->current_temperature;
+
     ctx->paused = false;
     ctx->heating_task_state.is_paused = false;
 
-    LOGGER_LOG_INFO(TAG, "Heating profile resumed");
+    LOGGER_LOG_INFO(TAG, "Heating profile resumed (temp=%.1f C)",
+                    ctx->current_temperature);
 
     return ESP_OK;
 }
@@ -182,6 +309,15 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
         return ESP_OK;
     }
 
+    /* Stop the periodic PID tick timer first */
+    if (ctx->pid_tick_timer != NULL)
+    {
+        esp_timer_stop(ctx->pid_tick_timer);
+        esp_timer_delete(ctx->pid_tick_timer);
+        ctx->pid_tick_timer = NULL;
+        LOGGER_LOG_INFO(TAG, "PID tick timer stopped");
+    }
+
     ctx->running = false;
 
     if (ctx->task_handle != NULL)
@@ -190,6 +326,20 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
     }
     ctx->heating_task_state.profile_index = INVALID_PROFILE_INDEX;
     ctx->heating_task_state.is_paused = false;
+
+    /* Zero out heater power so the heater PWM task stops toggling */
+    float zero_power = 0.0f;
+    heater_command_data_t heater_cmd = {
+        .type = COMMAND_TYPE_HEATER_SET_POWER,
+        .power_level = zero_power
+    };
+
+    command_t cmd = {
+        .target = COMMAND_TARGET_HEATER,
+        .data = &heater_cmd,
+        .data_size = sizeof(heater_cmd)
+    };
+    commands_dispatcher_dispatch_command(&cmd);
 
     shutdown_profile_controller();
 

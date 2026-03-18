@@ -2,6 +2,7 @@
 #define COMMANDS_DISPATCHER_H
 #include <stdbool.h>
 
+#include "core_types.h"
 #include "esp_err.h"
 
 typedef enum
@@ -45,7 +46,7 @@ typedef struct
 typedef struct
 {
     coordinator_command_type_t type;
-    size_t profile_index;
+    program_draft_t program;
 } coordinator_command_data_t;
 
 typedef esp_err_t (*command_handler_t)(void* handler_arg, void* command_data, size_t command_data_size);

@@ -5,6 +5,7 @@
 #include "logger_component.h"
 #include "utils.h"
 #include "sdkconfig.h"
+#include "furnace_error_types.h"
 
 static const char* TAG = "TEMP_PROCESSOR_TASK";
 

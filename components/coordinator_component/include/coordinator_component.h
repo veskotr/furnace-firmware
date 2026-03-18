@@ -2,9 +2,8 @@
 #define COORDINATOR_COMPONENT_H
 
 #include "esp_err.h"
-#include "coordinator_component_types.h"
 
-esp_err_t init_coordinator(const coordinator_config_t* config);
+esp_err_t init_coordinator(void);
 
 esp_err_t stop_coordinator(void);
 

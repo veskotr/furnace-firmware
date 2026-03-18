@@ -62,6 +62,29 @@ fail:
     return err;
 }
 
+esp_err_t commands_dispatcher_dispatch_command(command_t* command)
+{
+    if (commands_dispatcher_ctx == NULL || !commands_dispatcher_ctx->dispatcher_running)
+    {
+        LOGGER_LOG_ERROR(TAG, "Commands Dispatcher not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (command == NULL)
+    {
+        LOGGER_LOG_ERROR(TAG, "Invalid command argument");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (xQueueSend(commands_dispatcher_ctx->command_queue, command, portMAX_DELAY) != pdPASS)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to dispatch command to queue");
+        return ESP_FAIL;
+    }
+
+    LOGGER_LOG_DEBUG(TAG, "Dispatched command to target %d", command->target);
+    return ESP_OK;
+}
 
 esp_err_t commands_dispatcher_shutdown(void)
 {

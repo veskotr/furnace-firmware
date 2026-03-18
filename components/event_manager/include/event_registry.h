@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "core_types.h"
 
 // ============================================================================
 // COORDINATOR COMPONENT EVENTS
@@ -18,6 +19,9 @@ typedef enum
     COORDINATOR_EVENT_PROFILE_PAUSED,
     COORDINATOR_EVENT_PROFILE_RESUMED,
     COORDINATOR_EVENT_PROFILE_STOPPED,
+    COORDINATOR_EVENT_PROFILE_COMPLETED,
+    COORDINATOR_EVENT_STATUS_UPDATE,
+    COORDINATOR_EVENT_CURRENT_PROFILE,
     COORDINATOR_EVENT_NODE_STARTED,
     COORDINATOR_EVENT_NODE_COMPLETED,
     COORDINATOR_EVENT_ERROR_OCCURRED,
@@ -26,7 +30,7 @@ typedef enum
 // Event data structures for coordinator
 typedef struct
 {
-    size_t profile_index;
+    program_draft_t program;   // Full program to execute
 } coordinator_start_profile_data_t;
 
 typedef enum
@@ -49,6 +53,7 @@ typedef struct
     uint32_t profile_index;
     float current_temperature;
     float target_temperature;
+    float power_output;         // 0.0 – 1.0  (PID output)
     uint32_t elapsed_ms;
     uint32_t total_ms;
 } coordinator_status_data_t;
