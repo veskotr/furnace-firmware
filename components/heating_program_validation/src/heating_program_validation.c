@@ -44,8 +44,9 @@ bool validate_temp_in_range(int target_t_c, int stage_num, char *err, size_t err
             stage_num, CONFIG_NEXTION_MAX_TEMPERATURE_C);
         return false;
     }
-    if (target_t_c < 0) {
-        snprintf(err, err_len, "Stage %d: Temp cannot be negative", stage_num);
+    if (target_t_c < CONFIG_NEXTION_MIN_TEMPERATURE_C) {
+        snprintf(err, err_len, "Stage %d: Temp below min %d",
+            stage_num, CONFIG_NEXTION_MIN_TEMPERATURE_C);
         return false;
     }
     return true;
@@ -79,6 +80,58 @@ bool validate_delta_t_in_range(int delta_t_x10, int stage_num, char *err, size_t
         snprintf(err, err_len, "Stage %d: Delta T below min %s", stage_num, buf);
         return false;
     }
+    return true;
+}
+
+/* ── Autofill exactness helpers ────────────────────────────────────── */
+
+bool autofill_calc_time(int temp_diff_x10, int delta_t_x10,
+                        int stage_num, int target_t,
+                        int *result_time,
+                        char *err, size_t err_len)
+{
+    int calc_time = temp_diff_x10 / delta_t_x10;
+    if (calc_time < 0) calc_time = -calc_time;
+    if (calc_time < 1) calc_time = 1;
+
+    int abs_delta = delta_t_x10 >= 0 ? delta_t_x10 : -delta_t_x10;
+    int abs_diff  = temp_diff_x10 >= 0 ? temp_diff_x10 : -temp_diff_x10;
+
+    if (abs_delta * calc_time != abs_diff) {
+        int t_up = calc_time + 1;
+        char dbuf[16];
+        format_x10_value(delta_t_x10, dbuf, sizeof(dbuf));
+        snprintf(err, err_len,
+            "Stg %d: Use t=%d or t=%d at dT=%s",
+            stage_num, calc_time, t_up, dbuf);
+        return false;
+    }
+    *result_time = calc_time;
+    return true;
+}
+
+bool autofill_calc_delta(int temp_diff_x10, int t_min,
+                         int stage_num,
+                         int *result_delta_x10,
+                         char *err, size_t err_len)
+{
+    int calc_delta_x10 = temp_diff_x10 / t_min;
+
+    if (calc_delta_x10 * t_min != temp_diff_x10) {
+        int d_lo = calc_delta_x10;
+        int d_hi = (temp_diff_x10 >= 0) ? (d_lo + 1) : (d_lo - 1);
+        int abs_diff = temp_diff_x10 >= 0 ? temp_diff_x10 : -temp_diff_x10;
+        int t_lo = (d_lo != 0) ? abs_diff / (d_lo >= 0 ? d_lo : -d_lo) : 0;
+        int t_hi = (d_hi != 0) ? abs_diff / (d_hi >= 0 ? d_hi : -d_hi) : 0;
+        char blo[16], bhi[16];
+        format_x10_value(d_lo, blo, sizeof(blo));
+        format_x10_value(d_hi, bhi, sizeof(bhi));
+        snprintf(err, err_len,
+            "Stg %d: dT=%s t=%d or dT=%s t=%d",
+            stage_num, blo, t_lo, bhi, t_hi);
+        return false;
+    }
+    *result_delta_x10 = calc_delta_x10;
     return true;
 }
 

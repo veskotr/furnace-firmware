@@ -32,3 +32,23 @@ int program_get_current_kw(void);
 
 // Copy the current draft into the run slot (used before starting a program)
 void program_copy_draft_to_run_slot(void);
+
+// Operational time — NVS-persisted, incremented each status update
+uint32_t program_get_operational_time_sec(void);
+void program_add_operational_time_sec(uint32_t seconds);
+
+// Manual mode state
+bool program_get_manual_mode_active(void);
+void program_set_manual_mode_active(bool active);
+int  program_get_manual_target_temp_c(void);
+void program_set_manual_target_temp_c(int temp_c);
+int  program_get_manual_delta_t_x10(void);
+void program_set_manual_delta_t_x10(int delta_x10);
+
+// Fan mode
+bool program_get_fan_mode_max(void);
+void program_set_fan_mode_max(bool is_max);
+
+// Cooldown rate (x10, NVS-persisted, overrides Kconfig default)
+int  program_get_cooldown_rate_x10(void);
+void program_set_cooldown_rate_x10(int rate_x10);

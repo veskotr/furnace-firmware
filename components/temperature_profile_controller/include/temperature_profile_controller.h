@@ -38,6 +38,23 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
  */
 void profile_tick_reset(void);
 
+/**
+ * @brief Live-update the current stage target and re-ramp from now.
+ *
+ * Called from the profile task when a manual-mode target change is
+ * pending.  Resets the ramp so it interpolates from 'current_temp'
+ * to 'new_target' over 'new_planned_ms'.  Only affects the active
+ * stage — has no effect during cooldown or completion.
+ *
+ * @param new_target      New target temperature (°C).
+ * @param new_planned_ms  New stage duration (ms), computed from delta.
+ * @param current_temp    Current measured temperature at this instant.
+ * @return PROFILE_CONTROLLER_ERROR_NONE on success.
+ */
+profile_controller_error_t profile_update_stage_target(float new_target,
+                                                       uint32_t new_planned_ms,
+                                                       float current_temp);
+
 profile_controller_error_t shutdown_profile_controller(void);
 
 #endif // TEMPERATURE_PROFILE_COMPONENT_H

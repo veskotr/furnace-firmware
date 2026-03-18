@@ -38,9 +38,18 @@ void handle_settings_init(void)
 
     snprintf(cmd, sizeof(cmd), "ambientTemp.txt=\"%d\"", program_get_ambient_temp_c());
     nextion_send_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "ambientTempH.txt=\"Set ambient temp (%.2f)\"",
+    snprintf(cmd, sizeof(cmd), "ambientTempH.txt=\"Ambient T (%.2f)\"",
              program_get_current_temp_f());
     nextion_send_cmd(cmd);
+
+    /* Cooldown rate — user-editable, NVS-persisted */
+    {
+        int rate_x10 = program_get_cooldown_rate_x10();
+        char buf[16];
+        format_delta_x10(rate_x10, buf, sizeof(buf));
+        snprintf(cmd, sizeof(cmd), "cooldownRate.txt=\"%s\"", buf);
+        nextion_send_cmd(cmd);
+    }
 
 #ifdef CONFIG_NEXTION_HAS_WIFI
     nextion_send_cmd("vis websiteQrHead,1");
@@ -69,10 +78,10 @@ void handle_save_settings(const char *payload)
     strncpy(buffer, payload, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
 
-    char *tokens[10] = {0};
+    char *tokens[12] = {0};
     size_t token_count = 0;
     char *cursor = buffer;
-    while (cursor && token_count < 10) {
+    while (cursor && token_count < 12) {
         char *comma = strchr(cursor, ',');
         if (comma) *comma = '\0';
         tokens[token_count++] = cursor;
@@ -84,20 +93,22 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "  token[%d]: [%s]", (int)i, tokens[i] ? tokens[i] : "NULL");
     }
 
-    if (token_count < 10) {
+    if (token_count < 12) {
         char err[64];
-        snprintf(err, sizeof(err), "Missing fields: got %d, need 10", (int)token_count);
+        snprintf(err, sizeof(err), "Missing fields: got %d, need 12", (int)token_count);
         nextion_show_error(err);
         return;
     }
 
     int time_dirty, date_dirty, hour, min, sec, day, month, year;
     int ambient_dirty, ambient_temp;
+    int cooldown_dirty;
     if (!parse_int(tokens[0], &time_dirty) || !parse_int(tokens[1], &date_dirty) ||
         !parse_int(tokens[2], &hour)       || !parse_int(tokens[3], &min)        ||
         !parse_int(tokens[4], &sec)        || !parse_int(tokens[5], &day)        ||
         !parse_int(tokens[6], &month)      || !parse_int(tokens[7], &year)       ||
-        !parse_int(tokens[8], &ambient_dirty) || !parse_int(tokens[9], &ambient_temp)) {
+        !parse_int(tokens[8], &ambient_dirty) || !parse_int(tokens[9], &ambient_temp) ||
+        !parse_int(tokens[10], &cooldown_dirty)) {
         nextion_show_error("Invalid settings data");
         return;
     }
@@ -145,10 +156,29 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "Ambient temperature set to %d", ambient_temp);
     }
 
+    if (cooldown_dirty) {
+        int rate_x10;
+        if (!parse_decimal_x10(tokens[11], &rate_x10)) {
+            nextion_show_error("Invalid cooldown rate");
+            return;
+        }
+        if (rate_x10 < 0) rate_x10 = -rate_x10;
+        if (rate_x10 < 1) {
+            rate_x10 = 1;
+        } else if (rate_x10 > CONFIG_NEXTION_DELTA_T_MAX_PER_MIN_X10) {
+            rate_x10 = CONFIG_NEXTION_DELTA_T_MAX_PER_MIN_X10;
+        }
+        program_set_cooldown_rate_x10(rate_x10);
+
+        char buf[16], cmd[48];
+        format_delta_x10(rate_x10, buf, sizeof(buf));
+        snprintf(cmd, sizeof(cmd), "cooldownRate.txt=\"%s\"", buf);
+        nextion_send_cmd(cmd);
+        LOGGER_LOG_INFO(TAG, "Cooldown rate set: %d x10", rate_x10);
+    }
+
     nextion_clear_error();
 }
-
-/* ── Restart ───────────────────────────────────────────────────────── */
 
 void handle_restart(void)
 {

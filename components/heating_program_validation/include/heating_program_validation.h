@@ -31,3 +31,19 @@ bool validate_delta_t_in_range(int delta_t_x10, int stage_num, char *err, size_t
 
 // Format a x10 fixed-point value as decimal string (e.g. 15 -> "1.5")
 void format_x10_value(int val_x10, char *buf, size_t buf_len);
+
+// Autofill exactness checks: compute the missing value from two known values.
+// Returns true if division is exact (value filled into *result).
+// Returns false if inexact — writes a suggestion error into err.
+
+// Given temp_diff_x10 and delta_t_x10, compute time.
+bool autofill_calc_time(int temp_diff_x10, int delta_t_x10,
+                        int stage_num, int target_t,
+                        int *result_time,
+                        char *err, size_t err_len);
+
+// Given temp_diff_x10 and t_min, compute delta_t_x10.
+bool autofill_calc_delta(int temp_diff_x10, int t_min,
+                         int stage_num,
+                         int *result_delta_x10,
+                         char *err, size_t err_len);
