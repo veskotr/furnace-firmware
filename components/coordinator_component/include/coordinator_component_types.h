@@ -2,7 +2,8 @@
 #define COORDINATOR_COMPONENT_TYPES_H
 
 #include <stdbool.h>
-#include "core_types.h"
+#include <inttypes.h>
+#include "heating_program_types.h"
 
 typedef struct
 {
@@ -13,15 +14,10 @@ typedef struct
     bool is_paused;
     bool is_completed;
     uint32_t current_time_elapsed_ms;
-    uint32_t total_time_ms;
+    uint32_t estimated_total_duration_ms;   // Estimated total program duration (stages + cooldown)
+    uint32_t heating_stages_duration_ms;     // Duration of heating stages only (excl. cooldown)
     bool heating_element_on;
     bool fan_on;
 } heating_task_state_t;
-
-typedef struct
-{
-    heating_profile_t *profiles;
-    size_t num_profiles;
-} coordinator_config_t;
 
 #endif // COORDINATOR_COMPONENT_TYPES_H

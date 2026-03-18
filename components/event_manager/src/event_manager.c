@@ -1,6 +1,7 @@
 #include "event_manager.h"
 #include "logger_component.h"
 #include "utils.h"
+#include "freertos/FreeRTOS.h"
 #include <stdbool.h>
 #include "sdkconfig.h"
 
@@ -36,7 +37,11 @@ esp_err_t event_manager_init(void)
     }
     esp_event_loop_args_t loop_args = {
         .queue_size = CONFIG_EVENT_MANAGER_QUEUE_SIZE,
-        .task_name = event_manager_config.task_name};
+        .task_name = event_manager_config.task_name,
+        .task_priority = event_manager_config.task_priority,
+        .task_stack_size = event_manager_config.stack_size,
+        .task_core_id = tskNO_AFFINITY
+    };
 
     CHECK_ERR_LOG_RET(esp_event_loop_create(&loop_args, &g_event_manager_ctx.event_loop_handle),
                       "Failed to create event manager event loop");
@@ -69,6 +74,12 @@ esp_err_t event_manager_subscribe(
     esp_event_handler_t handler,
     void *handler_arg)
 {
+    if (!g_event_manager_ctx.is_initialized || g_event_manager_ctx.event_loop_handle == NULL)
+    {
+        LOGGER_LOG_ERROR(TAG, "Event manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     CHECK_ERR_LOG_RET(esp_event_handler_register_with(
                           g_event_manager_ctx.event_loop_handle,
                           event_base,

@@ -1,0 +1,59 @@
+menu "Display Configuration"
+
+    config NEXTION_MAIN_GRAPH_WIDTH
+        int "Main page graph width (px)"
+        default 764
+
+    config NEXTION_MAIN_GRAPH_HEIGHT
+        int "Main page graph height (px)"
+        default 321
+
+    config NEXTION_PROGRAMS_GRAPH_WIDTH
+        int "Programs page graph width (px)"
+        default 1024
+
+    config NEXTION_PROGRAMS_GRAPH_HEIGHT
+        int "Programs page graph height (px)"
+        default 449
+
+    config NEXTION_GRAPH_DISP_ID
+        int "Main graph Nextion component ID"
+        default 6
+        help
+            The object ID of the waveform component on the main page.
+
+    config NEXTION_PROGRAMS_GRAPH_ID
+        int "Programs graph Nextion component ID"
+        default 50
+        help
+            The object ID of the waveform component on the programs page.
+
+    config NEXTION_PAGE_MAIN
+        string "Main page name"
+        default "main_page"
+        help
+            Must match the page name in the Nextion HMI project.
+
+    config NEXTION_PAGE_PROGRAMS
+        string "Programs page name"
+        default "programs_page"
+
+    config NEXTION_PAGE_SETTINGS
+        string "Settings page name"
+        default "settings_page"
+
+    config NEXTION_HAS_WIFI
+        bool "Device has WiFi capability"
+        default n
+        help
+            Enable to show the WiFi configuration button and
+            website QR code on the settings page.
+
+    config NEXTION_HAS_BLUETOOTH
+        bool "Device has Bluetooth capability"
+        default n
+        help
+            Enable to show the Bluetooth configuration button
+            on the settings page.
+
+endmenu

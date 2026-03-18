@@ -2,19 +2,22 @@
 #define COORDINATOR_COMPONENT_INTERNAL_H
 
 #include "esp_err.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "core_types.h"
+#include "heating_program_types.h"
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
-#define INVALID_PROFILE_INDEX ((size_t)0xFFFFFFFF);
+const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
 
 typedef struct
 {
     TaskHandle_t task_handle;
+    esp_timer_handle_t pid_tick_timer;  // Periodic timer driving the PID control loop
 
-    heating_profile_t* heating_profiles;
-    size_t num_profiles;
+    ProgramDraft run_program;       // Copy of the program being executed
+    bool has_program;               // True after a program has been loaded
 
     bool running;
     bool paused;
@@ -42,7 +45,7 @@ esp_err_t post_heater_controller_event(heater_controller_event_t event_type, voi
 // ============================================
 // Heating profile task management functions
 // ============================================
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, size_t profile_index);
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program);
 
 esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);
 
