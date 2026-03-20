@@ -6,6 +6,7 @@
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
 
+#include <stdatomic.h>
 #include <string.h>
 
 static const char* TAG = "COORDINATOR_TASK";
@@ -77,6 +78,37 @@ static void heating_profile_task(void* args)
             continue;   /* Skip PID computation while paused */
         }
 
+        /* ── Apply pending manual-mode target update ──────────────── */
+        if (atomic_exchange(&ctx->target_update.pending, false)) {
+            int new_target   = ctx->target_update.target_t_c;
+            int new_delta_x10 = ctx->target_update.delta_t_per_min_x10;
+            float cur_temp    = ctx->current_temperature;
+
+            /* Compute ramp time from current temp to new target at the given delta */
+            int abs_diff = new_target > (int)cur_temp
+                         ? new_target - (int)cur_temp
+                         : (int)cur_temp - new_target;
+            uint32_t ramp_ms;
+            if (new_delta_x10 > 0 && abs_diff > 0) {
+                /* time_min = abs_diff / (delta/10) = abs_diff * 10 / delta */
+                uint32_t ramp_min = ((uint32_t)abs_diff * 10U + (uint32_t)new_delta_x10 - 1U)
+                                  / (uint32_t)new_delta_x10;  /* ceiling div */
+                if (ramp_min < 1) ramp_min = 1;
+                ramp_ms = ramp_min * 60U * 1000U;
+            } else {
+                ramp_ms = 60U * 1000U;  /* 1 min minimum */
+            }
+
+            profile_update_stage_target((float)new_target, ramp_ms, cur_temp);
+
+            /* Also update estimated total for time-remaining display */
+            ctx->heating_task_state.estimated_total_duration_ms =
+                ctx->heating_task_state.current_time_elapsed_ms + ramp_ms;
+
+            LOGGER_LOG_INFO(TAG, "Manual target applied: %d C, delta_x10=%d, ramp=%lu ms",
+                            new_target, new_delta_x10, (unsigned long)ramp_ms);
+        }
+
         const profile_controller_error_t err = profile_tick(
             last_update_duration,
             ctx->current_temperature,
@@ -107,8 +139,8 @@ static void heating_profile_task(void* args)
         }
 
         // Calculate power output based on current and target temperature
-        float power_output = pid_controller_compute(ctx->current_temperature,
-                                                    tick_result.setpoint,
+        float power_output = pid_controller_compute(tick_result.setpoint,
+                                                    ctx->current_temperature,
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
@@ -151,7 +183,7 @@ static const CoordinatorTaskConfig_t coordinator_task_config = {
     .task_priority = 5
 };
 
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program)
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program, int cooldown_rate_x10)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
@@ -179,8 +211,8 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *prog
     }
     uint32_t total_ms = stages_ms;
     /* Add implicit cooldown duration */
-    if (last_stage_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
-        float cooldown_min = (last_stage_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+    if (last_stage_temp > 0.0f && cooldown_rate_x10 > 0) {
+        float cooldown_min = (last_stage_temp * 10.0f) / (float)cooldown_rate_x10;
         if (cooldown_min < 1.0f) cooldown_min = 1.0f;
         total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
@@ -198,7 +230,8 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *prog
 
     const temp_profile_config_t temp_profile_config = {
         .program = prog,
-        .initial_temperature = ctx->current_temperature
+        .initial_temperature = ctx->current_temperature,
+        .cooldown_rate_x10 = cooldown_rate_x10
     };
 
     const profile_controller_error_t err = load_heating_profile(temp_profile_config);

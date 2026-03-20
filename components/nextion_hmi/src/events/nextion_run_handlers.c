@@ -1,6 +1,7 @@
 #include "nextion_run_handlers.h"
 #include "nextion_events_internal.h"
 #include "nextion_hmi.h"
+#include "nextion_manual_handlers.h"
 
 #include "sdkconfig.h"
 #include "nextion_transport_internal.h"
@@ -71,6 +72,7 @@ void handle_run_start(void)
 
     coordinator_start_profile_data_t data = {0};
     hmi_get_run_program(&data.program);
+    data.cooldown_rate_x10 = program_get_cooldown_rate_x10();
 
     esp_err_t err = event_manager_post_blocking(
         COORDINATOR_EVENT,
@@ -159,7 +161,7 @@ void nextion_event_handle_temp_update(float temperature, bool valid)
         nextion_send_cmd(cmd);
     } else if (page == NEXTION_PAGE_ID_SETTINGS) {
         snprintf(cmd, sizeof(cmd),
-                 "ambientTempH.txt=\"Set ambient temp (%.2f)\"", temperature);
+                 "ambientTempH.txt=\"Ambient T (%.2f)\"", temperature);
         nextion_send_cmd(cmd);
     }
 }
@@ -191,8 +193,9 @@ void nextion_event_handle_profile_started(void)
     s_waveform_total_ms = total_min * 60U * 1000U;
 
     /* Include implicit cooldown in the graph time span */
-    if (last_stage_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
-        float cooldown_min = (last_stage_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+    int cd_rate = program_get_cooldown_rate_x10();
+    if (last_stage_temp > 0.0f && cd_rate > 0) {
+        float cooldown_min = (last_stage_temp * 10.0f) / (float)cd_rate;
         if (cooldown_min < 1.0f) cooldown_min = 1.0f;
         s_waveform_total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
@@ -205,9 +208,17 @@ void nextion_event_handle_profile_started(void)
 
     /* Init waveform */
     s_waveform_x = 0;
-    s_waveform_ms_per_pixel = (s_waveform_total_ms > 0)
-        ? (s_waveform_total_ms / WAVEFORM_USABLE_WIDTH)
-        : 1;
+
+    bool manual = program_get_manual_mode_active();
+
+    if (manual) {
+        /* Manual mode: 1 pixel = 1 minute — graph fills over GRAPH_WIDTH minutes */
+        s_waveform_ms_per_pixel = 60000;
+    } else {
+        s_waveform_ms_per_pixel = (s_waveform_total_ms > 0)
+            ? (s_waveform_total_ms / WAVEFORM_USABLE_WIDTH)
+            : 1;
+    }
     s_waveform_active = true;
 
     /* Show initial times */
@@ -228,8 +239,8 @@ void nextion_event_handle_profile_started(void)
     snprintf(cmd, sizeof(cmd), "cle %d,1", CONFIG_NEXTION_GRAPH_DISP_ID);
     nextion_send_cmd(cmd);
 
-    /* Render the projected/planned curve into channel 0 */
-    {
+    /* Render the projected/planned curve into channel 0 (programs only) */
+    if (!manual) {
         static uint8_t proj_samples[CONFIG_NEXTION_MAIN_GRAPH_WIDTH];
         size_t count = program_build_graph(&draft, proj_samples, sizeof(proj_samples),
                                            CONFIG_NEXTION_MAIN_GRAPH_WIDTH,
@@ -244,6 +255,8 @@ void nextion_event_handle_profile_started(void)
             }
         }
         LOGGER_LOG_INFO(TAG, "Projected curve rendered (%u points)", (unsigned)count);
+    } else {
+        LOGGER_LOG_INFO(TAG, "Manual mode — graph shows actual readings only");
     }
 }
 
@@ -354,6 +367,12 @@ void nextion_event_handle_profile_stopped(void)
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Stopped\"");
     s_waveform_active = false;
+
+    /* Clean up manual mode: hide controls and clear flag */
+    if (program_get_manual_mode_active()) {
+        program_set_manual_mode_active(false);
+        nextion_hide_manual_controls();
+    }
 }
 
 void nextion_event_handle_profile_completed(void)
@@ -367,6 +386,12 @@ void nextion_event_handle_profile_completed(void)
     /* Zero out time remaining and power displays */
     nextion_send_cmd("timeRamaining.txt=\"00:00:00\"");
     nextion_send_cmd("currentKw.txt=\"0.0\"");
+
+    /* Clean up manual mode: hide controls and clear flag */
+    if (program_get_manual_mode_active()) {
+        program_set_manual_mode_active(false);
+        nextion_hide_manual_controls();
+    }
 }
 
 /* ── Periodic tick (called from HMI coordinator ~every 50ms) ─────────
@@ -380,16 +405,30 @@ void nextion_event_handle_profile_completed(void)
 
 void nextion_run_tick(void)
 {
+    static uint32_t s_last_tick = 0;
+    uint32_t now = xTaskGetTickCount();
+    if ((now - s_last_tick) * portTICK_PERIOD_MS < 1000) {
+        return;   /* throttle to ~1 Hz */
+    }
+    s_last_tick = now;
+
+    /* ── Operational time: always counting (wall-clock) ────────────── */
+    program_add_operational_time_sec(1);
+    if (nextion_get_current_page() == NEXTION_PAGE_ID_MAIN) {
+        char cmd[64];
+        uint32_t op_sec = program_get_operational_time_sec();
+        uint32_t oh = op_sec / 3600;
+        uint32_t om = (op_sec % 3600) / 60;
+        uint32_t os = op_sec % 60;
+        snprintf(cmd, sizeof(cmd), "opTime.txt=\"%02lu:%02lu:%02lu\"",
+                 (unsigned long)oh, (unsigned long)om, (unsigned long)os);
+        nextion_send_cmd(cmd);
+    }
+
+    /* ── Pause-time display updates ────────────────────────────────── */
     if (!s_profile_active || !s_profile_paused) {
         return;
     }
-
-    static uint32_t s_last_pause_display_tick = 0;
-    uint32_t now = xTaskGetTickCount();
-    if ((now - s_last_pause_display_tick) * portTICK_PERIOD_MS < 1000) {
-        return;   /* throttle to ~1 Hz */
-    }
-    s_last_pause_display_tick = now;
 
     /* Remaining = original_total + all_pause_time - elapsed
      * Current pause contribution = time since this pause started */

@@ -17,5 +17,7 @@ void handle_prog_page_data(const char *payload);
 void handle_add_prog(void);
 void handle_delete_prog(const char *current_name);
 void handle_confirm_delete(void);
+void handle_prog_back(const char *payload);
 void handle_edit_prog(const char *payload);
 void handle_program_select(const char *filename);
+void handle_prog_field_set(const char *payload);

@@ -12,6 +12,7 @@ idf_component_register(
         "src/events/nextion_program_handlers.c"
         "src/events/nextion_settings_handlers.c"
         "src/events/nextion_run_handlers.c"
+        "src/events/nextion_manual_handlers.c"
         "src/program/heating_program_models.c"
         "src/program/heating_program_graph.c"
     INCLUDE_DIRS "include"

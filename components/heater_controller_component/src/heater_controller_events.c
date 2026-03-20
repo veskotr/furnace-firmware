@@ -49,7 +49,7 @@ esp_err_t init_events(heater_controller_context_t* ctx)
     return ESP_OK;
 }
 
-inline esp_err_t post_heater_controller_error(furnace_error_t error)
+esp_err_t post_heater_controller_error(furnace_error_t error)
 {
     return event_manager_post(FURNACE_ERROR_EVENT,
                               FURNACE_ERROR_EVENT_ID,

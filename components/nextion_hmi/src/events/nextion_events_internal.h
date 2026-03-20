@@ -11,6 +11,7 @@ typedef enum {
 } nextion_page_id_t;
 
 nextion_page_id_t nextion_get_current_page(void);
+void nextion_set_current_page(nextion_page_id_t page);
 
 void nextion_event_handle_line(const char *line);
 void nextion_event_handle_init(void);

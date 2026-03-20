@@ -15,6 +15,7 @@ typedef enum
 typedef struct {
     float initial_temperature;
     const ProgramDraft *program;   // Program to execute (array of stages)
+    int cooldown_rate_x10;         // User-configured cooldown rate (x10)
 } temp_profile_config_t;
 
 /**

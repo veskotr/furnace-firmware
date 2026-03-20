@@ -1,4 +1,5 @@
 #include "heating_program_graph_internal.h"
+#include "heating_program_models_internal.h"
 
 #include "sdkconfig.h"
 #include <string.h>
@@ -56,8 +57,9 @@ size_t program_build_graph(const ProgramDraft *draft, uint8_t *out, size_t max_l
      * Duration is derived from the configured natural cooling rate.
      */
     float last_temp = kp_temp[n_keys - 1];
-    if (last_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
-        float cooldown_min = (last_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+    int cd_rate = program_get_cooldown_rate_x10();
+    if (last_temp > 0.0f && cd_rate > 0) {
+        float cooldown_min = (last_temp * 10.0f) / (float)cd_rate;
         if (cooldown_min < 1.0f) {
             cooldown_min = 1.0f;
         }

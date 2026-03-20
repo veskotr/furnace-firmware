@@ -9,7 +9,21 @@
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
+#include <stdatomic.h>
+
 static const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
+
+/**
+ * @brief Pending live-update mailbox for manual-mode target changes.
+ *
+ * Written by the event-handler task, read+cleared by the profile task
+ * on every PID tick.  The atomic flag guarantees visibility across cores.
+ */
+typedef struct {
+    atomic_bool pending;             ///< True when new values are waiting
+    int         target_t_c;          ///< Desired target temperature (°C)
+    int         delta_t_per_min_x10; ///< Desired heating rate (x10)
+} pending_target_update_t;
 
 typedef struct
 {
@@ -26,6 +40,8 @@ typedef struct
     heating_task_state_t heating_task_state;
 
     bool events_initialized;
+
+    pending_target_update_t target_update;  ///< Live manual-mode mailbox
 } coordinator_ctx_t;
 
 // ============================================
@@ -45,7 +61,7 @@ esp_err_t post_heater_controller_event(heater_controller_event_t event_type, voi
 // ============================================
 // Heating profile task management functions
 // ============================================
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program);
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program, int cooldown_rate_x10);
 
 esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);
 
