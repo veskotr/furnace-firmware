@@ -1,5 +1,5 @@
-#ifndef TEMPERATURE_PROFILE_TYPES_H
-#define TEMPERATURE_PROFILE_TYPES_H
+#pragma once
+
 #include "core_types.h"
 
 typedef enum
@@ -41,5 +41,3 @@ typedef struct {
     bool         profile_complete;     ///< True when cooldown is done + temp below threshold
     bool         extension_warning;    ///< True if a stage hit max extension and was forced to advance
 } profile_tick_result_t;
-
-#endif // TEMPERATURE_PROFILE_TYPES_H

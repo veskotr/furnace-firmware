@@ -1,5 +1,5 @@
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
+
 #include "logger_component.h"
 #include "esp_err.h"
 
@@ -94,4 +94,3 @@
             return _ret;                                                           \
         }                                                                          \
     } while (0)
-#endif // UTILS_H

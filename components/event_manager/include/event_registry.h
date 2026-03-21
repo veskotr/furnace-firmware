@@ -1,9 +1,7 @@
-#ifndef EVENT_REGISTRY_H
-#define EVENT_REGISTRY_H
+#pragma once
 
 #include "esp_event.h"
 #include <stdint.h>
-#include <stdbool.h>
 #include "core_types.h"
 
 // ============================================================================
@@ -56,11 +54,6 @@ typedef struct
  * a running manual program.  The coordinator applies the change on the
  * next PID tick without stopping the profile.
  */
-typedef struct
-{
-    int  target_t_c;            ///< New target temperature (°C)
-    int  delta_t_per_min_x10;   ///< New heating rate (x10, e.g. 15 = 1.5 °C/min)
-} coordinator_update_target_data_t;
 
 typedef struct
 {
@@ -140,4 +133,3 @@ ESP_EVENT_DECLARE_BASE(DEVICE_MANAGER_EVENT);
  */
 esp_err_t event_registry_init(void);
 
-#endif // EVENT_REGISTRY_H

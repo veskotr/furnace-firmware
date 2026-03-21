@@ -1,9 +1,7 @@
 //
 // Created by vesko on 13.1.2026 г..
 //
-
-#ifndef COMMANDS_DISPATCHER_INTERNAL_H
-#define COMMANDS_DISPATCHER_INTERNAL_H
+#pragma once
 #include "commands_dispatcher.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -38,4 +36,3 @@ esp_err_t shutdown_task(commands_dispatcher_ctx_t* ctx);
 esp_err_t init_command_handlers(commands_dispatcher_ctx_t* ctx);
 esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t* ctx);
 
-#endif //FURNACE_FIRMWARE_COMMANDS_DISPATCHER_INTERNAL_H

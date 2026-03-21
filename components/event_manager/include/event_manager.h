@@ -1,5 +1,4 @@
-#ifndef EVENT_MANAGER_H
-#define EVENT_MANAGER_H
+#pragma once
 
 #include "esp_err.h"
 #include "esp_event.h"
@@ -93,5 +92,3 @@ esp_err_t event_manager_post_blocking(
  * Should be rarely needed - components should use event_manager_post() instead
  */
 esp_event_loop_handle_t event_manager_get_loop(void);
-
-#endif // EVENT_MANAGER_H

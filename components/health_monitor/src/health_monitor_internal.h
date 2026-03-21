@@ -1,5 +1,4 @@
-#ifndef HEALTH_MONITOR_INTERNAL_H
-#define HEALTH_MONITOR_INTERNAL_H
+#pragma once
 
 #include "esp_err.h"
 #include <stdbool.h>
@@ -43,5 +42,3 @@ esp_err_t shutdown_health_monitor_task(health_monitor_ctx_t* ctx);
 
 esp_err_t init_health_monitor_events(health_monitor_ctx_t* ctx);
 esp_err_t shutdown_health_monitor_events(health_monitor_ctx_t* ctx);
-
-#endif // HEALTH_MONITOR_INTERNAL_H

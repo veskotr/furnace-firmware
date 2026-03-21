@@ -213,22 +213,13 @@ void hmi_get_run_program(program_draft_t *out)
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 
-void program_copy_draft_to_run_slot(void)
-{
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
-    memcpy(&s_run_program, &s_program_draft, sizeof(s_run_program));
-    xSemaphoreGiveRecursive(s_program_mutex);
-}
-
 // ============================================================================
 // Operational time — NVS-persisted, incremented every status update
 // ============================================================================
 
 uint32_t program_get_operational_time_sec(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     uint32_t value = s_operational_time_sec;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
@@ -254,62 +245,46 @@ void program_add_operational_time_sec(uint32_t seconds)
 
 bool program_get_manual_mode_active(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     bool value = s_manual_mode_active;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_manual_mode_active(bool active)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_manual_mode_active = active;
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 int program_get_manual_target_temp_c(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_manual_target_temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_manual_target_temp_c(int temp_c)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_manual_target_temp_c = temp_c;
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 int program_get_manual_delta_t_x10(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_manual_delta_t_x10;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_manual_delta_t_x10(int delta_x10)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_manual_delta_t_x10 = delta_x10;
-    xSemaphoreGiveRecursive(s_program_mutex);
 }
 
 bool program_get_fan_mode_max(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     bool value = s_fan_mode_max;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_fan_mode_max(bool is_max)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_fan_mode_max = is_max;
-    xSemaphoreGiveRecursive(s_program_mutex);
 
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
@@ -325,17 +300,13 @@ void program_set_fan_mode_max(bool is_max)
 
 int program_get_cooldown_rate_x10(void)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     int value = s_cooldown_rate_x10;
-    xSemaphoreGiveRecursive(s_program_mutex);
     return value;
 }
 
 void program_set_cooldown_rate_x10(int rate_x10)
 {
-    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_cooldown_rate_x10 = rate_x10;
-    xSemaphoreGiveRecursive(s_program_mutex);
 
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {

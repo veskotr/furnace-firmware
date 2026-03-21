@@ -1,5 +1,4 @@
-#ifndef MAX31865_REGISTERS_H
-#define MAX31865_REGISTERS_H
+#pragma once
 #include <inttypes.h>
 
 typedef struct
@@ -30,6 +29,3 @@ typedef enum {
 } max31865_fault_t;
 
 extern const max31865_registers_t max31865_registers;
-
-
-#endif

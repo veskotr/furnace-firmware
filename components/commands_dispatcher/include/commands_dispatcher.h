@@ -1,5 +1,4 @@
-#ifndef COMMANDS_DISPATCHER_H
-#define COMMANDS_DISPATCHER_H
+#pragma once
 #include <stdbool.h>
 
 #include "core_types.h"
@@ -33,6 +32,7 @@ typedef enum
     COMMAND_TYPE_COORDINATOR_STOP_PROFILE,
     COMMAND_TYPE_COORDINATOR_GET_STATUS_REPORT,
     COMMAND_TYPE_COORDINATOR_GET_CURRENT_PROFILE,
+    COMMAND_TYPE_UPDATE_MANUAL_TARGET
 } coordinator_command_type_t;
 
 typedef struct
@@ -47,6 +47,9 @@ typedef struct
 {
     coordinator_command_type_t type;
     program_draft_t program;
+    int cooldown_rate_x10; // User-configured cooldown rate (x10)
+    int  target_t_c;            ///< New target temperature (°C)
+    int  delta_t_per_min_x10;   ///< New heating rate (x10, e.g. 15 = 1.5 °C/min)
 } coordinator_command_data_t;
 
 typedef esp_err_t (*command_handler_t)(void* handler_arg, void* command_data, size_t command_data_size);
@@ -62,5 +65,3 @@ esp_err_t register_command_handler(
 esp_err_t unregister_command_handler(command_target_t target);
 
 esp_err_t commands_dispatcher_shutdown(void);
-
-#endif // COMMANDS_DISPATCHER_H

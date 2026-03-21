@@ -468,7 +468,7 @@ profile_controller_error_t profile_update_stage_target(float new_target,
     if (g_temp_profile_controller_ctx && g_temp_profile_controller_ctx->program) {
         /* The program pointer points into coordinator_ctx_t.run_program
          * which we're allowed to mutate for manual mode. */
-        ProgramDraft *prog = (ProgramDraft *)g_temp_profile_controller_ctx->program;
+        program_draft_t *prog = (program_draft_t *)g_temp_profile_controller_ctx->program;
         if (s_tick.active_pos >= 0 && s_tick.active_pos < s_tick.num_active_stages) {
             int idx = s_tick.active_stages[s_tick.active_pos];
             prog->stages[idx].target_t_c = (int)new_target;

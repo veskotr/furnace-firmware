@@ -22,7 +22,7 @@
 #include "nextion_ui_internal.h"
 #include "nextion_parse_utils.h"
 #include "heating_program_models_internal.h"
-#include "heating_program_types.h"
+#include "core_types.h"
 #include "heating_program_validation.h"
 #include "event_manager.h"
 #include "event_registry.h"
@@ -33,6 +33,8 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "commands_dispatcher.h"
 
 static const char *TAG = "nextion_manual";
 
@@ -125,18 +127,22 @@ static void start_manual_program(void)
         return;
     }
 
-    /* Copy to run slot and post start event */
-    program_copy_draft_to_run_slot();
+    program_draft_t program;
+    hmi_get_run_program(&program);
 
-    coordinator_start_profile_data_t data = {0};
-    hmi_get_run_program(&data.program);
-    data.cooldown_rate_x10 = program_get_cooldown_rate_x10();
+    coordinator_command_data_t data = {
+        .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
+        .program = program,
+        .cooldown_rate_x10 = program_get_cooldown_rate_x10()
+    };
 
-    esp_err_t err = event_manager_post_blocking(
-        COORDINATOR_EVENT,
-        COORDINATOR_EVENT_START_PROFILE,
-        &data,
-        sizeof(data));
+    command_t command = {
+        .target = COMMAND_TARGET_COORDINATOR,
+        .data = &data,
+        .data_size = sizeof(coordinator_command_data_t),
+    };
+
+    esp_err_t err = commands_dispatcher_dispatch_command(&command);
 
     if (err != ESP_OK) {
         nextion_show_error("Manual start failed");
@@ -155,15 +161,20 @@ static void start_manual_program(void)
 static void live_update_if_running(void)
 {
     if (program_get_manual_mode_active() && nextion_is_profile_running()) {
-        coordinator_update_target_data_t upd = {
+
+        coordinator_command_data_t data = {
+            .type = COMMAND_TYPE_UPDATE_MANUAL_TARGET,
             .target_t_c          = program_get_manual_target_temp_c(),
             .delta_t_per_min_x10 = program_get_manual_delta_t_x10(),
         };
-        esp_err_t err = event_manager_post_blocking(
-            COORDINATOR_EVENT,
-            COORDINATOR_EVENT_UPDATE_MANUAL_TARGET,
-            &upd,
-            sizeof(upd));
+
+        command_t command = {
+            .target = COMMAND_TARGET_COORDINATOR,
+            .data = &data,
+            .data_size = sizeof(coordinator_command_data_t),
+        };
+
+        const esp_err_t err = commands_dispatcher_dispatch_command(&command);
         if (err != ESP_OK) {
             LOGGER_LOG_ERROR(TAG, "Live target update failed: %s",
                              esp_err_to_name(err));

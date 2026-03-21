@@ -1,5 +1,4 @@
-#ifndef TEMPERATURE_MONITOR_INTERNAL_H
-#define TEMPERATURE_MONITOR_INTERNAL_H
+#pragma once
 
 #include "esp_err.h"
 #include "temperature_monitor_types.h"
@@ -116,5 +115,3 @@ void read_temp_sensors_data(const temp_monitor_context_t* ctx, temp_sample_t* te
 bool temp_ring_buffer_init();
 
 void temp_ring_buffer_push(temp_ring_buffer_t* rb, const temp_sample_t* sample);
-
-#endif // TEMPERATURE_MONITOR_INTERNAL_H

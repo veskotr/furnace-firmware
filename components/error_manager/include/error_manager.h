@@ -1,5 +1,4 @@
-#ifndef ERROR_MANAGER_H
-#define ERROR_MANAGER_H
+#pragma once
 
 #include <stdint.h>
 #include "furnace_error_types.h"
@@ -16,4 +15,3 @@ void register_error_descriptor(uint16_t component_id, error_descriptor_func_t de
 
 const char* get_error_description(const furnace_error_t* error);
 
-#endif
