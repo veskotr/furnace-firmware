@@ -8,6 +8,8 @@
 #include "event_manager.h"
 #include "event_registry.h"
 
+#include <stdatomic.h>
+
 static const char* TAG = "COORDINATOR_EVENTS";
 
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
@@ -53,7 +55,7 @@ static esp_err_t coordinator_command_handler(void* handler_arg, void* command_da
     case COMMAND_TYPE_COORDINATOR_START_PROFILE:
         {
             LOGGER_LOG_INFO(TAG, "Coordinator Event: Start Profile '%s'", data->program.name);
-            const esp_err_t err = start_heating_profile(ctx, &data->program);
+            const esp_err_t err = start_heating_profile(ctx, &data->program, data->cooldown_rate_x10);
             if (err != ESP_OK)
             {
                 CHECK_ERR_LOG(
@@ -99,6 +101,25 @@ static esp_err_t coordinator_command_handler(void* handler_arg, void* command_da
                 return err;
             }
             post_coordinator_event(COORDINATOR_EVENT_PROFILE_STOPPED, NULL, 0);
+            break;
+        }
+        case COORDINATOR_EVENT_UPDATE_MANUAL_TARGET:
+        {
+            if (event_data == NULL) {
+                LOGGER_LOG_WARN(TAG, "Update manual target event data is NULL");
+                return;
+            }
+            const coordinator_update_target_data_t *upd =
+                (const coordinator_update_target_data_t *)event_data;
+
+            LOGGER_LOG_INFO(TAG, "Coordinator Event: Update Manual Target t=%d delta_x10=%d",
+                            upd->target_t_c, upd->delta_t_per_min_x10);
+
+            /* Write to mailbox — the profile task picks it up on the
+             * next PID tick so s_tick is only mutated from one thread. */
+            ctx->target_update.target_t_c          = upd->target_t_c;
+            ctx->target_update.delta_t_per_min_x10 = upd->delta_t_per_min_x10;
+            atomic_store(&ctx->target_update.pending, true);
             break;
         }
     case COMMAND_TYPE_COORDINATOR_RESUME_PROFILE:

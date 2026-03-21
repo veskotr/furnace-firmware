@@ -56,7 +56,7 @@ esp_err_t init_events(heater_controller_context_t* ctx);
 // ----------------------------
 // Event posting functions
 // ----------------------------
-inline esp_err_t post_heater_controller_error(furnace_error_t error);
+esp_err_t post_heater_controller_error(furnace_error_t error);
 
 esp_err_t post_heater_controller_event(heater_controller_event_t event_type,
                                        void* event_data, size_t event_data_size);

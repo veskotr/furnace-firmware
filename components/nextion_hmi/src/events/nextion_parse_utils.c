@@ -43,7 +43,7 @@ bool parse_decimal_x10(const char *text, int *out_value_x10)
     }
 
     int whole = 0;
-    while (*ptr >= '0' && *ptr <= '9') {
+    while (*ptr >= '0' && *ptr <= '9') { 
         whole = whole * 10 + (*ptr - '0');
         ptr++;
     }

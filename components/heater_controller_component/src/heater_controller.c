@@ -23,7 +23,7 @@ esp_err_t init_heater_controller(void)
     return ESP_OK;
 }
 
-esp_err_t toggle_heater(const bool state)
+esp_err_t toggle_heater(bool state)
 {
     LOGGER_LOG_INFO(TAG, "Toggling Heater to state: %s", state ? "ON" : "OFF");
 

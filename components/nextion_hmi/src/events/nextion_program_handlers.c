@@ -1,6 +1,7 @@
 #include "nextion_program_handlers.h"
 
 #include "sdkconfig.h"
+#include "nextion_events_internal.h"
 #include "nextion_parse_utils.h"
 #include "nextion_transport_internal.h"
 #include "nextion_storage_internal.h"
@@ -14,6 +15,7 @@
 #include "freertos/task.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "nextion_prog";
@@ -23,6 +25,17 @@ static const char *TAG = "nextion_prog";
 static uint8_t s_programs_page = 1;
 static bool    s_graph_visible = false;
 static char    s_original_program_name[64] = {0};
+
+/* ── Confirm-dialog context ─────────────────────────────────────────── */
+
+typedef enum {
+    DIALOG_NONE,
+    DIALOG_DELETE,    // Confirm deletion of existing program
+    DIALOG_CLEAR,     // Clear all fields (new program mode)
+    DIALOG_EXIT,      // Exit without saving (dirty flag set)
+} dialog_context_t;
+
+static dialog_context_t s_dialog_context = DIALOG_NONE;
 
 /* ── Common payload tokenizer ──────────────────────────────────────── */
 
@@ -383,10 +396,14 @@ void handle_save_prog(const char *payload)
                                      save_error, sizeof(save_error))) {
         nextion_show_error(save_error);
     } else {
-        nextion_clear_error();
+        nextion_show_error("Saved");
+        nextion_send_cmd("errTxtHead.txt=\"Success\"");
         strncpy(s_original_program_name, validated.name,
                 sizeof(s_original_program_name) - 1);
         s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
+        nextion_send_cmd("deleteBtn.txt=\"Delete\"");
+        nextion_send_cmd("confirmDelete.txt=\"Delete\"");
+        nextion_send_cmd("dirty.val=0");
         LOGGER_LOG_INFO(TAG, "Program draft validated and saved to SD");
     }
 }
@@ -542,9 +559,13 @@ void handle_autofill(const char *payload)
                 continue;
             }
 
-            int calc_time = temp_diff_x10 / f.delta_t_x10;
-            if (calc_time < 0) calc_time = -calc_time;
-            if (calc_time < 1) calc_time = 1;
+            int calc_time;
+            if (!autofill_calc_time(temp_diff_x10, f.delta_t_x10,
+                    f.stage_num, f.target_t, &calc_time,
+                    error_msg, sizeof(error_msg))) {
+                any_error = true;
+                continue;
+            }
 
             if (!validate_time_in_range(calc_time, f.stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
@@ -569,7 +590,13 @@ void handle_autofill(const char *payload)
                 continue;
             }
 
-            int calc_delta_x10 = temp_diff_x10 / f.t_min;
+            int calc_delta_x10;
+            if (!autofill_calc_delta(temp_diff_x10, f.t_min,
+                    f.stage_num, &calc_delta_x10,
+                    error_msg, sizeof(error_msg))) {
+                any_error = true;
+                continue;
+            }
 
             if (!validate_delta_t_in_range(calc_delta_x10, f.stage_num, error_msg, sizeof(error_msg))) {
                 any_error = true;
@@ -692,39 +719,19 @@ void handle_prog_page_data(const char *payload)
     sync_program_buffer();
 }
 
-/* ── handle_add_prog ───────────────────────────────────────────────── */
+/* ── Confirm dialog helper ──────────────────────────────────────────── */
 
-void handle_add_prog(void)
+static void show_confirm_dialog(dialog_context_t context,
+                                const char *message,
+                                const char *action_text)
 {
-    s_original_program_name[0] = '\0';
-    program_draft_clear();
-    s_programs_page = 1;
-    s_graph_visible = false;
-    nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
-    vTaskDelay(pdMS_TO_TICKS(30));
-    programs_page_apply(1);
-    nextion_send_cmd("progNameInput.txt=\"\"");
-    sync_program_buffer();
-}
-
-/* ── handle_delete_prog / handle_confirm_delete ────────────────────── */
-
-void handle_delete_prog(const char *current_name)
-{
-    if (s_original_program_name[0] == '\0') {
-        nextion_show_error("Open a program with Edit first");
-        return;
-    }
-
-    const char *name = current_name ? trim_in_place((char *)current_name) : "";
-    if (strcmp(name, s_original_program_name) != 0) {
-        nextion_show_error("Restore original name to delete");
-        return;
-    }
+    s_dialog_context = context;
 
     char cmd[96];
-    snprintf(cmd, sizeof(cmd), "confirmTxt.txt=\"Delete \\\"%.26s\\\"?\"", s_original_program_name);
-    LOGGER_LOG_INFO(TAG, "Delete confirm cmd: %s", cmd);
+    snprintf(cmd, sizeof(cmd), "confirmTxt.txt=\"%.40s\"", message);
+    nextion_send_cmd(cmd);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    snprintf(cmd, sizeof(cmd), "confirmDelete.txt=\"%s\"", action_text);
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_send_cmd("vis confirmBdy,1");
@@ -736,25 +743,111 @@ void handle_delete_prog(const char *current_name)
     nextion_send_cmd("vis confirmCancel,1");
 }
 
-void handle_confirm_delete(void)
+static void hide_confirm_dialog(void)
 {
     nextion_send_cmd("vis confirmBdy,0");
     nextion_send_cmd("vis confirmTxt,0");
     nextion_send_cmd("vis confirmDelete,0");
     nextion_send_cmd("vis confirmCancel,0");
+    s_dialog_context = DIALOG_NONE;
+}
 
-    char error_msg[64];
-    if (!nextion_storage_delete_program(s_original_program_name, error_msg, sizeof(error_msg))) {
-        nextion_show_error(error_msg);
-        return;
-    }
+/* ── handle_add_prog ───────────────────────────────────────────────── */
 
+void handle_add_prog(void)
+{
     s_original_program_name[0] = '\0';
     program_draft_clear();
     s_programs_page = 1;
+    s_graph_visible = false;
+    s_dialog_context = DIALOG_NONE;
+    nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
+    vTaskDelay(pdMS_TO_TICKS(30));
     programs_page_apply(1);
     nextion_send_cmd("progNameInput.txt=\"\"");
+    nextion_send_cmd("deleteBtn.txt=\"Clear\"");
+    nextion_send_cmd("confirmDelete.txt=\"Clear\"");
+    nextion_send_cmd("dirty.val=0");
     sync_program_buffer();
+}
+
+/* ── handle_delete_prog / handle_confirm_delete ────────────────────── */
+
+void handle_delete_prog(const char *current_name)
+{
+    if (s_original_program_name[0] == '\0') {
+        /* New program mode — "Clear" action */
+        show_confirm_dialog(DIALOG_CLEAR,
+                            "Clear all program data?",
+                            "Clear");
+        return;
+    }
+
+    const char *name = current_name ? trim_in_place((char *)current_name) : "";
+    if (strcmp(name, s_original_program_name) != 0) {
+        nextion_show_error("Restore original name to delete");
+        return;
+    }
+
+    char msg[48];
+    snprintf(msg, sizeof(msg), "Delete \"%.26s\"?", s_original_program_name);
+    show_confirm_dialog(DIALOG_DELETE, msg, "Delete");
+}
+
+void handle_confirm_delete(void)
+{
+    dialog_context_t ctx = s_dialog_context;
+    hide_confirm_dialog();
+
+    switch (ctx) {
+        case DIALOG_CLEAR:
+            /* New program mode — clear all fields */
+            program_draft_clear();
+            s_programs_page = 1;
+            programs_page_apply(1);
+            nextion_send_cmd("progNameInput.txt=\"\"");
+            nextion_send_cmd("dirty.val=0");
+            sync_program_buffer();
+            break;
+
+        case DIALOG_EXIT:
+            /* Dirty exit — navigate to main without saving */
+            nextion_set_current_page(NEXTION_PAGE_ID_MAIN);
+            nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
+            break;
+
+        case DIALOG_DELETE:
+        default: {
+            /* Original behavior — delete from SD */
+            char error_msg[64];
+            if (!nextion_storage_delete_program(s_original_program_name,
+                                                error_msg, sizeof(error_msg))) {
+                nextion_show_error(error_msg);
+                s_dialog_context = DIALOG_NONE;
+                return;
+            }
+
+            s_original_program_name[0] = '\0';
+            program_draft_clear();
+            s_programs_page = 1;
+            programs_page_apply(1);
+            nextion_send_cmd("progNameInput.txt=\"\"");
+            sync_program_buffer();
+            break;
+        }
+    }
+
+    s_dialog_context = DIALOG_NONE;
+}
+
+/* ── handle_prog_back ──────────────────────────────────────────────── */
+
+void handle_prog_back(const char *payload)
+{
+    (void)payload;
+    show_confirm_dialog(DIALOG_EXIT,
+                        "Unsaved changes will be lost. Exit?",
+                        "Exit");
 }
 
 /* ── handle_edit_prog ──────────────────────────────────────────────── */
@@ -796,6 +889,7 @@ void handle_edit_prog(const char *payload)
     s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';
     s_programs_page = 1;
     s_graph_visible = false;
+    s_dialog_context = DIALOG_NONE;
 
     nextion_send_cmd("page " CONFIG_NEXTION_PAGE_PROGRAMS);
     vTaskDelay(pdMS_TO_TICKS(30));
@@ -804,6 +898,9 @@ void handle_edit_prog(const char *payload)
     char cmd[96];
     snprintf(cmd, sizeof(cmd), "progNameInput.txt=\"%s\"", program_draft_get_name());
     nextion_send_cmd(cmd);
+    nextion_send_cmd("deleteBtn.txt=\"Delete\"");
+    nextion_send_cmd("confirmDelete.txt=\"Delete\"");
+    nextion_send_cmd("dirty.val=0");
 
     sync_program_buffer();
 }
@@ -862,4 +959,92 @@ void handle_program_select(const char *filename)
                             CONFIG_NEXTION_MAIN_GRAPH_WIDTH,
                             CONFIG_NEXTION_MAIN_GRAPH_HEIGHT);
     sync_program_buffer();
+}
+
+/* ── handle_prog_field_set (keyboard return validation) ─────────────── */
+
+void handle_prog_field_set(const char *payload)
+{
+    if (!payload) return;
+
+    char buffer[64];
+    strncpy(buffer, payload, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    char *comma = strchr(buffer, ',');
+    if (!comma) return;
+    *comma = '\0';
+    const char *value = comma + 1;
+
+    int code;
+    if (!parse_int(buffer, &code) || code < 11) return;
+
+    int field_type = code / 10;   /* 1=time, 2=target, 3=tDelta, 4=tempDelta */
+    int field_row  = code % 10;   /* 1-5 */
+    if (field_row < 1 || field_row > PROGRAMS_PAGE_STAGE_COUNT) return;
+
+    int stage_num = (s_programs_page - 1) * PROGRAMS_PAGE_STAGE_COUNT + field_row;
+
+    /* Empty value = field cleared — always valid */
+    const char *trimmed = value;
+    while (*trimmed == ' ') trimmed++;
+    if (*trimmed == '\0') return;
+
+    char err[64];
+
+    switch (field_type) {
+    case 1: { /* time (minutes) */
+        int t_min;
+        if (!parse_int(trimmed, &t_min)) {
+            nextion_show_error("Invalid time value");
+            send_int_field("t", (uint8_t)field_row, 0, false);
+            return;
+        }
+        if (!validate_time_in_range(t_min, stage_num, err, sizeof(err))) {
+            nextion_show_error(err);
+        }
+        break;
+    }
+    case 2: { /* target temperature */
+        int target_t;
+        if (!parse_int(trimmed, &target_t)) {
+            nextion_show_error("Invalid temperature value");
+            send_int_field("targetTMax", (uint8_t)field_row, 0, false);
+            return;
+        }
+        if (!validate_temp_in_range(target_t, stage_num, err, sizeof(err))) {
+            nextion_show_error(err);
+        }
+        break;
+    }
+    case 3: { /* temp delta (°C/min, decimal x10) */
+        int delta_x10;
+        if (!parse_decimal_x10(trimmed, &delta_x10)) {
+            nextion_show_error("Invalid delta T value");
+            send_delta_field((uint8_t)field_row, 0, false);
+            return;
+        }
+        if (!validate_delta_t_in_range(delta_x10, stage_num, err, sizeof(err))) {
+            nextion_show_error(err);
+        }
+        break;
+    }
+    case 4: { /* time delta (minutes) */
+        int t_delta;
+        if (!parse_int(trimmed, &t_delta)) {
+            nextion_show_error("Invalid time delta value");
+            send_int_field("tDelta", (uint8_t)field_row, 0, false);
+            return;
+        }
+        if (t_delta < CONFIG_NEXTION_T_DELTA_MIN_MIN) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Stage %d: Time delta min is %d",
+                     stage_num, CONFIG_NEXTION_T_DELTA_MIN_MIN);
+            nextion_show_error(msg);
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }

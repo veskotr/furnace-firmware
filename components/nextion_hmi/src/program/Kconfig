@@ -27,6 +27,14 @@ menu "Operational Limits"
         int "Minimum total program time (minutes)"
         default 1
 
+    config NEXTION_MIN_TEMPERATURE_C
+        int "Minimum temperature (C)"
+        default 20
+        help
+            Lower bound for target temperature in manual mode and
+            program stages. Buttons and keyboard edits will clamp to
+            this value.
+
     config NEXTION_MAX_TEMPERATURE_C
         int "Maximum temperature (C)"
         default 170

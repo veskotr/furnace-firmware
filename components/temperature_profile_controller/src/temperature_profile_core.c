@@ -9,6 +9,7 @@ static const char *TAG = "TEMP_PROFILE_CONTROLLER";
 typedef struct {
     float initial_temperature;
     const program_draft_t *program;    // Points to the ProgramDraft being executed
+    int cooldown_rate_x10;          // User-configured cooldown rate (x10)
 } temperature_profile_controller_context_t;
 
 static temperature_profile_controller_context_t *g_temp_profile_controller_ctx = NULL;
@@ -77,6 +78,7 @@ profile_controller_error_t load_heating_profile(const temp_profile_config_t conf
 
     g_temp_profile_controller_ctx->program = config.program;
     g_temp_profile_controller_ctx->initial_temperature = config.initial_temperature;
+    g_temp_profile_controller_ctx->cooldown_rate_x10 = config.cooldown_rate_x10;
 
     /* Reset tick state for new profile */
     profile_tick_reset();
@@ -121,8 +123,9 @@ profile_controller_error_t get_target_temperature_at_time(const uint32_t time_ms
     }
 
     /* Implicit cooldown: ramp from last stage temp to 0 C */
-    if (start_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
-        float cooldown_min = (start_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+    int cd_rate = g_temp_profile_controller_ctx->cooldown_rate_x10;
+    if (start_temp > 0.0f && cd_rate > 0) {
+        float cooldown_min = (start_temp * 10.0f) / (float)cd_rate;
         if (cooldown_min < 1.0f) {
             cooldown_min = 1.0f;
         }
@@ -177,8 +180,8 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
         s_tick.cooldown_start_temp = current_temp;
         s_tick.cooldown_elapsed_ms = 0;
 
-        if (current_temp > 0.0f && CONFIG_NEXTION_COOLDOWN_RATE_X10 > 0) {
-            float cooldown_min = (current_temp * 10.0f) / (float)CONFIG_NEXTION_COOLDOWN_RATE_X10;
+        if (current_temp > 0.0f && g_temp_profile_controller_ctx->cooldown_rate_x10 > 0) {
+            float cooldown_min = (current_temp * 10.0f) / (float)g_temp_profile_controller_ctx->cooldown_rate_x10;
             if (cooldown_min < 1.0f) cooldown_min = 1.0f;
             s_tick.cooldown_total_ms = (uint32_t)(cooldown_min * 60.0f * 1000.0f);
         } else {
@@ -429,6 +432,53 @@ profile_controller_error_t shutdown_profile_controller(void)
 
     /* Reset tick state */
     profile_tick_reset();
+
+    return PROFILE_CONTROLLER_ERROR_NONE;
+}
+
+/* ── Live target update (manual mode) ─────────────────────────────── */
+
+profile_controller_error_t profile_update_stage_target(float new_target,
+                                                       uint32_t new_planned_ms,
+                                                       float current_temp)
+{
+    if (!s_tick.initialized) {
+        return PROFILE_CONTROLLER_ERROR_NO_PROFILE_LOADED;
+    }
+
+    /* Only meaningful during an active stage (RAMPING, HOLDING, SETTLE, EXTEND) */
+    if (s_tick.phase == STAGE_PHASE_COOLDOWN ||
+        s_tick.phase == STAGE_PHASE_COMPLETE) {
+        LOGGER_LOG_WARN(TAG, "update_stage_target ignored — not in active stage (phase=%d)",
+                        (int)s_tick.phase);
+        return PROFILE_CONTROLLER_ERROR_NONE;
+    }
+
+    float old_target = s_tick.stage_target_temp;
+
+    /* Update the stage target and restart the ramp from current temp */
+    s_tick.stage_target_temp = new_target;
+    s_tick.stage_start_temp  = current_temp;
+    s_tick.stage_elapsed_ms  = 0;
+    s_tick.stage_planned_ms  = new_planned_ms;
+    s_tick.overtime_ms       = 0;
+    s_tick.phase             = STAGE_PHASE_RAMPING;
+
+    /* Also update the ProgramDraft stage so status reports are consistent */
+    if (g_temp_profile_controller_ctx && g_temp_profile_controller_ctx->program) {
+        /* The program pointer points into coordinator_ctx_t.run_program
+         * which we're allowed to mutate for manual mode. */
+        ProgramDraft *prog = (ProgramDraft *)g_temp_profile_controller_ctx->program;
+        if (s_tick.active_pos >= 0 && s_tick.active_pos < s_tick.num_active_stages) {
+            int idx = s_tick.active_stages[s_tick.active_pos];
+            prog->stages[idx].target_t_c = (int)new_target;
+            prog->stages[idx].t_min      = (int)(new_planned_ms / 60000U);
+        }
+    }
+
+    LOGGER_LOG_INFO(TAG, "Live target update: %.0f C → %.0f C, ramp from %.1f C over %lu ms",
+                    old_target, new_target, current_temp,
+                    (unsigned long)new_planned_ms);
 
     return PROFILE_CONTROLLER_ERROR_NONE;
 }

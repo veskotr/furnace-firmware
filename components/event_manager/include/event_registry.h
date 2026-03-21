@@ -31,6 +31,7 @@ typedef enum
 typedef struct
 {
     program_draft_t program;   // Full program to execute
+    int cooldown_rate_x10;  // User-configured cooldown rate (x10)
 } coordinator_start_profile_data_t;
 
 typedef enum
@@ -47,6 +48,19 @@ typedef struct
     coordinator_error_code_t error_code;
     esp_err_t esp_error_code;
 } coordinator_error_data_t;
+
+/**
+ * @brief Live manual-mode target update.
+ *
+ * Posted by the HMI when the user adjusts temp / delta buttons during
+ * a running manual program.  The coordinator applies the change on the
+ * next PID tick without stopping the profile.
+ */
+typedef struct
+{
+    int  target_t_c;            ///< New target temperature (°C)
+    int  delta_t_per_min_x10;   ///< New heating rate (x10, e.g. 15 = 1.5 °C/min)
+} coordinator_update_target_data_t;
 
 typedef struct
 {
