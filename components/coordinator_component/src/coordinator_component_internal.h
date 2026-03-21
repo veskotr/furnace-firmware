@@ -1,5 +1,6 @@
 #pragma once
 
+#include "commands_dispatcher.h"
 #include "esp_err.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -53,7 +54,7 @@ esp_err_t post_coordinator_error_event(coordinator_event_id_t event_type, const 
                                        coordinator_error_code_t coordinator_error_code);
 esp_err_t post_coordinator_event(coordinator_event_id_t event_type, void* event_data, size_t event_data_size);
 
-esp_err_t post_heater_controller_event(heater_controller_event_t event_type, void* event_data, size_t event_data_size);
+esp_err_t post_heater_controller_command(command_t *command);
 
 
 // ============================================

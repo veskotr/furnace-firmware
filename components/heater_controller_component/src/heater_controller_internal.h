@@ -5,6 +5,8 @@
 #include "esp_event.h"
 #include "event_registry.h"
 #include "furnace_error_types.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const bool HEATER_ON = true;
 static const bool HEATER_OFF = false;
@@ -23,12 +25,16 @@ typedef struct
     volatile bool heater_state;
 
     // Target power level (0.0 to 1.0)
-    float target_power_level;
+    float accumulated_power_level;
+    uint8_t power_level_sample_count;
 
     // Task running flag
     volatile bool task_running;
 
     bool initialized;
+
+    SemaphoreHandle_t power_mutex;
+
 } heater_controller_context_t;
 
 extern heater_controller_context_t* g_heater_controller_context;
@@ -44,6 +50,7 @@ esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx);
 // ----------------------------
 esp_err_t init_heater_controller();
 esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float power_level);
+esp_err_t reset_heater_power_level_samples(heater_controller_context_t* ctx);
 esp_err_t toggle_heater(bool state);
 esp_err_t shutdown_heater_controller();
 
