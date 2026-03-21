@@ -1,17 +1,14 @@
-#ifndef COORDINATOR_COMPONENT_INTERNAL_H
-#define COORDINATOR_COMPONENT_INTERNAL_H
+#pragma once
 
 #include "esp_err.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "heating_program_types.h"
+#include "core_types.h"
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
-#include <stdatomic.h>
-
-static const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
+#define INVALID_PROFILE_INDEX (size_t) 0xFFFFFFFF;
 
 /**
  * @brief Pending live-update mailbox for manual-mode target changes.
@@ -19,19 +16,20 @@ static const size_t INVALID_PROFILE_INDEX = 0xFFFFFFFF;
  * Written by the event-handler task, read+cleared by the profile task
  * on every PID tick.  The atomic flag guarantees visibility across cores.
  */
-typedef struct {
-    atomic_bool pending;             ///< True when new values are waiting
-    int         target_t_c;          ///< Desired target temperature (°C)
-    int         delta_t_per_min_x10; ///< Desired heating rate (x10)
+typedef struct
+{
+    int target_t_c; ///< Desired target temperature (°C)
+    int delta_t_per_min_x10; ///< Desired heating rate (x10)
+    bool pending; ///< True when new values are waiting
 } pending_target_update_t;
 
 typedef struct
 {
     TaskHandle_t task_handle;
-    esp_timer_handle_t pid_tick_timer;  // Periodic timer driving the PID control loop
+    esp_timer_handle_t pid_tick_timer; // Periodic timer driving the PID control loop
 
-    ProgramDraft run_program;       // Copy of the program being executed
-    bool has_program;               // True after a program has been loaded
+    program_draft_t run_program; // Copy of the program being executed
+    bool has_program; // True after a program has been loaded
 
     bool running;
     bool paused;
@@ -41,7 +39,7 @@ typedef struct
 
     bool events_initialized;
 
-    pending_target_update_t target_update;  ///< Live manual-mode mailbox
+    pending_target_update_t target_update; ///< Live manual-mode mailbox
 } coordinator_ctx_t;
 
 // ============================================
@@ -61,16 +59,14 @@ esp_err_t post_heater_controller_event(heater_controller_event_t event_type, voi
 // ============================================
 // Heating profile task management functions
 // ============================================
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program, int cooldown_rate_x10);
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t* program, int cooldown_rate_x10);
 
 esp_err_t pause_heating_profile(coordinator_ctx_t* ctx);
 
 esp_err_t resume_heating_profile(coordinator_ctx_t* ctx);
 
-void get_heating_task_state(const coordinator_ctx_t* ctx, heating_task_state_t* state_out);
+esp_err_t get_heating_task_state(const coordinator_ctx_t* ctx);
 
-void get_current_heating_profile(const coordinator_ctx_t* ctx, size_t* profile_index_out);
+esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx);
 
 esp_err_t stop_heating_profile(coordinator_ctx_t* ctx);
-
-#endif // COORDINATOR_COMPONENT_INTERNAL_H

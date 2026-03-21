@@ -1,7 +1,5 @@
-#ifndef LOGGER_COMPONENT_H
-#define LOGGER_COMPONENT_H
+#pragma once
 
-#include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 
 typedef enum
@@ -60,5 +58,3 @@ void logger_send(log_level_t log_level, const char *tag, const char *message, ..
 #define logger_send_warn(tag, fmt, ...) logger_send(LOG_LEVEL_WARN, tag, fmt, ##__VA_ARGS__)
 #define logger_send_error(tag, fmt, ...) logger_send(LOG_LEVEL_ERROR, tag, fmt, ##__VA_ARGS__)
 #define logger_send_debug(tag, fmt, ...) logger_send(LOG_LEVEL_DEBUG, tag, fmt, ##__VA_ARGS__)
-
-#endif // LOGGER_COMPONENT_H

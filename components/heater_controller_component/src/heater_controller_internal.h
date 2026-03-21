@@ -1,5 +1,4 @@
-#ifndef HEATER_CONTROLLER_INTERNAL_H
-#define HEATER_CONTROLLER_INTERNAL_H
+#pragma once
 
 #include "esp_err.h"
 #include <stdbool.h>
@@ -60,6 +59,3 @@ esp_err_t post_heater_controller_error(furnace_error_t error);
 
 esp_err_t post_heater_controller_event(heater_controller_event_t event_type,
                                        void* event_data, size_t event_data_size);
-
-
-#endif // HEATER_CONTROLLER_INTERNAL_H

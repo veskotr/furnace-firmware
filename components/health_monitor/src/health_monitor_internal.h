@@ -1,5 +1,4 @@
-#ifndef HEALTH_MONITOR_INTERNAL_H
-#define HEALTH_MONITOR_INTERNAL_H
+#pragma once
 
 #include "esp_err.h"
 #include <stdbool.h>
@@ -23,7 +22,7 @@ typedef struct
     uint8_t miss_count;
     uint8_t max_misses;
 
-    bool required;
+    bool registered;
     heartbeat_state_t state;
 } heartbeat_entry_t;
 
@@ -34,6 +33,7 @@ typedef struct
     bool events_initialized;
     bool tasks_initialized;
     bool initialized;
+
     TaskHandle_t task_handle;
 } health_monitor_ctx_t;
 
@@ -42,5 +42,3 @@ esp_err_t shutdown_health_monitor_task(health_monitor_ctx_t* ctx);
 
 esp_err_t init_health_monitor_events(health_monitor_ctx_t* ctx);
 esp_err_t shutdown_health_monitor_events(health_monitor_ctx_t* ctx);
-
-#endif // HEALTH_MONITOR_INTERNAL_H

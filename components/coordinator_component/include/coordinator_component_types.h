@@ -1,9 +1,6 @@
-#ifndef COORDINATOR_COMPONENT_TYPES_H
-#define COORDINATOR_COMPONENT_TYPES_H
+#pragma once
 
 #include <stdbool.h>
-#include <inttypes.h>
-#include "heating_program_types.h"
 
 typedef struct
 {
@@ -20,4 +17,3 @@ typedef struct
     bool fan_on;
 } heating_task_state_t;
 
-#endif // COORDINATOR_COMPONENT_TYPES_H

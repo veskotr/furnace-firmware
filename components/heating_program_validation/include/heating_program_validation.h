@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "heating_program_types.h"
+#include "core_types.h"
 
 // ============================================================================
 // Program validation — domain-level checks
@@ -12,8 +12,8 @@
 // mathematical consistency. Returns true if the program is valid.
 // The _with_temp variant accepts the current furnace temperature as
 // the starting point for inter-stage math consistency checks.
-bool program_validate_draft(const ProgramDraft *draft, char *error_msg, size_t error_len);
-bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_c,
+bool program_validate_draft(const program_draft_t *draft, char *error_msg, size_t error_len);
+bool program_validate_draft_with_temp(const program_draft_t *draft, int start_temp_c,
                                       char *error_msg, size_t error_len);
 
 // Relaxed validation for starting/running a program.
@@ -21,7 +21,7 @@ bool program_validate_draft_with_temp(const ProgramDraft *draft, int start_temp_
 // completeness, but does NOT enforce mathematical consistency between time,
 // delta-T, and target temperature.  This allows programs to execute freely
 // from any ambient starting temperature.
-bool program_validate_draft_for_run(const ProgramDraft *draft,
+bool program_validate_draft_for_run(const program_draft_t *draft,
                                     char *error_msg, size_t error_len);
 
 // Individual field range helpers — used by both validate_draft and autofill

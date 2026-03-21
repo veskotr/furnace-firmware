@@ -4,6 +4,7 @@
 #include "sdkconfig.h"
 #include "logger_component.h"
 #include "utils.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 static const char *TAG = "GPIO_MASTER_DRIVER";

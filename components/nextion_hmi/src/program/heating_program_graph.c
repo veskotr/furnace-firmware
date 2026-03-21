@@ -15,7 +15,7 @@ static uint8_t clamp_u8(int value)
     return (uint8_t)value;
 }
 
-size_t program_build_graph(const ProgramDraft *draft, uint8_t *out, size_t max_len, int width_px, int max_temp_c, int start_temp_c)
+size_t program_build_graph(const program_draft_t *draft, uint8_t *out, size_t max_len, int width_px, int max_temp_c, int start_temp_c)
 {
     if (!draft || !out || max_len == 0 || width_px <= 0 || max_temp_c <= 0) {
         return 0;
@@ -38,7 +38,7 @@ size_t program_build_graph(const ProgramDraft *draft, uint8_t *out, size_t max_l
     float total_time = 0.0f;
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
+        const program_stage_t *stage = &draft->stages[i];
         if (!stage->is_set || !stage->t_set || !stage->target_set) {
             continue;
         }

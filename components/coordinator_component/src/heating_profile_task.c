@@ -9,6 +9,8 @@
 #include <stdatomic.h>
 #include <string.h>
 
+#include "commands_dispatcher.h"
+
 static const char* TAG = "COORDINATOR_TASK";
 
 typedef struct
@@ -17,6 +19,12 @@ typedef struct
     uint32_t stack_size;
     UBaseType_t task_priority;
 } CoordinatorTaskConfig_t;
+
+static const CoordinatorTaskConfig_t coordinator_task_config = {
+    .task_name = CONFIG_COORDINATOR_TASK_NAME,
+    .stack_size = CONFIG_COORDINATOR_TASK_STACK_SIZE,
+    .task_priority = CONFIG_COORDINATOR_TASK_PRIORITY
+};
 
 /**
  * @brief esp_timer callback — wakes the heating profile task at a fixed interval.
@@ -144,9 +152,10 @@ static void heating_profile_task(void* args)
                                                     last_update_duration);
 
         // Turn on/off heaters based on power output
-        CHECK_ERR_LOG(
+        //TODO Fix me
+        /*CHECK_ERR_LOG(
             post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL, &power_output, sizeof(power_output)),
-            "Failed to set heater target power level");
+            "Failed to set heater target power level");*/
 
         /* Push status update to HMI (elapsed, remaining, power, temps) */
         post_status_update(ctx, tick_result.setpoint, power_output);
@@ -158,7 +167,7 @@ static void heating_profile_task(void* args)
 
             /* Set power to zero before signaling completion */
             float zero_power = 0.0f;
-            post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL,
+            post_heater_controller_event(COMMAND_TYPE_HEATER_SET_POWER,
                                          &zero_power, sizeof(zero_power));
 
             ctx->heating_task_state.is_completed = true;
@@ -177,13 +186,7 @@ static void heating_profile_task(void* args)
     vTaskDelete(NULL);
 }
 
-static const CoordinatorTaskConfig_t coordinator_task_config = {
-    .task_name = "COORDINATOR_TASK",
-    .stack_size = 8192,
-    .task_priority = 5
-};
-
-esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *program, int cooldown_rate_x10)
+esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *program, int cooldown_rate_x10)
 {
     if (ctx->task_handle != NULL && ctx->running)
     {
@@ -198,7 +201,7 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const ProgramDraft *prog
     // Store a local copy of the program for the task lifetime
     memcpy(&ctx->run_program, program, sizeof(ctx->run_program));
     ctx->has_program = true;
-    const ProgramDraft *prog = &ctx->run_program;
+    const program_draft_t *prog = &ctx->run_program;
 
     // Calculate total duration from stages
     uint32_t stages_ms = 0;
@@ -320,27 +323,19 @@ esp_err_t resume_heating_profile(coordinator_ctx_t* ctx)
     return ESP_OK;
 }
 
-void get_heating_task_state(const coordinator_ctx_t* ctx, heating_task_state_t* state_out)
+esp_err_t get_heating_task_state(const coordinator_ctx_t* ctx)
 {
-    if (state_out == NULL)
-    {
-        return;
-    }
-
-    *state_out = ctx->heating_task_state;
+    //TODO Post state event
+    return ESP_FAIL;
 }
 
-void get_current_heating_profile(const coordinator_ctx_t* ctx, size_t* profile_index_out)
+esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx)
 {
-    if (profile_index_out == NULL)
-    {
-        return;
-    }
-
-    *profile_index_out = ctx->heating_task_state.profile_index;
+    //TODO Post current profile event
+    return ESP_FAIL;
 }
 
-esp_err_t stop_heating_profile(coordinator_ctx_t* ctx)
+esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 {
     if (!ctx->running)
     {
@@ -367,8 +362,17 @@ esp_err_t stop_heating_profile(coordinator_ctx_t* ctx)
 
     /* Zero out heater power so the heater PWM task stops toggling */
     float zero_power = 0.0f;
-    post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL,
-                                 &zero_power, sizeof(zero_power));
+    heater_command_data_t heater_cmd = {
+        .type = COMMAND_TYPE_HEATER_SET_POWER,
+        .power_level = zero_power
+    };
+
+    command_t cmd = {
+        .target = COMMAND_TARGET_HEATER,
+        .data = &heater_cmd,
+        .data_size = sizeof(heater_cmd)
+    };
+    commands_dispatcher_dispatch_command(&cmd);
 
     shutdown_profile_controller();
 

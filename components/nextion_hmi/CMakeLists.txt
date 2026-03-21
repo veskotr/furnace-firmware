@@ -24,5 +24,5 @@ idf_component_register(
         "src/ui"
         "src/events"
         "src/program"
-    REQUIRES common driver nvs_flash event_manager logger_component heating_program_validation
+    REQUIRES common driver nvs_flash event_manager logger_component heating_program_validation commands_dispatcher
 )

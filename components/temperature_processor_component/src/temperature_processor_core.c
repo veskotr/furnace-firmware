@@ -9,12 +9,14 @@ static const char* TAG = "TEMP_PROCESSOR_CORE";
 volatile bool processor_running = false;
 
 // Single global context pointer (internal to component)
-temp_processor_context_t* g_temp_processor_ctx = NULL;
+static temp_processor_context_t* g_temp_processor_ctx = NULL;
+
+static esp_err_t init_devices(void);
 
 // ----------------------------
 // Public API
 // ----------------------------
-esp_err_t init_temp_processor(void)
+esp_err_t init_temp_processor(uint8_t number_of_temp_sensors)
 {
     if (processor_running)
     {
@@ -33,6 +35,9 @@ esp_err_t init_temp_processor(void)
     }
 
     g_temp_processor_ctx->processor_running = true;
+    g_temp_processor_ctx->number_of_temp_sensors = number_of_temp_sensors;
+
+    init_devices();
 
     CHECK_ERR_LOG_CALL_RET(start_temp_processor_task(g_temp_processor_ctx),
                            free(g_temp_processor_ctx),
@@ -55,6 +60,25 @@ esp_err_t shutdown_temp_processor(void)
     // Free context
     free(g_temp_processor_ctx);
     g_temp_processor_ctx = NULL;
+
+    return ESP_OK;
+}
+
+static esp_err_t init_devices(void)
+{
+    if (g_temp_processor_ctx == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    for (uint8_t i = 0; i < g_temp_processor_ctx->number_of_temp_sensors; i++)
+    {
+        temp_sensor_device_t* temp_sensor_device = g_temp_processor_ctx->temp_sensor_devices[i];
+        CHECK_ERR_LOG_RET(temp_sensor_create(&temp_sensor_device),
+                          "Failed to create temp sensor device for processor");
+    }
+
+    LOGGER_LOG_INFO(TAG, "Initialized temp sensor devices");
 
     return ESP_OK;
 }

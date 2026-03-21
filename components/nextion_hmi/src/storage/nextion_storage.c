@@ -13,22 +13,24 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *TAG = "nextion_storage";
+static const char* TAG = "nextion_storage";
 
 static volatile bool s_storage_active = false;
 
 /* ── Program name registry (volatile, populated during session) ───── */
 #define REGISTRY_NAME_LEN 64
 static char s_registry[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
-static int  s_registry_count = 0;
+static int s_registry_count = 0;
 
-static void registry_add(const char *display_name)
+static void registry_add(const char* display_name)
 {
     if (!display_name || display_name[0] == '\0') return;
-    for (int i = 0; i < s_registry_count; i++) {
+    for (int i = 0; i < s_registry_count; i++)
+    {
         if (strcmp(s_registry[i], display_name) == 0) return;
     }
-    if (s_registry_count >= CONFIG_COORDINATOR_MAX_PROFILES_STORED) {
+    if (s_registry_count >= CONFIG_COORDINATOR_MAX_PROFILES_STORED)
+    {
         LOGGER_LOG_WARN(TAG, "Program registry full, cannot track '%s'", display_name);
         return;
     }
@@ -38,11 +40,14 @@ static void registry_add(const char *display_name)
     LOGGER_LOG_INFO(TAG, "Registry add '%s' (count=%d)", display_name, s_registry_count);
 }
 
-static void registry_remove(const char *display_name)
+static void registry_remove(const char* display_name)
 {
-    for (int i = 0; i < s_registry_count; i++) {
-        if (strcmp(s_registry[i], display_name) == 0) {
-            for (int j = i; j < s_registry_count - 1; j++) {
+    for (int i = 0; i < s_registry_count; i++)
+    {
+        if (strcmp(s_registry[i], display_name) == 0)
+        {
+            for (int j = i; j < s_registry_count - 1; j++)
+            {
                 memcpy(s_registry[j], s_registry[j + 1], REGISTRY_NAME_LEN);
             }
             s_registry_count--;
@@ -51,7 +56,7 @@ static void registry_remove(const char *display_name)
     }
 }
 
-void nextion_storage_register_program(const char *display_name)
+void nextion_storage_register_program(const char* display_name)
 {
     registry_add(display_name);
 }
@@ -65,15 +70,18 @@ int nextion_storage_delete_all_programs(void)
 
     int deleted = 0;
     char err[64];
-    for (int i = 0; i < count; i++) {
-        if (nextion_storage_delete_program(names[i], err, sizeof(err))) {
+    for (int i = 0; i < count; i++)
+    {
+        if (nextion_storage_delete_program(names[i], err, sizeof(err)))
+        {
             deleted++;
-        } else {
+        }
+        else
+        {
             LOGGER_LOG_WARN(TAG, "Failed to delete '%s': %s", names[i], err);
         }
     }
     s_registry_count = 0;
-    memset(s_registry, 0, sizeof(s_registry));
     LOGGER_LOG_INFO(TAG, "Deleted %d / %d registered programs", deleted, count);
     return deleted;
 }
@@ -83,40 +91,48 @@ bool nextion_storage_active(void)
     return s_storage_active;
 }
 
-static void set_error(char *error_msg, size_t error_len, const char *msg)
+static void set_error(char* error_msg, size_t error_len, const char* msg)
 {
-    if (!error_msg || error_len == 0) {
+    if (!error_msg || error_len == 0)
+    {
         return;
     }
     snprintf(error_msg, error_len, "%s", msg);
 }
 
-static void sanitize_filename(const char *name, char *out, size_t out_len)
+static void sanitize_filename(const char* name, char* out, size_t out_len)
 {
     size_t idx = 0;
-    for (size_t i = 0; name[i] != '\0' && idx + 1 < out_len; ++i) {
+    for (size_t i = 0; name[i] != '\0' && idx + 1 < out_len; ++i)
+    {
         char c = name[i];
-        if (isalnum((unsigned char)c)) {
+        if (isalnum((unsigned char)c))
+        {
             out[idx++] = c;
-        } else if (c == ' ') {
+        }
+        else if (c == ' ')
+        {
             out[idx++] = '_';
         }
     }
     out[idx] = '\0';
 }
 
-bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_len)
+bool nextion_serialize_program(const program_draft_t* draft, char* out, size_t out_len)
 {
     size_t used = 0;
     int written = snprintf(out, out_len, "name=%s\n", draft->name);
-    if (written < 0 || (size_t)written >= out_len) {
+    if (written < 0 || (size_t)written >= out_len)
+    {
         return false;
     }
     used += (size_t)written;
 
-    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        const ProgramStage *stage = &draft->stages[i];
-        if (!stage->is_set) {
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i)
+    {
+        const program_stage_t* stage = &draft->stages[i];
+        if (!stage->is_set)
+        {
             continue;
         }
 
@@ -126,7 +142,8 @@ bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_
                            stage->target_t_c,
                            stage->t_delta_min,
                            stage->delta_t_per_min_x10);
-        if (written < 0 || (size_t)written >= (out_len - used)) {
+        if (written < 0 || (size_t)written >= (out_len - used))
+        {
             return false;
         }
         used += (size_t)written;
@@ -139,32 +156,41 @@ bool nextion_serialize_program(const ProgramDraft *draft, char *out, size_t out_
 static const uint8_t TWFILE_PKT_CONST[7] = {0x3A, 0xA1, 0xBB, 0x44, 0x7F, 0xFF, 0xFE};
 
 // Wait for Nextion response with timeout
-static int wait_for_response(uint8_t *buf, size_t max_len, int timeout_ms)
+static int wait_for_response(uint8_t* buf, size_t max_len, int timeout_ms)
 {
     int elapsed = 0;
     size_t received = 0;
-    
-    while (elapsed < timeout_ms && received < max_len) {
+
+    while (elapsed < timeout_ms && received < max_len)
+    {
         size_t available = 0;
         uart_get_buffered_data_len(CONFIG_NEXTION_UART_PORT_NUM, &available);
-        
-        if (available > 0) {
+
+        if (available > 0)
+        {
             size_t to_read = available;
-            if (received + to_read > max_len) {
+            if (received + to_read > max_len)
+            {
                 to_read = max_len - received;
             }
             int rd = uart_read_bytes(CONFIG_NEXTION_UART_PORT_NUM, buf + received, to_read, pdMS_TO_TICKS(100));
-            if (rd > 0) {
+            if (rd > 0)
+            {
                 received += rd;
                 // Check for complete response
-                if (received >= 4 && buf[received-1] == 0xFF && buf[received-2] == 0xFF && buf[received-3] == 0xFF) {
+                if (received >= 4 && buf[received - 1] == 0xFF && buf[received - 2] == 0xFF && buf[received - 3] ==
+                    0xFF)
+                {
                     return received;
                 }
-                if (received >= 1 && (buf[0] == 0x05 || buf[0] == 0x04)) {
-                    return received;  // Single byte ACK/NAK
+                if (received >= 1 && (buf[0] == 0x05 || buf[0] == 0x04))
+                {
+                    return received; // Single byte ACK/NAK
                 }
             }
-        } else {
+        }
+        else
+        {
             vTaskDelay(pdMS_TO_TICKS(10));
             elapsed += 10;
         }
@@ -172,9 +198,11 @@ static int wait_for_response(uint8_t *buf, size_t max_len, int timeout_ms)
     return received;
 }
 
-bool nextion_storage_save_program(const ProgramDraft *draft, const char *original_name, char *error_msg, size_t error_len)
+bool nextion_storage_save_program(const program_draft_t* draft, const char* original_name, char* error_msg,
+                                  size_t error_len)
 {
-    if (!draft || draft->name[0] == '\0') {
+    if (!draft || draft->name[0] == '\0')
+    {
         set_error(error_msg, error_len, "Missing program name");
         return false;
     }
@@ -182,10 +210,10 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     bool locked = false;
     bool success = true;
 
-    static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE];
-    memset(payload, 0, sizeof(payload));  // Zero-fill to pad file
+    static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE] = {0}; // Zero-fill to pad file
 
-    if (!nextion_serialize_program(draft, payload, sizeof(payload))) {
+    if (!nextion_serialize_program(draft, payload, sizeof(payload)))
+    {
         set_error(error_msg, error_len, "Program too large");
         return false;
     }
@@ -195,7 +223,8 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     char filename[64];
     sanitize_filename(draft->name, filename, sizeof(filename));
-    if (filename[0] == '\0') {
+    if (filename[0] == '\0')
+    {
         set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
@@ -203,10 +232,12 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     char path[96];
     snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
-    if (nextion_file_exists(path)) {
+    if (nextion_file_exists(path))
+    {
         bool same_file = (original_name && original_name[0] != '\0' &&
-                          strcmp(draft->name, original_name) == 0);
-        if (!same_file) {
+            strcmp(draft->name, original_name) == 0);
+        if (!same_file)
+        {
             set_error(error_msg, error_len, "Program name already exists");
             return false;
         }
@@ -232,19 +263,22 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     LOGGER_LOG_INFO(TAG, "twfile response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
 
-    if (resp_len < 1) {
+    if (resp_len < 1)
+    {
         set_error(error_msg, error_len, "twfile no response");
         success = false;
         goto cleanup;
     }
 
-    if (resp[0] == 0x06) {
+    if (resp[0] == 0x06)
+    {
         set_error(error_msg, error_len, "twfile file create failed");
         success = false;
         goto cleanup;
     }
 
-    if (resp[0] != 0xFE) {
+    if (resp[0] != 0xFE)
+    {
         set_error(error_msg, error_len, "twfile unexpected response");
         LOGGER_LOG_WARN(TAG, "Expected 0xFE, got 0x%02X", resp[0]);
         success = false;
@@ -256,42 +290,49 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
     uint16_t pkt_id = 0;
     size_t offset = 0;
 
-    while (offset < payload_len) {
+    while (offset < payload_len)
+    {
         size_t remaining = payload_len - offset;
-        size_t chunk = (remaining > CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE) ? CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE : remaining;
+        size_t chunk = (remaining > CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE)
+                           ? CONFIG_NEXTION_FILE_WRITE_CHUNK_SIZE
+                           : remaining;
 
         uint8_t header[12];
         memcpy(header, TWFILE_PKT_CONST, 7);
-        header[7] = 0x00;  // vType: no CRC
-        header[8] = pkt_id & 0xFF;  // pkID low byte
-        header[9] = (pkt_id >> 8) & 0xFF;  // pkID high byte
-        header[10] = chunk & 0xFF;  // dataSize low byte
-        header[11] = (chunk >> 8) & 0xFF;  // dataSize high byte
+        header[7] = 0x00; // vType: no CRC
+        header[8] = pkt_id & 0xFF; // pkID low byte
+        header[9] = (pkt_id >> 8) & 0xFF; // pkID high byte
+        header[10] = chunk & 0xFF; // dataSize low byte
+        header[11] = (chunk >> 8) & 0xFF; // dataSize high byte
 
         nextion_send_raw(header, sizeof(header));
-        nextion_send_raw((const uint8_t *)(payload + offset), chunk);
+        nextion_send_raw((const uint8_t*)(payload + offset), chunk);
 
         int ack = wait_for_response(resp, 1, CONFIG_NEXTION_UART_PACKET_ACK_TIMEOUT_MS);
 
-        if (ack < 1) {
+        if (ack < 1)
+        {
             LOGGER_LOG_WARN(TAG, "No ACK for packet %u", pkt_id);
             set_error(error_msg, error_len, "twfile packet timeout");
             success = false;
             goto cleanup;
         }
 
-        if (resp[0] == 0x04) {
+        if (resp[0] == 0x04)
+        {
             LOGGER_LOG_WARN(TAG, "NAK for packet %u, retrying", pkt_id);
             continue;
         }
 
-        if (resp[0] == 0xFD) {
+        if (resp[0] == 0xFD)
+        {
             LOGGER_LOG_INFO(TAG, "Packet %u sent, transfer complete", pkt_id);
             offset = payload_len;
-            goto cleanup;   /* 0xFD already received — skip second wait */
+            goto cleanup; /* 0xFD already received — skip second wait */
         }
 
-        if (resp[0] != 0x05) {
+        if (resp[0] != 0x05)
+        {
             LOGGER_LOG_WARN(TAG, "Unexpected ACK 0x%02X for packet %u", resp[0], pkt_id);
             set_error(error_msg, error_len, "twfile bad ack");
             success = false;
@@ -306,33 +347,39 @@ bool nextion_storage_save_program(const ProgramDraft *draft, const char *origina
 
     resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
 
-    if (!(resp_len >= 1 && resp[0] == 0xFD)) {
-        LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len, resp_len > 0 ? resp[0] : 0);
+    if (!(resp_len >= 1 && resp[0] == 0xFD))
+    {
+        LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len,
+                        resp_len > 0 ? resp[0] : 0);
         set_error(error_msg, error_len, "twfile completion failed");
         success = false;
     }
 
 cleanup:
-    if (locked) {
+    if (locked)
+    {
         nextion_uart_unlock();
     }
     s_storage_active = false;
-    if (success) {
+    if (success)
+    {
         registry_add(draft->name);
     }
     return success;
 }
 
-bool nextion_storage_delete_program(const char *name, char *error_msg, size_t error_len)
+bool nextion_storage_delete_program(const char* name, char* error_msg, size_t error_len)
 {
-    if (!name || name[0] == '\0') {
+    if (!name || name[0] == '\0')
+    {
         set_error(error_msg, error_len, "Missing program name");
         return false;
     }
 
     char filename[64];
     sanitize_filename(name, filename, sizeof(filename));
-    if (filename[0] == '\0') {
+    if (filename[0] == '\0')
+    {
         set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
@@ -340,7 +387,8 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
     char path[96];
     snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
-    if (!nextion_file_exists(path)) {
+    if (!nextion_file_exists(path))
+    {
         set_error(error_msg, error_len, "Program not found");
         return false;
     }
@@ -364,7 +412,8 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
     nextion_send_cmd("ref progBwsr");
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    if (locked) {
+    if (locked)
+    {
         nextion_uart_unlock();
     }
     s_storage_active = false;
@@ -372,24 +421,29 @@ bool nextion_storage_delete_program(const char *name, char *error_msg, size_t er
     return true;
 }
 
-bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, size_t error_len)
+bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, size_t error_len)
 {
-    if (!filename || filename[0] == '\0') {
+    if (!filename || filename[0] == '\0')
+    {
         set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
 
     char path[128];
-    if (strstr(filename, ".")) {
+    if (strstr(filename, "."))
+    {
         snprintf(path, sizeof(path), "sd0/%s", filename);
-    } else {
+    }
+    else
+    {
         snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
     }
 
     static char file_data[CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1];
 
     size_t file_len = 0;
-    if (!nextion_read_file(path, file_data, CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1, &file_len)) {
+    if (!nextion_read_file(path, file_data, CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1, &file_len))
+    {
         set_error(error_msg, error_len, "Program read failed");
         return false;
     }
@@ -398,18 +452,24 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
 
     program_draft_clear();
 
-    char *line = strtok(file_data, "\n");
-    while (line) {
-        if (strncmp(line, "name=", 5) == 0) {
+    char* line = strtok(file_data, "\n");
+    while (line)
+    {
+        if (strncmp(line, "name=", 5) == 0)
+        {
             program_draft_set_name(line + 5);
-        } else if (strncmp(line, "stage=", 6) == 0) {
+        }
+        else if (strncmp(line, "stage=", 6) == 0)
+        {
             int stage = 0;
             int t_min = 0;
             int target = 0;
             int t_delta = 0;
             int delta_x10 = 0;
             // Try new format first (delta_x10=), then fallback to old format (delta=)
-            if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta, &delta_x10) == 5) {
+            if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta,
+                       &delta_x10) == 5)
+            {
                 program_draft_set_stage((uint8_t)stage,
                                         t_min,
                                         target,
@@ -419,9 +479,13 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
                                         true,
                                         true,
                                         true);
-            } else {
+            }
+            else
+            {
                 int delta = 0;
-                if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta, &delta) == 5) {
+                if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta,
+                           &delta) == 5)
+                {
                     // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
                     program_draft_set_stage((uint8_t)stage,
                                             t_min,
@@ -439,8 +503,9 @@ bool nextion_storage_parse_file_to_draft(const char *filename, char *error_msg, 
     }
 
     /* Register parsed program so factory reset can find it */
-    const char *parsed_name = program_draft_get_name();
-    if (parsed_name && parsed_name[0] != '\0') {
+    const char* parsed_name = program_draft_get_name();
+    if (parsed_name && parsed_name[0] != '\0')
+    {
         registry_add(parsed_name);
     }
 

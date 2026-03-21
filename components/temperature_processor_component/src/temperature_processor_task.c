@@ -1,16 +1,15 @@
+#include <string.h>
+
 #include "event_manager.h"
 #include "temperature_processor_internal.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "logger_component.h"
 #include "utils.h"
-#include "temperature_monitor_component.h"
 #include "sdkconfig.h"
 #include "furnace_error_types.h"
 
 static const char* TAG = "TEMP_PROCESSOR_TASK";
-
-static temp_sample_t samples_buffer[CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE] = {0};
 
 // ----------------------------
 // Configuration
@@ -23,10 +22,18 @@ typedef struct
 } TempProcessorConfig_t;
 
 static const TempProcessorConfig_t temp_processor_config = {
-    .task_name = "TEMP_CALC_TASK",
-    .stack_size = 8192,
-    .task_priority = 5
+    .task_name = CONFIG_TEMP_PROCESSOR_TASK_NAME,
+    .stack_size = CONFIG_TEMP_PROCESSOR_TASK_STACK_SIZE,
+    .task_priority = CONFIG_TEMP_PROCESSOR_TASK_PRIORITY
 };
+
+static const health_monitor_data_t health_monitor_data = {
+    .component_id = CONFIG_TEMP_PROCESSOR_COMPONENT_ID,
+    .component_name = "Temperature Processor",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_TEMP_PROCESSOR_HEART_BEAT_TIMEOUT_MS)
+};
+
+static void read_temp_sensors(temp_processor_context_t* ctx, uint8_t* number_of_samples);
 
 // ----------------------------
 // Task
@@ -37,22 +44,11 @@ static void temp_process_task(void* args)
 
     temp_processor_context_t* ctx = (temp_processor_context_t*)args;
 
-    EventGroupHandle_t event_group = temp_monitor_get_event_group();
-    if (event_group == NULL)
-    {
-        LOGGER_LOG_ERROR(TAG, "Temperature monitor event group not available");
-        vTaskDelete(NULL);
-        ctx->task_handle = NULL;
-        return;
-    }
-
     while (ctx->processor_running)
     {
-        // Wait for temperature ready event
-        xEventGroupWaitBits(event_group, TEMP_READY_EVENT_BIT, pdTRUE, pdFALSE, portMAX_DELAY);
+        uint8_t samples_count = 0;
 
-        // Process temperature samples from ring buffer
-        size_t samples_count = temp_ring_buffer_pop_all(samples_buffer, CONFIG_TEMP_SENSORS_RING_BUFFER_SIZE);
+        read_temp_sensors(ctx, &samples_count);
 
         if (samples_count == 0)
         {
@@ -61,30 +57,30 @@ static void temp_process_task(void* args)
         }
 
         float average_temperature = 0.0f;
-        process_temp_samples_result_t result = process_temperature_samples(
-            ctx, samples_buffer, samples_count, &average_temperature);
+        esp_err_t result = process_temperature_samples(
+            ctx, samples_count, &average_temperature);
 
-        if (result.error_type != PROCESS_TEMPERATURE_ERROR_NONE)
+        if (result != ESP_OK)
         {
-            LOGGER_LOG_WARN(TAG, "Temperature processing encountered errors: type %d", result.error_type);
-            furnace_error_t error = {
-                .severity = SEVERITY_WARNING,
+            LOGGER_LOG_WARN(TAG, "Temperature processing encountered errors: type %d", esp_err_to_name(result));
+
+            furnace_error_t furnace_error = {
                 .source = SOURCE_TEMP_PROCESSOR,
-                .error_code = (uint32_t)result.error_type
+                .severity = SEVERITY_WARNING,
+                .error_code = result
             };
-            CHECK_ERR_LOG(post_processing_error(error), "Failed to post temp process error");
+            CHECK_ERR_LOG(post_processing_error(furnace_error),
+                          "Failed to post temp process error");
         }
         else
         {
             LOGGER_LOG_INFO(TAG, "Processed average temperature: %.2f C", average_temperature);
         }
 
-        temp_processor_data_t data = {
-            .average_temperature = average_temperature,
-            .valid = (result.error_type == PROCESS_TEMPERATURE_ERROR_NONE)
-        };
-        CHECK_ERR_LOG(post_temp_processor_event(data), "Failed to post temp process data");
-        event_manager_post_health(TEMP_PROCESSOR_EVENT_HEARTBEAT);
+        CHECK_ERR_LOG(post_temp_processor_event(average_temperature),
+                      "Failed to post temp process data");
+        event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &health_monitor_data);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature processor task exiting");
@@ -122,7 +118,33 @@ esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx)
     }
 
     ctx->processor_running = false;
+    if (ctx->task_handle != NULL)
+    {
+        xTaskNotifyGive(ctx->task_handle);
+    }
     LOGGER_LOG_INFO(TAG, "Stopping temperature processor task");
 
     return ESP_OK;
+}
+
+static void read_temp_sensors(temp_processor_context_t* ctx, uint8_t* number_of_samples)
+{
+    for (uint8_t i = 0; i < ctx->number_of_temp_sensors; i++)
+    {
+        const temp_sensor_device_t* temp_sensor_device = ctx->temp_sensor_devices[i];
+        if (temp_sensor_device == NULL)
+        {
+            LOGGER_LOG_WARN(TAG, "Temperature processor sensor device at index %d is NULL", i);
+            continue;
+        }
+
+        if (temp_sensor_read_device(temp_sensor_device, &ctx->temperatures_buffer[i])!= ESP_OK)
+        {
+            LOGGER_LOG_WARN(TAG, "Failed to read temperature from sensor device at index %d", i);
+            continue;
+        }
+
+        (*number_of_samples)++;
+        LOGGER_LOG_DEBUG(TAG, "Read temperature %.2f C from sensor device at index %d", ctx->temperatures_buffer[i], i);
+    }
 }

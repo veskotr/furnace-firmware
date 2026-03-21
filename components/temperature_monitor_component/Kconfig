@@ -1,5 +1,17 @@
 menu "Temperature Sensors"
 
+    config TEMP_MONITOR_TASK_STACK_SIZE
+         int "Temperature monitor task stack size"
+         default 4096
+
+    config TEMP_MONITOR_TASK_PRIORITY
+        int "Temperature monitor task priority"
+        default 5
+
+    config TEMP_MONITOR_TASK_NAME
+        string "Temperature monitor task name"
+        default "TEMP_MONITOR_TASK"
+
     config TEMP_SENSORS_MAX_SENSORS
         int "Max number of sensors"
         default 9

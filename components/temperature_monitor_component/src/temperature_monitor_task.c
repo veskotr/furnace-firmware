@@ -9,9 +9,9 @@
 static const char* TAG = "TEMP_MONITOR_TASK";
 
 const TempMonitorConfig_t temp_monitor_config = {
-    .task_name = "TEMP_MONITOR_TASK",
-    .stack_size = 8192,
-    .task_priority = 5
+    .task_name = CONFIG_TEMP_MONITOR_TASK_NAME,
+    .stack_size = CONFIG_TEMP_PROCESSOR_TASK_STACK_SIZE,
+    .task_priority = CONFIG_TEMP_MONITOR_TASK_PRIORITY
 };
 
 static const uint8_t max_bad_samples = (CONFIG_TEMP_SENSORS_MAXIMUM_BAD_SAMPLES_PER_BATCH_PERCENT *
@@ -85,7 +85,7 @@ static void temp_monitor_task(void* args)
 
         post_temp_monitor_error_summary(ctx);
 
-        event_manager_post_health(TEMP_MONITOR_EVENT_HEARTBEAT);
+        //event_manager_post_health(TEMP_MONITOR_EVENT_HEARTBEAT);
         const uint32_t ticks_to_wait = (last_wake + period) - xTaskGetTickCount();
         if (ticks_to_wait > 0)
             ulTaskNotifyTake(pdTRUE, ticks_to_wait);

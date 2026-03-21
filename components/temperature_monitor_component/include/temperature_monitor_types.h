@@ -6,7 +6,9 @@
 
 #include "esp_err.h"
 #include "sdkconfig.h"
-
+#include <stdbool.h>
+#include <inttypes.h>
+#include "esp_err.h"
 
 typedef struct
 {

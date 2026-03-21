@@ -1,9 +1,9 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
-
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "sdkconfig.h"
 
 // ============================================================================
@@ -34,9 +34,19 @@ typedef struct {
     bool t_delta_set;
     bool delta_t_set;
     bool is_set;                // True if this stage slot is occupied
-} ProgramStage;
+} program_stage_t;
 
 typedef struct {
     char name[32];
-    ProgramStage stages[PROGRAMS_TOTAL_STAGE_COUNT];
-} ProgramDraft;
+    program_stage_t stages[PROGRAMS_TOTAL_STAGE_COUNT];
+} program_draft_t;
+
+// ===========================================================================
+// Task config type
+// ===========================================================================
+typedef struct
+{
+    const char* task_name;
+    uint32_t stack_size;
+    UBaseType_t task_priority;
+} task_config_t;

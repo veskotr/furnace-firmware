@@ -6,7 +6,6 @@
 
 #include <stdint.h>
 #include "esp_err.h"
-#include "driver/uart.h"
 
 /* ── MS9024 register addresses (from datasheet) ─────────────────────────── */
 #define MS9024_REG_SENS       28   /* Sensor type   (LSByte, R/W)          */
@@ -32,21 +31,17 @@
 /**
  * @brief Read a single 16-bit holding register from the MS9024.
  */
-esp_err_t ms9024_read_uint16(uart_port_t port, uint8_t slave,
-                             uint16_t reg, uint16_t *out, int timeout_ms);
+esp_err_t ms9024_read_uint16(uint8_t slave_address, uint16_t reg, uint16_t* out);
 
 /**
  * @brief Read an IEEE-754 float (CDAB word-swapped) from two registers.
  */
-esp_err_t ms9024_read_float(uart_port_t port, uint8_t slave,
-                            uint16_t reg, float *out, int timeout_ms);
+esp_err_t ms9024_read_float(uint8_t slave, uint16_t reg, float* out);
 
 /**
  * @brief Write a register and verify by reading back.
  */
-esp_err_t ms9024_write_and_verify(uart_port_t port, uint8_t slave,
-                                  uint16_t reg, uint16_t value,
-                                  const char *name, int timeout_ms);
+esp_err_t ms9024_write_and_verify(uint8_t slave_address, uint16_t reg, uint16_t value, const char *reg_name);
 
 /**
  * @brief Auto-correct a register if it doesn't match the desired value.
@@ -54,15 +49,12 @@ esp_err_t ms9024_write_and_verify(uart_port_t port, uint8_t slave,
  * Reads the register, and if the LSByte doesn't match @p desired, writes
  * the correct value and verifies. Skips the write if already correct.
  */
-esp_err_t ms9024_auto_correct_register(uart_port_t port, uint8_t slave,
-                                       uint16_t reg, uint16_t desired,
-                                       const char *name, int timeout_ms);
+esp_err_t ms9024_auto_correct_register(uint8_t slave_address, uint16_t reg, uint16_t desired);
 
 /**
  * @brief Dump MS9024 configuration to the log (runs once at startup).
  */
-void ms9024_log_config(uart_port_t port, uint8_t slave,
-                       uint16_t pv_reg, int timeout_ms);
+void ms9024_log_config(uint8_t slave_address, uint16_t pv_reg);
 
 /**
  * @brief Comprehensive register scan for diagnostics.
@@ -71,7 +63,7 @@ void ms9024_log_config(uart_port_t port, uint8_t slave,
  * and dumps them to the log. Run this on both a known-good and a suspect
  * transmitter, then compare the output to find mismatched calibration.
  */
-void ms9024_diagnostic_scan(uart_port_t port, uint8_t slave, int timeout_ms);
+void ms9024_diagnostic_scan(uint8_t slave);
 
 /**
  * @brief Repair a bad MS9024 by writing known-good register values.
@@ -81,4 +73,4 @@ void ms9024_diagnostic_scan(uart_port_t port, uint8_t slave, int timeout_ms);
  *
  * @return ESP_OK if all writes verified successfully.
  */
-esp_err_t ms9024_repair_from_good_unit(uart_port_t port, uint8_t slave, int timeout_ms);
+esp_err_t ms9024_repair_from_good_unit(uint8_t slave);

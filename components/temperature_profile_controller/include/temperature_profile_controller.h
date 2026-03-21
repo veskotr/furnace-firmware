@@ -1,5 +1,4 @@
-#ifndef TEMPERATURE_PROFILE_COMPONENT_H
-#define TEMPERATURE_PROFILE_COMPONENT_H
+#pragma once
 
 #include "temperature_profile_types.h"
 
@@ -56,5 +55,3 @@ profile_controller_error_t profile_update_stage_target(float new_target,
                                                        float current_temp);
 
 profile_controller_error_t shutdown_profile_controller(void);
-
-#endif // TEMPERATURE_PROFILE_COMPONENT_H

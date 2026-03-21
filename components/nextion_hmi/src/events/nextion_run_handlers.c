@@ -6,17 +6,19 @@
 #include "sdkconfig.h"
 #include "nextion_transport_internal.h"
 #include "nextion_ui_internal.h"
-#include "heating_program_types.h"
+#include "core_types.h"
 #include "heating_program_models_internal.h"
 #include "heating_program_validation.h"
 #include "heating_program_graph_internal.h"
 #include "event_manager.h"
 #include "event_registry.h"
 #include "logger_component.h"
+#include "commands_dispatcher.h"
 
 #include <stdio.h>
 #include <string.h>
-#include <limits.h>
+
+#include "../../../commands_dispatcher/include/commands_dispatcher.h"
 
 static const char *TAG = "nextion_run";
 
@@ -55,7 +57,7 @@ static uint32_t s_waveform_ms_per_pixel = 1;
 void handle_run_start(void)
 {
     char error_msg[96] = {0};
-    ProgramDraft snapshot;
+    program_draft_t snapshot;
     program_draft_get(&snapshot);
 
     LOGGER_LOG_INFO(TAG, "prog_start: name='%s' temp=%d", snapshot.name, program_get_current_temp_c());
@@ -68,17 +70,22 @@ void handle_run_start(void)
         return;
     }
 
-    program_copy_draft_to_run_slot();
+    program_draft_t program;
+    hmi_get_run_program(&program);
 
-    coordinator_start_profile_data_t data = {0};
-    hmi_get_run_program(&data.program);
-    data.cooldown_rate_x10 = program_get_cooldown_rate_x10();
+    coordinator_command_data_t data = {
+        .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
+        .program = program,
+        .cooldown_rate_x10 = program_get_cooldown_rate_x10()
+    };
 
-    esp_err_t err = event_manager_post_blocking(
-        COORDINATOR_EVENT,
-        COORDINATOR_EVENT_START_PROFILE,
-        &data,
-        sizeof(data));
+    command_t command = {
+        .target = COMMAND_TARGET_COORDINATOR,
+        .data = &data,
+        .data_size = sizeof(coordinator_command_data_t),
+    };
+
+    esp_err_t err = commands_dispatcher_dispatch_command(&command);
 
     if (err != ESP_OK) {
         nextion_show_error("Start failed");
@@ -92,11 +99,17 @@ void handle_run_pause(void)
         return;
     }
 
-    esp_err_t err = event_manager_post_blocking(
-        COORDINATOR_EVENT,
-        COORDINATOR_EVENT_PAUSE_PROFILE,
-        NULL,
-        0);
+    coordinator_command_data_t data = {
+        .type = COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
+    };
+
+    command_t command = {
+        .target = COMMAND_TARGET_COORDINATOR,
+        .data = &data,
+        .data_size = sizeof(coordinator_command_data_t),
+    };
+
+    esp_err_t err = commands_dispatcher_dispatch_command(&command);
 
     if (err != ESP_OK) {
         nextion_show_error("Pause failed");
@@ -128,12 +141,17 @@ void handle_confirm_end(void)
     nextion_send_cmd("vis confirmEnd,0");
     nextion_send_cmd("vis confirmCancel,0");
 
-    esp_err_t err = event_manager_post_blocking(
-        COORDINATOR_EVENT,
-        COORDINATOR_EVENT_STOP_PROFILE,
-        NULL,
-        0);
+    coordinator_command_data_t data = {
+        .type = COMMAND_TYPE_COORDINATOR_STOP_PROFILE
+    };
 
+    command_t command = {
+        .target = COMMAND_TARGET_COORDINATOR,
+        .data = &data,
+        .data_size = sizeof(coordinator_command_data_t),
+    };
+
+    esp_err_t err = commands_dispatcher_dispatch_command(&command);
     if (err != ESP_OK) {
         nextion_show_error("Stop failed");
     }
@@ -174,7 +192,7 @@ void nextion_event_handle_profile_started(void)
     nextion_send_cmd("machineState.txt=\"Running\"");
     nextion_clear_error();
 
-    ProgramDraft draft;
+    program_draft_t draft;
     program_draft_get(&draft);
 
     /* Show program name on its own field */

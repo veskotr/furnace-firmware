@@ -1,9 +1,7 @@
 //
 // Created by vesko on 23.12.2025 г..
 //
-
-#ifndef FURNACE_FIRMWARE_FURNACE_ERROR_TYPES_H
-#define FURNACE_FIRMWARE_FURNACE_ERROR_TYPES_H
+#pragma once
 #include "esp_err.h"
 
 typedef enum
@@ -23,7 +21,8 @@ typedef enum
     SOURCE_PID_CONTROLLER,
     SOURCE_SPI_MASTER,
     SOURCE_LOGGER,
-    SOURCE_UNKNOWN_COMPONENT
+    SOURCE_UNKNOWN_COMPONENT,
+    SOURCE_DEVICE_MANAGER,
 } furnace_error_source_t;
 
 typedef struct
@@ -32,5 +31,3 @@ typedef struct
     furnace_error_source_t source;
     uint32_t error_code;
 } furnace_error_t;
-
-#endif //FURNACE_FIRMWARE_FURNACE_ERROR_TYPES_H

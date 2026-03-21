@@ -1,6 +1,6 @@
-#ifndef TEMPERATURE_PROFILE_TYPES_H
-#define TEMPERATURE_PROFILE_TYPES_H
-#include "heating_program_types.h"
+#pragma once
+
+#include "core_types.h"
 
 typedef enum
 {
@@ -14,7 +14,7 @@ typedef enum
 
 typedef struct {
     float initial_temperature;
-    const ProgramDraft *program;   // Program to execute (array of stages)
+    const program_draft_t *program;   // Program to execute (array of stages)
     int cooldown_rate_x10;         // User-configured cooldown rate (x10)
 } temp_profile_config_t;
 
@@ -41,5 +41,3 @@ typedef struct {
     bool         profile_complete;     ///< True when cooldown is done + temp below threshold
     bool         extension_warning;    ///< True if a stage hit max extension and was forced to advance
 } profile_tick_result_t;
-
-#endif // TEMPERATURE_PROFILE_TYPES_H

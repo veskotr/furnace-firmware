@@ -1,0 +1,16 @@
+menu "Temperature Sensor Device Configuration"
+
+    config TEMP_SENSOR_DEVICE_MAX_DEVICES
+        int "Maximum number of temperature sensor devices"
+        default 16
+        help
+            Maximum number of temperature sensor devices that can be registered with the Device Manager.
+            This limits the size of the internal device registry for temperature sensors and affects memory usage.
+
+    config TEMP_SENSOR_MODBUS_START_ADDRESS
+        int "Modbus start address for temperature sensor devices"
+        default 1
+        help
+            Starting Modbus register address for temperature sensor devices. Each device will be assigned a unique address starting from this value.
+
+endmenu

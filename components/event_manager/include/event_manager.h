@@ -1,5 +1,4 @@
-#ifndef EVENT_MANAGER_H
-#define EVENT_MANAGER_H
+#pragma once
 
 #include "esp_err.h"
 #include "esp_event.h"
@@ -74,9 +73,10 @@ esp_err_t event_manager_post_immediate(
 /**
  * @brief Post a health event
  *
- * @param component_id Id of the component
+ * @param event_id
+ * @param event_data
 */
-esp_err_t event_manager_post_health(health_monitor_component_id_t component_id);
+esp_err_t event_manager_post_health(health_monitor_event_id_t event_id, health_monitor_data_t *event_data);
 
 /**
  * @brief Convenience wrapper - post with blocking timeout
@@ -92,5 +92,3 @@ esp_err_t event_manager_post_blocking(
  * Should be rarely needed - components should use event_manager_post() instead
  */
 esp_event_loop_handle_t event_manager_get_loop(void);
-
-#endif // EVENT_MANAGER_H

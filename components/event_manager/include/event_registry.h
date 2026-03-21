@@ -1,10 +1,8 @@
-#ifndef EVENT_REGISTRY_H
-#define EVENT_REGISTRY_H
+#pragma once
 
 #include "esp_event.h"
 #include <stdint.h>
-#include <stdbool.h>
-#include "heating_program_types.h"
+#include "core_types.h"
 
 // ============================================================================
 // COORDINATOR COMPONENT EVENTS
@@ -15,21 +13,13 @@ ESP_EVENT_DECLARE_BASE(COORDINATOR_EVENT); // Event base declaration
 typedef enum
 {
     // RX Events (external -> coordinator)
-    COORDINATOR_EVENT_START_PROFILE = 0,
-    COORDINATOR_EVENT_PAUSE_PROFILE,
-    COORDINATOR_EVENT_RESUME_PROFILE,
-    COORDINATOR_EVENT_STOP_PROFILE,
-    COORDINATOR_EVENT_UPDATE_MANUAL_TARGET,
-    COORDINATOR_EVENT_GET_STATUS_REPORT,
-    COORDINATOR_EVENT_GET_CURRENT_PROFILE,
-
-    // TX Events (coordinator -> external)
-    COORDINATOR_EVENT_PROFILE_STARTED,
+    COORDINATOR_EVENT_PROFILE_STARTED = 0,
     COORDINATOR_EVENT_PROFILE_PAUSED,
     COORDINATOR_EVENT_PROFILE_RESUMED,
     COORDINATOR_EVENT_PROFILE_STOPPED,
     COORDINATOR_EVENT_PROFILE_COMPLETED,
     COORDINATOR_EVENT_STATUS_UPDATE,
+    COORDINATOR_EVENT_CURRENT_PROFILE,
     COORDINATOR_EVENT_NODE_STARTED,
     COORDINATOR_EVENT_NODE_COMPLETED,
     COORDINATOR_EVENT_ERROR_OCCURRED,
@@ -38,7 +28,7 @@ typedef enum
 // Event data structures for coordinator
 typedef struct
 {
-    ProgramDraft program;   // Full program to execute
+    program_draft_t program;   // Full program to execute
     int cooldown_rate_x10;  // User-configured cooldown rate (x10)
 } coordinator_start_profile_data_t;
 
@@ -64,11 +54,6 @@ typedef struct
  * a running manual program.  The coordinator applies the change on the
  * next PID tick without stopping the profile.
  */
-typedef struct
-{
-    int  target_t_c;            ///< New target temperature (°C)
-    int  delta_t_per_min_x10;   ///< New heating rate (x10, e.g. 15 = 1.5 °C/min)
-} coordinator_update_target_data_t;
 
 typedef struct
 {
@@ -89,9 +74,7 @@ ESP_EVENT_DECLARE_BASE(HEATER_CONTROLLER_EVENT);
 typedef enum
 {
     HEATER_CONTROLLER_ERROR_OCCURRED = 0,
-    HEATER_CONTROLLER_SET_POWER_LEVEL,
     HEATER_CONTROLLER_HEATER_TOGGLED,
-    HEATER_CONTROLLER_STATUS_REPORT_REQUESTED,
     HEATER_CONTROLLER_STATUS_REPORT_RESPONSE
 } heater_controller_event_t;
 
@@ -104,15 +87,16 @@ ESP_EVENT_DECLARE_BASE(HEALTH_MONITOR_EVENT);
 typedef enum
 {
     HEALTH_MONITOR_EVENT_HEARTBEAT = 0,
+    HEALTH_MONITOR_EVENT_REGISTER,
+    HEALTH_MONITOR_EVENT_UNREGISTER,
 } health_monitor_event_id_t;
 
-typedef enum
+typedef struct
 {
-    TEMP_MONITOR_EVENT_HEARTBEAT = 0,
-    HEATER_CONTROLLER_EVENT_HEARTBEAT,
-    COORDINATOR_EVENT_HEARTBEAT,
-    TEMP_PROCESSOR_EVENT_HEARTBEAT,
-} health_monitor_component_id_t;
+    uint16_t component_id;
+    const char *component_name;
+    TickType_t timeout_ticks;
+} health_monitor_data_t;
 
 // ============================================================================
 // TEMPERATURE PROCESSOR EVENTS
@@ -122,18 +106,19 @@ ESP_EVENT_DECLARE_BASE(TEMP_PROCESSOR_EVENT);
 
 #define PROCESS_TEMPERATURE_EVENT_DATA 0
 
-typedef struct
-{
-    float average_temperature;
-    bool valid;
-} temp_processor_data_t;
-
 // ============================================================================
 // FURNACE ERROR EVENTS
 // ============================================================================
 ESP_EVENT_DECLARE_BASE(FURNACE_ERROR_EVENT);
 
 #define FURNACE_ERROR_EVENT_ID 0
+
+// ============================================================================
+// DEVICE MANAGER EVENTS
+// ============================================================================
+ESP_EVENT_DECLARE_BASE(DEVICE_MANAGER_EVENT);
+
+#define DEVICE_MANAGER_UPDATED_EVENT 0
 
 // ============================================================================
 // INITIALIZATION FUNCTION
@@ -148,4 +133,3 @@ ESP_EVENT_DECLARE_BASE(FURNACE_ERROR_EVENT);
  */
 esp_err_t event_registry_init(void);
 
-#endif // EVENT_REGISTRY_H
