@@ -15,6 +15,7 @@ typedef enum
     COMMAND_TYPE_HEATER_SET_POWER = 0,
     COMMAND_TYPE_HEATER_GET_STATUS,
     COMMAND_TYPE_HEATER_TOGGLE,
+    COMMAND_TYPE_HEATER_CLEAR,
 } heater_command_type_t;
 
 typedef struct

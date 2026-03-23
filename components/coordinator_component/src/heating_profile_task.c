@@ -47,7 +47,6 @@ static void post_status_update(const coordinator_ctx_t *ctx,
                                 float power_output)
 {
     coordinator_status_data_t status = {
-        .profile_index       = ctx->heating_task_state.profile_index,
         .current_temperature = ctx->current_temperature,
         .target_temperature  = setpoint,
         .power_output        = power_output,
@@ -86,6 +85,7 @@ static void heating_profile_task(void* args)
             continue;   /* Skip PID computation while paused */
         }
 
+        //TODO extract to helper
         /* ── Apply pending manual-mode target update ──────────────── */
         if (atomic_exchange(&ctx->target_update.pending, false)) {
             int new_target   = ctx->target_update.target_t_c;
@@ -150,12 +150,33 @@ static void heating_profile_task(void* args)
         float power_output = pid_controller_compute(tick_result.setpoint,
                                                     ctx->current_temperature,
                                                     last_update_duration);
+        if (tick_result.stage_changed)
+        {
+            heater_command_data_t cmd = {
+                .type = COMMAND_TYPE_HEATER_CLEAR,
+                .power_level = power_output
+            };
 
-        // Turn on/off heaters based on power output
-        //TODO Fix me
-        /*CHECK_ERR_LOG(
-            post_heater_controller_event(HEATER_CONTROLLER_SET_POWER_LEVEL, &power_output, sizeof(power_output)),
-            "Failed to set heater target power level");*/
+            command_t command = {
+                .target = COMMAND_TARGET_HEATER,
+                .data = &cmd,
+                .data_size = sizeof(cmd)
+            };
+            post_heater_controller_command(&command);
+        }
+
+        heater_command_data_t cmd = {
+            .type = COMMAND_TYPE_HEATER_SET_POWER,
+            .power_level = power_output
+        };
+
+        command_t command = {
+            .target = COMMAND_TARGET_HEATER,
+            .data = &cmd,
+            .data_size = sizeof(cmd)
+        };
+
+        post_heater_controller_command(&command);
 
         /* Push status update to HMI (elapsed, remaining, power, temps) */
         post_status_update(ctx, tick_result.setpoint, power_output);
@@ -165,10 +186,25 @@ static void heating_profile_task(void* args)
             LOGGER_LOG_INFO(TAG, "Profile complete (profile_tick): temp %.1f C",
                             ctx->current_temperature);
 
+            heater_command_data_t cmd = {
+                .type = COMMAND_TYPE_HEATER_CLEAR,
+            };
+
+            command_t command = {
+                .target = COMMAND_TARGET_HEATER,
+                .data = &cmd,
+                .data_size = sizeof(cmd)
+            };
+
+            post_heater_controller_command(&command);
+
             /* Set power to zero before signaling completion */
             float zero_power = 0.0f;
-            post_heater_controller_event(COMMAND_TYPE_HEATER_SET_POWER,
-                                         &zero_power, sizeof(zero_power));
+
+            cmd.type = COMMAND_TYPE_HEATER_SET_POWER;
+            cmd.power_level = zero_power;
+
+            post_heater_controller_command(&command);
 
             ctx->heating_task_state.is_completed = true;
             post_coordinator_event(COORDINATOR_EVENT_PROFILE_COMPLETED, NULL, 0);
@@ -220,7 +256,6 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
 
-    ctx->heating_task_state.profile_index = 0;
     ctx->heating_task_state.is_active = true;
     ctx->heating_task_state.is_paused = false;
     ctx->heating_task_state.is_completed = false;

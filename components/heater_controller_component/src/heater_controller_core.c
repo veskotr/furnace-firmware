@@ -24,12 +24,25 @@ esp_err_t init_heater_controller_component(void)
         }
     }
 
-    CHECK_ERR_LOG_RET(init_events(g_heater_controller_context), "Failed to initialize heater controller events");
+    CHECK_ERR_LOG_CALL_RET(init_events(g_heater_controller_context),
+                           shutdown_heater_controller_component(),
+                           "Failed to initialize heater controller events");
 
-    CHECK_ERR_LOG_RET(init_heater_controller(g_heater_controller_context), "Failed to initialize heater controller");
+    CHECK_ERR_LOG_CALL_RET(init_heater_controller(g_heater_controller_context),
+                           shutdown_heater_controller_component(),
+                           "Failed to initialize heater controller");
 
-    CHECK_ERR_LOG_RET(init_heater_controller_task(g_heater_controller_context),
-                      "Failed to initialize heater controller task");
+    CHECK_ERR_LOG_CALL_RET(init_heater_controller_task(g_heater_controller_context),
+                           shutdown_heater_controller_component(),
+                           "Failed to initialize heater controller task");
+
+    g_heater_controller_context->power_mutex = xSemaphoreCreateMutex();
+    if (g_heater_controller_context->power_mutex == NULL)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to create heater controller power mutex");
+        shutdown_heater_controller_component();
+        return ESP_ERR_NO_MEM;
+    }
 
     g_heater_controller_context->initialized = true;
 
@@ -47,8 +60,15 @@ esp_err_t shutdown_heater_controller_component(void)
 
     CHECK_ERR_LOG_RET(shutdown_heater_controller(g_heater_controller_context), "Failed to shutdown heater controller");
 
+    if (g_heater_controller_context->power_mutex != NULL)
+    {
+        vSemaphoreDelete(g_heater_controller_context->power_mutex);
+        g_heater_controller_context->power_mutex = NULL;
+    }
+
     free(g_heater_controller_context);
     g_heater_controller_context = NULL;
+
 
     return ESP_OK;
 }

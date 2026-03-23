@@ -157,16 +157,10 @@ static esp_err_t coordinator_command_handler(void* handler_arg, void* command_da
     return ESP_OK;
 }
 
-esp_err_t post_heater_controller_event(const heater_controller_event_t event_type, void* event_data,
-                                       const size_t event_data_size)
+esp_err_t post_heater_controller_command(command_t *command)
 {
-    CHECK_ERR_LOG_RET_FMT(event_manager_post_blocking(
-                              HEATER_CONTROLLER_EVENT,
-                              event_type,
-                              event_data,
-                              event_data_size),
-                          "Failed to post heater controller event type %d",
-                          event_type);
+    CHECK_ERR_LOG_RET(commands_dispatcher_dispatch_command(command),
+                          "Failed to post heater controller command");
     return ESP_OK;
 }
 

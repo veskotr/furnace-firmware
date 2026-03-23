@@ -57,7 +57,6 @@ typedef struct
 
 typedef struct
 {
-    uint32_t profile_index;
     float current_temperature;
     float target_temperature;
     float power_output;         // 0.0 – 1.0  (PID output)

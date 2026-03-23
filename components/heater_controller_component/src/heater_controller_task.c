@@ -19,7 +19,9 @@ static const HeaterControllerConfig_t heater_controller_config = {
     .task_priority = CONFIG_HEATER_CONTROLLER_TASK_PRIORITY,
 };
 
-static inline void check_error_and_post_event(const esp_err_t err);
+static void check_error_and_post_event(const esp_err_t err);
+
+static float get_heater_target_power_level(const heater_controller_context_t* ctx);
 
 void heater_controller_task(void* args)
 {
@@ -30,7 +32,7 @@ void heater_controller_task(void* args)
 
     while (ctx->task_running)
     {
-        const uint32_t on_time = (uint32_t)(ctx->target_power_level * heater_window_ms);
+        const uint32_t on_time = (uint32_t)(get_heater_target_power_level(ctx) * heater_window_ms);
         const uint32_t off_time = heater_window_ms - on_time;
 
         if (on_time > 0)
@@ -108,13 +110,35 @@ esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, const 
     {
         return ESP_ERR_INVALID_ARG;
     }
-
-    ctx->target_power_level = power_level;
+    xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
+    ctx->accumulated_power_level += power_level;
+    ctx->power_level_sample_count++;
+    xSemaphoreGive(ctx->power_mutex);
 
     return ESP_OK;
 }
 
-static inline void check_error_and_post_event(const esp_err_t err)
+esp_err_t reset_heater_power_level_samples(heater_controller_context_t* ctx)
+{
+    xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
+    ctx->accumulated_power_level = 0.0f;
+    ctx->power_level_sample_count = 0;
+    xSemaphoreGive(ctx->power_mutex);
+
+    return ESP_OK;
+}
+
+static float get_heater_target_power_level(const heater_controller_context_t* ctx)
+{
+    xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
+    float average_power_level = ctx->power_level_sample_count > 0
+                                    ? ctx->accumulated_power_level / ((float)ctx->power_level_sample_count)
+                                    : 0.0f;
+    xSemaphoreGive(ctx->power_mutex);
+    return average_power_level;
+}
+
+static void check_error_and_post_event(const esp_err_t err)
 {
     if (err != ESP_OK)
     {
