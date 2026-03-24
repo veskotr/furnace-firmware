@@ -19,6 +19,11 @@ typedef struct
     uint16_t entry_count;
     uint8_t wrapped;
     uint16_t write_index;
+
+    uint32_t crash_count;
+    uint32_t last_timestamp;
+    uint32_t last_total_runtime;
+    uint32_t error_code;
 } logger_header_t;
 
 typedef struct
@@ -45,6 +50,22 @@ static const char* TAG = "LOGGER_STORAGE";
 static logger_storage_t storage = {0};
 
 static const char* level_to_string(const uint8_t level);
+
+static void init_littlefs(void);
+
+static bool file_exists(const char *path);
+
+SemaphoreHandle_t log_mutex;
+
+esp_err_t logger_init_storage(void){
+    log_mutex = xSemaphoreCreateMutex();
+    if (log_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "%s", "Failed to create logger mutex");
+        return ESP_ERR_NO_MEM;
+    }
+    return init_littlefs();
+}
 
 void store_log_entry(const log_level_t level, const char* tag, const char* message)
 {
@@ -181,4 +202,80 @@ static const char* level_to_string(const uint8_t level)
     case LOG_LEVEL_VERBOSE: return "VERBOSE";
     default: return "UNK";
     }
+}
+
+static void init_littlefs(void)
+{
+    esp_vfs_littlefs_conf_t conf = {
+        .base_path = "/littlefs",
+        .partition_label = "storage",
+        .format_if_mount_failed = true,
+        .dont_mount = false,
+    };
+
+    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to mount LittleFS (%s)", esp_err_to_name(ret));
+        return;
+    }
+
+    size_t total = 0, used = 0;
+    esp_littlefs_info("storage", &total, &used);
+
+    ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", total, used);
+}
+
+static bool file_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+static void store_crash_log(uint32_t error_code, logger_storage_t *ram_log)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "/littlefs/err_%lu.bin", error_code);
+
+    logger_storage_t storage = {0};
+
+    if (file_exists(path)) {
+        FILE *f = fopen(path, "rb");
+        fread(&storage, sizeof(storage), 1, f);
+        fclose(f);
+
+        // Validate
+        if (storage.header.magic != 0xDEADBEEF) {
+            ESP_LOGW("LOGGER", "Corrupted file, resetting");
+            memset(&storage, 0, sizeof(storage));
+        }
+    }
+
+    storage.header.magic = 0xDEADBEEF;
+    storage.header.version = 1;
+    storage.header.crash_count += 1;
+    storage.header.last_timestamp = esp_log_timestamp();
+    storage.header.error_code = error_code;
+
+    memcpy(storage.entries, ram_log->entries, sizeof(storage.entries));
+
+    storage.header.entry_count = ram_log->header.entry_count;
+    storage.header.write_index = ram_log->header.write_index;
+    storage.header.wrapped = ram_log->header.wrapped;
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        ESP_LOGE("LOGGER", "Failed to open file for writing");
+        return;
+    }
+
+    fwrite(&storage, sizeof(storage), 1, f);
+    fclose(f);
+
+    ESP_LOGI("LOGGER", "Crash log stored for error %lu (count=%lu)",
+             error_code, storage.header.crash_count);
 }
