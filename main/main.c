@@ -16,20 +16,31 @@
 
 static const char* TAG = "main";
 
+static void logger_output_callback(const char* formatted_log)
+{
+    // Output log to console
+    printf("%s\n", formatted_log);
+
+    // Optionally, store log in NVS or send to external storage
+    // For example, you could implement a circular buffer in NVS to store recent logs
+}
+
 void app_main(void)
 {
-    logger_init();
-
     esp_err_t nvs_err = nvs_flash_init();
-    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         nvs_flash_erase();
         nvs_err = nvs_flash_init();
     }
-    if (nvs_err != ESP_OK) {
+    if (nvs_err != ESP_OK)
+    {
         LOGGER_LOG_ERROR(TAG, "NVS flash init failed: %s", esp_err_to_name(nvs_err));
     }
 
-    CHECK_ERR_LOG_CALL(event_manager_init(),
+    logger_init();
+
+    /*CHECK_ERR_LOG_CALL(event_manager_init(),
                        return,
                        "Failed to initialize event manager");
     CHECK_ERR_LOG_CALL(event_registry_init(),
@@ -83,25 +94,34 @@ void app_main(void)
     CHECK_ERR_LOG(temp_sensor_write_device(temp_sensor_device, &write_cmd),
         "Failed to write to temp sensor device");
 
-    /*vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(2000));
     params.register_address = 32;
     params.value = 4;
 
     CHECK_ERR_LOG(device_manager_write_device(temp_sensor_device, &write_cmd),
-        "Failed to write to temp sensor device");*/
+        "Failed to write to temp sensor device");#1#
 
 
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
-                  "Failed to set temp sensor device state to running");
+                  "Failed to set temp sensor device state to running");*/
+
+    for (int i = 0; i < 100; i++)
+    {
+        LOGGER_LOG_INFO(TAG, "Log message: %d", i);
+    }
+    vTaskDelay(pdMS_TO_TICKS(10000));
+    logger_store_log_buffer();
+    logger_dump_from_nvs();
+    logger_iterate_from_nvs(logger_output_callback);
 
     while (1)
     {
-        float temperature;
+        /*float temperature;
         CHECK_ERR_LOG(temp_sensor_read_device(temp_sensor_device, &temperature),
                       "Failed to read temperature from device");
-        LOGGER_LOG_INFO(TAG, "Temperature: %.1f C", temperature);
+        LOGGER_LOG_INFO(TAG, "Temperature: %.1f C", temperature);*/
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

@@ -392,7 +392,6 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
     {
         xTaskNotifyGive(ctx->task_handle);
     }
-    ctx->heating_task_state.profile_index = INVALID_PROFILE_INDEX;
     ctx->heating_task_state.is_paused = false;
 
     /* Zero out heater power so the heater PWM task stops toggling */

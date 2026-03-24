@@ -2,6 +2,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "logger_internal.h"
+#include "logger_internal.h"
 
 // Component tag
 static const char* TAG = "LOGGER";
@@ -11,6 +13,8 @@ static QueueHandle_t logger_queue;
 
 // Component initialized flag
 static bool logger_initialized = false;
+
+SemaphoreHandle_t log_mutex;
 
 // ----------------------------
 // Configuration
@@ -53,10 +57,15 @@ static void logger_task(void* args)
             case LOG_LEVEL_DEBUG:
                 ESP_LOGD(msg.tag, "%s", msg.message);
                 break;
+            case LOG_LEVEL_VERBOSE:
+                ESP_LOGV(msg.tag, "%s", msg.message);
+                break;
             default:
                 ESP_LOGI(msg.tag, "%s", msg.message);
                 break;
             }
+            // Store log in ring buffer for potential future retrieval
+            store_log_entry(msg.level, msg.tag, msg.message);
         }
     }
 }
@@ -79,10 +88,18 @@ void logger_init(void)
 
     xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
                 NULL);
+
+    log_mutex = xSemaphoreCreateMutex();
+    if (log_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "%s", "Failed to create logger mutex");
+        return;
+    }
+
     logger_initialized = true;
 }
 
-void logger_send(log_level_t log_level, const char* tag, const char* fmt, ...)
+void logger_send(const log_level_t log_level, const char* tag, const char* fmt, ...)
 {
     if (logger_queue == NULL)
     {
