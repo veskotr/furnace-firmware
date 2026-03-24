@@ -8,8 +8,8 @@
 
 float modbus_master_swap_float_cdab(const uint16_t *registers, uint32_t *raw_output)
 {
-    const uint16_t reg_high = modbus_master_swap_u16(registers[1]);
-    const uint16_t reg_low = modbus_master_swap_u16(registers[0]);
+    const uint16_t reg_high = registers[1];
+    const uint16_t reg_low = registers[0];
 
     *raw_output = ((uint32_t)reg_high << 16) | reg_low;
 

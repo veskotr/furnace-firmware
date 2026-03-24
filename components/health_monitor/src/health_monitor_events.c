@@ -18,6 +18,7 @@ void health_monitor_event_handler(void* handler_arg, esp_event_base_t base, int3
         LOGGER_LOG_WARN(TAG, "Received heartbeat event with NULL data");
         return;
     }
+    // TODO: warning for always false, is it correct?
     if (data->component_id < 0 || data->component_id >= CONFIG_HEARTH_BEAT_COUNT)
     {
         LOGGER_LOG_WARN(TAG, "Received heartbeat event for invalid component ID: %d", data->component_id);

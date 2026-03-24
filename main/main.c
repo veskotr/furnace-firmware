@@ -1,6 +1,8 @@
 #include "logger_component.h"
+#include "commands_dispatcher.h"
 #include "temperature_processor_component.h"
 #include "coordinator_component.h"
+#include "heater_controller_component.h"
 #include "event_manager.h"
 #include "event_registry.h"
 #include "nextion_hmi.h"
@@ -13,19 +15,20 @@
 #include "temp_sensor_device.h"
 #include "nvs_flash.h"
 
-
-static const char* TAG = "main";
+static const char *TAG = "main";
 
 void app_main(void)
 {
     logger_init();
 
     esp_err_t nvs_err = nvs_flash_init();
-    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         nvs_flash_erase();
         nvs_err = nvs_flash_init();
     }
-    if (nvs_err != ESP_OK) {
+    if (nvs_err != ESP_OK)
+    {
         LOGGER_LOG_ERROR(TAG, "NVS flash init failed: %s", esp_err_to_name(nvs_err));
     }
 
@@ -35,7 +38,12 @@ void app_main(void)
     CHECK_ERR_LOG_CALL(event_registry_init(),
                        return,
                        "Failed to initialize event registry");
-
+    CHECK_ERR_LOG_CALL(commands_dispatcher_init(),
+                       return,
+                       "Failed to initialize commands dispatcher");
+    CHECK_ERR_LOG_CALL(init_heater_controller_component(),
+                       return,
+                       "Failed to initialize heater controller");
     CHECK_ERR_LOG_CALL(init_coordinator(),
                        return,
                        "Failed to initialize coordinator");
@@ -52,7 +60,7 @@ void app_main(void)
     };
 
     CHECK_ERR_LOG(modbus_master_init(&modbus_config),
-                           "Failed to initialize Modbus master");
+                  "Failed to initialize Modbus master");
 
     run_indicator_init();
 
@@ -70,27 +78,6 @@ void app_main(void)
     CHECK_ERR_LOG(temp_sensor_create(&temp_sensor_device),
                   "Failed to create temp sensor device");
 
-    CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_IDLE),
-                  "Failed to set temp sensor device state to running");
-
-
-
-    device_write_cmd_t write_cmd = {
-        .cmd_id = TEMP_SENSOR_REPAIR_FORM_GOOD_UNIT,
-        .params = NULL
-    };
-
-    CHECK_ERR_LOG(temp_sensor_write_device(temp_sensor_device, &write_cmd),
-        "Failed to write to temp sensor device");
-
-    /*vTaskDelay(pdMS_TO_TICKS(2000));
-    params.register_address = 32;
-    params.value = 4;
-
-    CHECK_ERR_LOG(device_manager_write_device(temp_sensor_device, &write_cmd),
-        "Failed to write to temp sensor device");*/
-
-
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
@@ -101,7 +88,12 @@ void app_main(void)
         float temperature;
         CHECK_ERR_LOG(temp_sensor_read_device(temp_sensor_device, &temperature),
                       "Failed to read temperature from device");
-        LOGGER_LOG_INFO(TAG, "Temperature: %.1f C", temperature);
+        CHECK_ERR_LOG(event_manager_post_immediate(TEMP_PROCESSOR_EVENT,
+                                                   PROCESS_TEMPERATURE_EVENT_DATA,
+                                                   &temperature,
+                                                   sizeof(temperature)),
+                      "Failed to publish temperature update");
+        LOGGER_LOG_INFO(TAG, "Temperature: %.2f C", temperature);
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

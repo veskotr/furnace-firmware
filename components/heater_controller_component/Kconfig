@@ -19,4 +19,17 @@ menu "Heater Controller"
         int "Heater Controller Task Priority"
         default 5
 
+    config HEATER_CONTROLLER_COMPONENT_ID
+        int "Heater Controller Component ID"
+        default 2
+        help
+            Unique identifier for the Heater Controller component used by the health monitor.
+
+    config HEATER_CONTROLLER_HEARTBEAT_TIMEOUT_MS
+        int "Heater Controller Heartbeat Timeout (ms)"
+        default 15000
+        help
+            Maximum time between heartbeats before the health monitor considers the heater controller unhealthy.
+            Should be larger than HEATER_WINDOW_SIZE_MS.
+
 endmenu

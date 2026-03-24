@@ -76,7 +76,7 @@ esp_err_t event_manager_post_immediate(
  * @param event_id
  * @param event_data
 */
-esp_err_t event_manager_post_health(health_monitor_event_id_t event_id, health_monitor_data_t *event_data);
+esp_err_t event_manager_post_health(health_monitor_event_id_t event_id, const health_monitor_data_t *event_data);
 
 /**
  * @brief Convenience wrapper - post with blocking timeout
