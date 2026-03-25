@@ -2,7 +2,7 @@ menu "Health Monitor Config"
     
     config HEARTH_BEAT_COUNT
         int "Number of components to monitor for heartbeat"
-        default 5
+        default 8
     
     config HEALTH_MONITOR_TASK_STACK_SIZE
         int "Health monitor task stack size"
