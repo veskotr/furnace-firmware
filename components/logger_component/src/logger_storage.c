@@ -21,19 +21,15 @@ typedef struct
     uint32_t reset_reason;
     uint32_t timestamp;
 
-    uint16_t entry_count;
     uint16_t write_index;
-    uint8_t wrapped;
 
-    log_entry_t entries[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
-
+    log_entry_t entries[CONFIG_LOG_PANIC_BUFFER_COUNT];
 } panic_snapshot_t;
 
 typedef struct
 {
     uint32_t magic;
     uint16_t version;
-    uint16_t entry_count;
     uint8_t wrapped;
     uint16_t write_index;
 
@@ -51,24 +47,17 @@ typedef struct
     char message[CONFIG_LOG_MAX_MESSAGE_LENGTH];
 } log_entry_t;
 
-
 static const char* TAG = "LOGGER_STORAGE";
 
 SemaphoreHandle_t log_mutex;
 
 static log_entry_t log_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
-static logger_header_t header_buffer = {0};
 
 static size_t log_index = 0;
 static bool log_wrapped = false;
 
 RTC_DATA_ATTR static panic_snapshot_t g_panic_snapshot;
-
-// ================================================
-// Static Buffers
-// ================================================
-static char file_path_buffer[64] = {0};
-static log_entry_t temp_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
+IRAM_ATTR void panic_capture(uint32_t error_code);
 
 // ================================================
 // Helper deffinitions
@@ -94,6 +83,10 @@ esp_err_t logger_init_storage(void){
     esp_register_shutdown_handler(panic_capture);
 
     return 
+}
+
+void store_full_log(uint32_t error_cause){
+    store_full_crash_log(error_cause, log_buffer, log_index, log_wrapped);
 }
 
 void store_log_entry(const log_level_t level, const char* tag, const char* message)
@@ -154,14 +147,18 @@ static void init_littlefs(void)
     ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", total, used);
 }
 
-static esp_err_t store_full_crash_log(uint32_t error_cause)
+static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t *input_buffer, uint16_t index, uint8_t wrapped)
 {
-    snprintf(path_buffer, sizeof(path_buffer),
+    char path[64] = {0}
+
+    snprintf(path, sizeof(path),
              "/littlefs/err_%lu.bin", error_cause);
 
-    FILE *f = fopen(path_buffer, "rb+");
+    FILE *f = fopen(path, "rb+");
 
     bool exists = (f != NULL);
+
+    logger_header_t header = {};
 
     // =========================
     // CASE A: FILE EXISTS
@@ -169,19 +166,19 @@ static esp_err_t store_full_crash_log(uint32_t error_cause)
     if (exists)
     {
         // read ONLY header
-        size_t r = fread(&header_buffer,
+        size_t r = fread(&header,
                          sizeof(logger_header_t),
                          1,
                          f);
 
-        if (r != 1 || header_buffer.magic != LOGGER_MAGIC)
+        if (r != 1 || header.magic != LOGGER_MAGIC)
         {
             // corrupted → reset header
-            memset(&header_buffer, 0, sizeof(header_buffer));
+            memset(&header, 0, sizeof(header));
         }
 
-        header_buffer.times_occured++;
-        header_buffer.error_code = error_cause;
+        header.times_occured++;
+        header.error_code = error_cause;
 
         // move to beginning for overwrite
         rewind(f);
@@ -191,50 +188,39 @@ static esp_err_t store_full_crash_log(uint32_t error_cause)
         // =========================
         // CASE B: NEW FILE
         // =========================
-        f = fopen(path_buffer, "wb");
+        f = fopen(path, "wb");
         if (!f)
         {
             ESP_LOGE("LOGGER", "Failed to create file");
             return ESP_FAIL;
         }
 
-        memset(&header_buffer, 0, sizeof(header_buffer));
+        memset(&header, 0, sizeof(header));
 
-        header_buffer.magic = LOGGER_MAGIC;
-        header_buffer.version = LOGGER_VERSION;
-        header_buffer.times_occured = 1;
-        header_buffer.error_code = error_cause;
+        header.magic = LOGGER_MAGIC;
+        header.version = LOGGER_VERSION;
+        header.times_occured = 1;
+        header.error_code = error_cause;
+        header.write_index = input_header->write_index;
+        header.wrapped = input_header->wrapped;
+        //TODO Add current timestamp
+        //TODO Add total runtime timer
     }
 
-    // =========================
-    // UPDATE HEADER COMMON FIELDS
-    // =========================
-    header_buffer.entry_count = log_index;
-    header_buffer.wrapped = log_wrapped;
-    header_buffer.write_index = log_index;
-    //TODO Add current timestamp
-    //TODO Add total runtime timer
 
     // =========================
     // WRITE HEADER
     // =========================
-    fwrite(&header_buffer,
-           sizeof(logger_header_t),
+    fwrite(&header,
+           sizeof(header),
            1,
            f);
 
     // =========================
-    // COPY RAM BUFFER SAFELY
-    // =========================
-    memcpy(temp_buffer,
-           log_buffer,
-           sizeof(log_buffer));
-
-    // =========================
     // WRITE LOG ENTRIES
     // =========================
-    fwrite(temp_buffer,
-           sizeof(log_entry_t),
+    fwrite(input_buffer,
+           sizeof(input_buffer),
            CONFIG_LOG_MAX_RING_BUFFER_SIZE,
            f);
 
@@ -243,7 +229,7 @@ static esp_err_t store_full_crash_log(uint32_t error_cause)
     ESP_LOGI("LOGGER",
              "Crash log stored: %lu (count=%lu)",
              error_cause,
-             header_buffer.times_occured);
+             header.times_occured);
 
     return ESP_OK;
 }
@@ -259,61 +245,23 @@ static esp_err_t recover_from_panic(void)
              g_panic_snapshot.error_code);
 
     // Convert RTC snapshot → RAM storage format
-    logger_header_t hdr = {0};
+    logger_header_t header = {0};
 
-    hdr.magic = LOGGER_MAGIC;
-    hdr.version = LOGGER_VERSION;
-    hdr.times_occured = 1;
-    hdr.error_code = g_panic_snapshot.error_code;
-    hdr.last_timestamp = g_panic_snapshot.timestamp;
-    hdr.entry_count = g_panic_snapshot.entry_count;
-    hdr.write_index = g_panic_snapshot.write_index;
-    hdr.wrapped = g_panic_snapshot.wrapped;
+    header.magic = LOGGER_MAGIC;
+    header.version = LOGGER_VERSION;
+    header.times_occured = 1;
+    header.error_code = g_panic_snapshot.error_code;
+    header.last_timestamp = g_panic_snapshot.timestamp;
+    header.entry_count = g_panic_snapshot.entry_count;
+    header.write_index = g_panic_snapshot.write_index;
+    header.wrapped = g_panic_snapshot.wrapped;
 
-    snprintf(file_path_buffer, sizeof(file_path_buffer),
-             "/littlefs/err_%lu.bin",
-             g_panic_snapshot.error_code);
-
-    FILE *f = fopen(file_path_buffer, "rb+");
-    bool exists = (f != NULL);
-
-    if (exists)
-    {
-        fread(&hdr, sizeof(logger_header_t), 1, f);
-
-        if (hdr.magic != LOGGER_MAGIC)
-        {
-            memset(&hdr, 0, sizeof(hdr));
-            hdr.magic = LOGGER_MAGIC;
-        }
-
-        hdr.times_occured++;
-        hdr.last_timestamp = g_panic_snapshot.timestamp;
-
-        rewind(f);
-    }
-    else
-    {
-        f = fopen(file_path_buffer, "wb");
-        if (!f)
-        {
-            ESP_LOGE(TAG, "Failed to create crash file");
-            return ESP_FAIL;
-        }
-
-        hdr.times_occured = 1;
-    }
-
-    // WRITE HEADER
-    fwrite(&hdr, sizeof(hdr), 1, f);
-
-    // WRITE LOG BUFFER FROM RTC
-    fwrite(g_panic_snapshot.entries,
-           sizeof(log_entry_t),
-           CONFIG_LOG_MAX_RING_BUFFER_SIZE,
-           f);
-
-    fclose(f);
+    esp_err_t err = store_full_crash_log(
+        g_panic_snapshot.error_code,
+        g_panic_snapshot.entries,
+        g_panic_snapshot.write_index,
+        false
+    )
 
     // CLEAR RTC AFTER SUCCESS
     memset(&g_panic_snapshot, 0, sizeof(g_panic_snapshot));
@@ -328,13 +276,17 @@ IRAM_ATTR void panic_capture(uint32_t error_code)
     g_panic_snapshot.reset_reason = esp_reset_reason();
     g_panic_snapshot.timestamp = esp_log_timestamp();
 
-    g_panic_snapshot.entry_count = log_index;
-    g_panic_snapshot.write_index = log_index;
-    g_panic_snapshot.wrapped = log_wrapped;
+    int start_index = log_index - CONFIG_LOG_PANIC_BUFFER_COUNT + 1;
+    int size = CONFIG_LOG_PANIC_BUFFER_COUNT;
+    if(log_index < CONFIG_LOG_PANIC_BUFFER_COUNT -1){
+        size = log_index + 1;
+    }
 
-    // copy ONLY safe data
-    for (int i = 0; i < CONFIG_LOG_MAX_RING_BUFFER_SIZE; i++)
+    g_panic_snapshot.write_index = size -1;
+
+    for (size_t i = 0; i < size; i++)
     {
-        g_panic_snapshot.entries[i] = log_buffer[i];
+        int idx = start_index + 1;
+        panic_entries[i] = log_buffer[idx];
     }
 }

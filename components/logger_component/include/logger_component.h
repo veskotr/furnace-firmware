@@ -57,7 +57,7 @@ typedef void (*logger_output_fn_t)(const char* line);
 
 void logger_init(void);
 void logger_send(log_level_t log_level, const char *tag, const char *message, ...);
-IRAM_ATTR void panic_capture(uint32_t error_code);
+void store_full_log();
 
 #define logger_send_info(tag, fmt, ...) logger_send(LOG_LEVEL_INFO, tag, fmt, ##__VA_ARGS__)
 #define logger_send_warn(tag, fmt, ...) logger_send(LOG_LEVEL_WARN, tag, fmt, ##__VA_ARGS__)
