@@ -12,6 +12,23 @@
 #define LOGGER_MAGIC 0xDEADBEEF
 #define LOGGER_VERSION 1
 
+#define PANIC_MAGIC 0xBADC0FFE
+
+typedef struct
+{
+    uint32_t magic;
+    uint32_t error_code;
+    uint32_t reset_reason;
+    uint32_t timestamp;
+
+    uint16_t entry_count;
+    uint16_t write_index;
+    uint8_t wrapped;
+
+    log_entry_t entries[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
+
+} panic_snapshot_t;
+
 typedef struct
 {
     uint32_t magic;
@@ -20,7 +37,7 @@ typedef struct
     uint8_t wrapped;
     uint16_t write_index;
 
-    uint32_t crash_count;
+    uint32_t times_occured;
     uint32_t last_timestamp;
     uint32_t last_total_runtime;
     uint32_t error_code;
@@ -34,28 +51,35 @@ typedef struct
     char message[CONFIG_LOG_MAX_MESSAGE_LENGTH];
 } log_entry_t;
 
-typedef struct
-{
-    logger_header_t header;
-    log_entry_t entries[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
-} logger_storage_t;
+
+static const char* TAG = "LOGGER_STORAGE";
+
+SemaphoreHandle_t log_mutex;
 
 static log_entry_t log_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
+static logger_header_t header_buffer = {0};
 
 static size_t log_index = 0;
 static bool log_wrapped = false;
 
-static const char* TAG = "LOGGER_STORAGE";
+RTC_DATA_ATTR static panic_snapshot_t g_panic_snapshot;
 
-static logger_storage_t storage = {0};
+// ================================================
+// Static Buffers
+// ================================================
+static char file_path_buffer[64] = {0};
+static log_entry_t temp_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
 
+// ================================================
+// Helper deffinitions
+// ================================================
 static const char* level_to_string(const uint8_t level);
 
 static void init_littlefs(void);
 
 static bool file_exists(const char *path);
 
-SemaphoreHandle_t log_mutex;
+static esp_err_t recover_from_panic(void);
 
 esp_err_t logger_init_storage(void){
     log_mutex = xSemaphoreCreateMutex();
@@ -64,7 +88,12 @@ esp_err_t logger_init_storage(void){
         ESP_LOGE(TAG, "%s", "Failed to create logger mutex");
         return ESP_ERR_NO_MEM;
     }
-    return init_littlefs();
+
+    esp_err_t ret = init_littlefs();
+
+    esp_register_shutdown_handler(panic_capture);
+
+    return 
 }
 
 void store_log_entry(const log_level_t level, const char* tag, const char* message)
@@ -88,107 +117,6 @@ void store_log_entry(const log_level_t level, const char* tag, const char* messa
         log_wrapped = true;
     }
     xSemaphoreGive(log_mutex);
-}
-
-void logger_store_log_buffer(void)
-{
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open("logger", NVS_READWRITE, &nvs);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    storage.header.magic = LOGGER_MAGIC;
-    storage.header.version = LOGGER_VERSION;
-    storage.header.entry_count = log_wrapped ? CONFIG_LOG_MAX_RING_BUFFER_SIZE : log_index;
-    storage.header.wrapped = log_wrapped;
-    storage.header.write_index = log_index;
-
-    xSemaphoreTake(log_mutex, portMAX_DELAY);
-    memcpy(storage.entries, log_buffer, sizeof(log_buffer));
-    xSemaphoreGive(log_mutex);
-
-    err = nvs_set_blob(nvs, "log_blob", &storage, sizeof(storage));
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to write blob: %s", esp_err_to_name(err));
-        nvs_close(nvs);
-        return;
-    }
-
-    err = nvs_commit(nvs);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Commit failed");
-    }
-
-    nvs_close(nvs);
-}
-
-void logger_iterate_from_nvs(const logger_output_fn_t output_fn)
-{
-    nvs_handle_t nvs;
-    esp_err_t err = nvs_open("logger", NVS_READONLY, &nvs);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(err));
-        return;
-    }
-
-    size_t size = sizeof(storage);
-
-    err = nvs_get_blob(nvs, "log_blob", &storage, &size);
-    nvs_close(nvs);
-
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to read log blob: %s", esp_err_to_name(err));
-        return;
-    }
-
-    // Validate
-    if (storage.header.magic != LOGGER_MAGIC ||
-        storage.header.version != LOGGER_VERSION)
-    {
-        ESP_LOGE(TAG, "Invalid log data: %s", esp_err_to_name(err));
-        return;
-    }
-
-    const size_t count = storage.header.entry_count;
-
-    // Oldest element:
-    // - If wrapped → oldest is at write_index
-    // - If not wrapped → oldest is at 0
-    const size_t start = storage.header.wrapped ? storage.header.write_index : 0;
-
-    for (size_t i = 0; i < count; i++)
-    {
-        const size_t idx = (start + i) % CONFIG_LOG_MAX_RING_BUFFER_SIZE;
-        log_entry_t* entry = &storage.entries[idx];
-
-        char line[CONFIG_LOG_MAX_MESSAGE_LENGTH * 2]; // Enough for tag + message
-
-        snprintf(line, sizeof(line),
-                 "%lu [%s] [%s] %s",
-                 entry->timestamp,
-                 level_to_string(entry->level),
-                 entry->tag,
-                 entry->message);
-
-        output_fn(line);
-    }
-}
-
-static void log_print_fn(const char* line)
-{
-    ESP_LOGI("LOG_DUMP", "%s", line);
-}
-
-void logger_dump_from_nvs(void)
-{
-    logger_iterate_from_nvs(log_print_fn);
 }
 
 static const char* level_to_string(const uint8_t level)
@@ -226,56 +154,187 @@ static void init_littlefs(void)
     ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", total, used);
 }
 
-static bool file_exists(const char *path)
+static esp_err_t store_full_crash_log(uint32_t error_cause)
 {
-    FILE *f = fopen(path, "rb");
-    if (f) {
-        fclose(f);
-        return true;
-    }
-    return false;
-}
+    snprintf(path_buffer, sizeof(path_buffer),
+             "/littlefs/err_%lu.bin", error_cause);
 
-static void store_crash_log(uint32_t error_code, logger_storage_t *ram_log)
-{
-    char path[64];
-    snprintf(path, sizeof(path), "/littlefs/err_%lu.bin", error_code);
+    FILE *f = fopen(path_buffer, "rb+");
 
-    logger_storage_t storage = {0};
+    bool exists = (f != NULL);
 
-    if (file_exists(path)) {
-        FILE *f = fopen(path, "rb");
-        fread(&storage, sizeof(storage), 1, f);
-        fclose(f);
+    // =========================
+    // CASE A: FILE EXISTS
+    // =========================
+    if (exists)
+    {
+        // read ONLY header
+        size_t r = fread(&header_buffer,
+                         sizeof(logger_header_t),
+                         1,
+                         f);
 
-        // Validate
-        if (storage.header.magic != 0xDEADBEEF) {
-            ESP_LOGW("LOGGER", "Corrupted file, resetting");
-            memset(&storage, 0, sizeof(storage));
+        if (r != 1 || header_buffer.magic != LOGGER_MAGIC)
+        {
+            // corrupted → reset header
+            memset(&header_buffer, 0, sizeof(header_buffer));
         }
+
+        header_buffer.times_occured++;
+        header_buffer.error_code = error_cause;
+
+        // move to beginning for overwrite
+        rewind(f);
+    }
+    else
+    {
+        // =========================
+        // CASE B: NEW FILE
+        // =========================
+        f = fopen(path_buffer, "wb");
+        if (!f)
+        {
+            ESP_LOGE("LOGGER", "Failed to create file");
+            return ESP_FAIL;
+        }
+
+        memset(&header_buffer, 0, sizeof(header_buffer));
+
+        header_buffer.magic = LOGGER_MAGIC;
+        header_buffer.version = LOGGER_VERSION;
+        header_buffer.times_occured = 1;
+        header_buffer.error_code = error_cause;
     }
 
-    storage.header.magic = 0xDEADBEEF;
-    storage.header.version = 1;
-    storage.header.crash_count += 1;
-    storage.header.last_timestamp = esp_log_timestamp();
-    storage.header.error_code = error_code;
+    // =========================
+    // UPDATE HEADER COMMON FIELDS
+    // =========================
+    header_buffer.entry_count = log_index;
+    header_buffer.wrapped = log_wrapped;
+    header_buffer.write_index = log_index;
+    //TODO Add current timestamp
+    //TODO Add total runtime timer
 
-    memcpy(storage.entries, ram_log->entries, sizeof(storage.entries));
+    // =========================
+    // WRITE HEADER
+    // =========================
+    fwrite(&header_buffer,
+           sizeof(logger_header_t),
+           1,
+           f);
 
-    storage.header.entry_count = ram_log->header.entry_count;
-    storage.header.write_index = ram_log->header.write_index;
-    storage.header.wrapped = ram_log->header.wrapped;
+    // =========================
+    // COPY RAM BUFFER SAFELY
+    // =========================
+    memcpy(temp_buffer,
+           log_buffer,
+           sizeof(log_buffer));
 
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        ESP_LOGE("LOGGER", "Failed to open file for writing");
-        return;
-    }
+    // =========================
+    // WRITE LOG ENTRIES
+    // =========================
+    fwrite(temp_buffer,
+           sizeof(log_entry_t),
+           CONFIG_LOG_MAX_RING_BUFFER_SIZE,
+           f);
 
-    fwrite(&storage, sizeof(storage), 1, f);
     fclose(f);
 
-    ESP_LOGI("LOGGER", "Crash log stored for error %lu (count=%lu)",
-             error_code, storage.header.crash_count);
+    ESP_LOGI("LOGGER",
+             "Crash log stored: %lu (count=%lu)",
+             error_cause,
+             header_buffer.times_occured);
+
+    return ESP_OK;
+}
+
+static esp_err_t recover_from_panic(void)
+{
+    if (g_panic_snapshot.magic != PANIC_MAGIC)
+    {
+        return ESP_OK; // no crash
+    }
+
+    ESP_LOGW(TAG, "PANIC RECOVERY: error=%lu",
+             g_panic_snapshot.error_code);
+
+    // Convert RTC snapshot → RAM storage format
+    logger_header_t hdr = {0};
+
+    hdr.magic = LOGGER_MAGIC;
+    hdr.version = LOGGER_VERSION;
+    hdr.times_occured = 1;
+    hdr.error_code = g_panic_snapshot.error_code;
+    hdr.last_timestamp = g_panic_snapshot.timestamp;
+    hdr.entry_count = g_panic_snapshot.entry_count;
+    hdr.write_index = g_panic_snapshot.write_index;
+    hdr.wrapped = g_panic_snapshot.wrapped;
+
+    snprintf(file_path_buffer, sizeof(file_path_buffer),
+             "/littlefs/err_%lu.bin",
+             g_panic_snapshot.error_code);
+
+    FILE *f = fopen(file_path_buffer, "rb+");
+    bool exists = (f != NULL);
+
+    if (exists)
+    {
+        fread(&hdr, sizeof(logger_header_t), 1, f);
+
+        if (hdr.magic != LOGGER_MAGIC)
+        {
+            memset(&hdr, 0, sizeof(hdr));
+            hdr.magic = LOGGER_MAGIC;
+        }
+
+        hdr.times_occured++;
+        hdr.last_timestamp = g_panic_snapshot.timestamp;
+
+        rewind(f);
+    }
+    else
+    {
+        f = fopen(file_path_buffer, "wb");
+        if (!f)
+        {
+            ESP_LOGE(TAG, "Failed to create crash file");
+            return ESP_FAIL;
+        }
+
+        hdr.times_occured = 1;
+    }
+
+    // WRITE HEADER
+    fwrite(&hdr, sizeof(hdr), 1, f);
+
+    // WRITE LOG BUFFER FROM RTC
+    fwrite(g_panic_snapshot.entries,
+           sizeof(log_entry_t),
+           CONFIG_LOG_MAX_RING_BUFFER_SIZE,
+           f);
+
+    fclose(f);
+
+    // CLEAR RTC AFTER SUCCESS
+    memset(&g_panic_snapshot, 0, sizeof(g_panic_snapshot));
+
+    return ESP_OK;
+}
+
+IRAM_ATTR void panic_capture(uint32_t error_code)
+{
+    g_panic_snapshot.magic = PANIC_MAGIC;
+    g_panic_snapshot.error_code = error_code;
+    g_panic_snapshot.reset_reason = esp_reset_reason();
+    g_panic_snapshot.timestamp = esp_log_timestamp();
+
+    g_panic_snapshot.entry_count = log_index;
+    g_panic_snapshot.write_index = log_index;
+    g_panic_snapshot.wrapped = log_wrapped;
+
+    // copy ONLY safe data
+    for (int i = 0; i < CONFIG_LOG_MAX_RING_BUFFER_SIZE; i++)
+    {
+        g_panic_snapshot.entries[i] = log_buffer[i];
+    }
 }
