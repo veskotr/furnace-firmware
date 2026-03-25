@@ -14,8 +14,6 @@ static QueueHandle_t logger_queue;
 // Component initialized flag
 static bool logger_initialized = false;
 
-SemaphoreHandle_t log_mutex;
-
 // ----------------------------
 // Configuration
 // ----------------------------
@@ -82,18 +80,16 @@ void logger_init(void)
     logger_queue = xQueueCreate(CONFIG_LOG_QUEUE_SIZE, sizeof(log_message_t));
     if (logger_queue == NULL)
     {
-        ESP_LOGE(TAG, "%s", "Failed to create logger queue");
+        ESP_LOGE(TAG, "Failed to create logger queue");
         return;
     }
 
     xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
                 NULL);
 
-    log_mutex = xSemaphoreCreateMutex();
-    if (log_mutex == NULL)
-    {
-        ESP_LOGE(TAG, "%s", "Failed to create logger mutex");
-        return;
+    esp_err_t err = logger_init_storage();
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Failed to init logger: %s", esp_err_to_name(err));
     }
 
     logger_initialized = true;

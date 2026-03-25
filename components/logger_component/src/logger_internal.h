@@ -6,7 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-extern SemaphoreHandle_t log_mutex;
+esp_err_t logger_init_storage(void);
 
 void store_log_entry(const log_level_t level, const char* tag, const char* message);
 
