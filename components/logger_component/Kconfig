@@ -35,5 +35,5 @@ menu "Logging"
 
     config LOG_PANIC_BUFFER_COUNT
         int "Max panic buffer size"
-        default 32
+        default 20
 endmenu

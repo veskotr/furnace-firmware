@@ -112,9 +112,9 @@ void app_main(void)
         LOGGER_LOG_INFO(TAG, "Log message: %d", i);
     }
     vTaskDelay(pdMS_TO_TICKS(10000));
-    logger_store_log_buffer();
+    /* logger_store_log_buffer();
     logger_dump_from_nvs();
-    logger_iterate_from_nvs(logger_output_callback);
+    logger_iterate_from_nvs(logger_output_callback); */
 
     while (1)
     {

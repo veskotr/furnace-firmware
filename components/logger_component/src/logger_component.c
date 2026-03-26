@@ -3,7 +3,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "logger_internal.h"
-#include "logger_internal.h"
 
 // Component tag
 static const char* TAG = "LOGGER";
@@ -87,7 +86,7 @@ void logger_init(void)
     xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
                 NULL);
 
-    esp_err_t err = logger_init_storage();
+    const esp_err_t err = logger_init_storage();
     if(err != ESP_OK){
         ESP_LOGE(TAG, "Failed to init logger: %s", esp_err_to_name(err));
     }
