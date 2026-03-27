@@ -6,6 +6,8 @@
 #include "logger_internal.h"
 #include "freertos/semphr.h"
 #include "esp_littlefs.h"
+#include "time-component.h"
+#include "time_component.h"
 
 #define CONFIG_LOG_MAX_TAG_LENGTH 16
 
@@ -41,9 +43,9 @@ typedef struct
     uint8_t wrapped;
     uint16_t write_index;
 
-    uint32_t times_occured;
+    uint32_t times_occurred;
     uint32_t last_timestamp;
-    uint32_t last_total_runtime;
+    uint32_t last_total_runtime_sec;
     uint32_t error_code;
 } logger_header_t;
 
@@ -65,7 +67,8 @@ IRAM_ATTR void panic_capture(void);
 static const char* level_to_string(const uint8_t level);
 static esp_err_t init_littlefs(void);
 static esp_err_t recover_from_panic(void);
-static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_buffer, uint16_t index, uint8_t wrapped);
+static esp_err_t store_full_crash_log(uint32_t error_cause, const log_entry_t* input_buffer, uint16_t index,
+                                      uint8_t wrapped);
 
 esp_err_t logger_init_storage(void)
 {
@@ -154,7 +157,7 @@ static esp_err_t init_littlefs(void)
         .dont_mount = false,
     };
 
-    const esp_err_t ret = esp_vfs_littlefs_register(&conf);
+    esp_err_t ret = esp_vfs_littlefs_register(&conf);
 
     if (ret != ESP_OK)
     {
@@ -163,13 +166,14 @@ static esp_err_t init_littlefs(void)
     }
 
     size_t total = 0, used = 0;
-    esp_littlefs_info("storage", &total, &used);
+    ret = esp_littlefs_info("storage", &total, &used);
 
     ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", total, used);
     return ret;
 }
 
-static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_buffer, uint16_t index, uint8_t wrapped)
+static esp_err_t store_full_crash_log(const uint32_t error_cause, const log_entry_t* input_buffer, const uint16_t index,
+                                      const uint8_t wrapped)
 {
     char path[64] = {0};
 
@@ -188,10 +192,10 @@ static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_b
     if (exists)
     {
         // read ONLY header
-        size_t r = fread(&header,
-                         sizeof(logger_header_t),
-                         1,
-                         f);
+        const size_t r = fread(&header,
+                               sizeof(logger_header_t),
+                               1,
+                               f);
 
         if (r != 1 || header.magic != LOGGER_MAGIC)
         {
@@ -199,12 +203,14 @@ static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_b
             memset(&header, 0, sizeof(header));
         }
 
-        header.times_occured++;
+        header.times_occurred++;
         header.error_code = error_cause;
-
+        header.last_timestamp = get_current_time_ms();
+        header.last_total_runtime_sec = get_total_runtime_sec();
+        header.write_index = index;
+        header.wrapped = wrapped;
         // move to beginning for overwrite
         rewind(f);
-        return ESP_OK;
     }
     else
     {
@@ -222,12 +228,12 @@ static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_b
 
         header.magic = LOGGER_MAGIC;
         header.version = LOGGER_VERSION;
-        header.times_occured = 1;
+        header.times_occurred = 1;
         header.error_code = error_cause;
         header.write_index = index;
         header.wrapped = wrapped;
-        // TODO Add current timestamp
-        // TODO Add total runtime timer
+        header.last_timestamp = get_current_time_ms();
+        header.last_total_runtime_sec = get_total_runtime_sec();
     }
 
     // =========================
@@ -242,7 +248,7 @@ static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_b
     // WRITE LOG ENTRIES
     // =========================
     fwrite(input_buffer,
-           sizeof(input_buffer),
+           sizeof(log_entry_t),
            CONFIG_LOG_MAX_RING_BUFFER_SIZE,
            f);
 
@@ -251,7 +257,7 @@ static esp_err_t store_full_crash_log(uint32_t error_cause, log_entry_t* input_b
     ESP_LOGI("LOGGER",
              "Crash log stored: %lu (count=%lu)",
              error_cause,
-             header.times_occured);
+             header.times_occurred);
 
     return ESP_OK;
 }
@@ -271,12 +277,11 @@ static esp_err_t recover_from_panic(void)
 
     header.magic = LOGGER_MAGIC;
     header.version = LOGGER_VERSION;
-    header.times_occured = 1;
-    header.error_code = g_panic_snapshot.error_code;
-    header.last_timestamp = g_panic_snapshot.timestamp;
+    header.times_occurred = 1;
+    //TODO: add error code mapping if needed
     header.write_index = g_panic_snapshot.write_index;
 
-    esp_err_t err = store_full_crash_log(
+    const esp_err_t err = store_full_crash_log(
         g_panic_snapshot.error_code,
         g_panic_snapshot.entries,
         g_panic_snapshot.write_index,
@@ -297,10 +302,7 @@ IRAM_ATTR void panic_capture()
 {
     g_panic_snapshot.magic = PANIC_MAGIC;
     // g_panic_snapshot.error_code = error_code;
-    g_panic_snapshot.reset_reason = esp_reset_reason();
-    g_panic_snapshot.timestamp = esp_log_timestamp();
 
-    const uint16_t start_index = log_index - CONFIG_LOG_PANIC_BUFFER_COUNT + 1;
     uint16_t size = CONFIG_LOG_PANIC_BUFFER_COUNT;
     if (log_index < CONFIG_LOG_PANIC_BUFFER_COUNT - 1)
     {
@@ -311,7 +313,11 @@ IRAM_ATTR void panic_capture()
 
     for (size_t i = 0; i < size; i++)
     {
-        const uint16_t idx = start_index + i;
+        int idx = (log_index - size + 1 + i);
+
+        if (idx < 0)
+            idx += CONFIG_LOG_MAX_RING_BUFFER_SIZE;
+
         g_panic_snapshot.entries[i] = log_buffer[idx];
     }
 }
