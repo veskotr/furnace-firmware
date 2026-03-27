@@ -18,6 +18,12 @@
 static const char* TAG = "hmi_coord";
 static QueueHandle_t s_cmd_queue = NULL;
 
+static const health_monitor_data_t hmi_coordinator_health_data = {
+    .component_id = CONFIG_NEXTION_COORDINATOR_COMPONENT_ID,
+    .component_name = "HMI Coordinator",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_NEXTION_COORDINATOR_HEARTBEAT_TIMEOUT_MS),
+};
+
 /* ── Deferred-send state ───────────────────────────────────────────
  *
  * While a file transfer (storage / file-reader) owns the UART we keep
@@ -190,6 +196,9 @@ static void hmi_coordinator_task(void* arg)
 {
     (void)arg;
     hmi_cmd_t cmd;
+    TickType_t last_heartbeat = xTaskGetTickCount();
+
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &hmi_coordinator_health_data);
 
     while (true)
     {
@@ -222,7 +231,21 @@ static void hmi_coordinator_task(void* arg)
         if (got != pdTRUE)
         {
             nextion_run_tick(); /* pause-time display updates */
+            TickType_t now = xTaskGetTickCount();
+            if ((now - last_heartbeat) >= pdMS_TO_TICKS(2000)) {
+                event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &hmi_coordinator_health_data);
+                last_heartbeat = now;
+            }
             continue;
+        }
+
+        /* Heartbeat on successful command processing too */
+        {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - last_heartbeat) >= pdMS_TO_TICKS(2000)) {
+                event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &hmi_coordinator_health_data);
+                last_heartbeat = now;
+            }
         }
 
         /* ── If deferring, buffer instead of sending ──────────────── */

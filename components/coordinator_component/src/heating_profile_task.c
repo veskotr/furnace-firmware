@@ -5,6 +5,8 @@
 #include "pid_component.h"
 #include "coordinator_component_types.h"
 #include "coordinator_component_internal.h"
+#include "event_manager.h"
+#include "event_registry.h"
 
 #include <stdatomic.h>
 #include <string.h>
@@ -12,6 +14,12 @@
 #include "commands_dispatcher.h"
 
 static const char* TAG = "COORDINATOR_TASK";
+
+static const health_monitor_data_t coordinator_health_data = {
+    .component_id = CONFIG_COORDINATOR_COMPONENT_ID,
+    .component_name = "Coordinator",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_COORDINATOR_HEARTBEAT_TIMEOUT_MS),
+};
 
 typedef struct
 {
@@ -214,6 +222,7 @@ static void heating_profile_task(void* args)
 
         LOGGER_LOG_INFO(TAG, "Coordinator notified. Current Temperature: %.2f C",
                         ctx->current_temperature);
+        event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &coordinator_health_data);
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task exiting");
@@ -315,6 +324,8 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
     }
 
     LOGGER_LOG_INFO(TAG, "Coordinator task initialized");
+
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &coordinator_health_data);
 
     return ESP_OK;
 }
