@@ -14,4 +14,5 @@ idf_component_register(SRCS "main.c"
         nvs_flash
         modbus_master
         device_manager
-        temp_sensor_device)
+        temp_sensor_device
+        commands_dispatcher)

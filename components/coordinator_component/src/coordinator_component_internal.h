@@ -9,7 +9,7 @@
 #include "coordinator_component_types.h"
 #include "event_registry.h"
 
-#define INVALID_PROFILE_INDEX (size_t) 0xFFFFFFFF;
+#define INVALID_PROFILE_INDEX ((size_t) 0xFFFFFFFF)
 
 /**
  * @brief Pending live-update mailbox for manual-mode target changes.

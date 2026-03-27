@@ -4,19 +4,17 @@
 #include "commands_dispatcher_internal.h"
 #include "logger_component.h"
 
-static const char* TAG = "COMMANDS_DISPATCHER_HANDLERS";
+static const char *TAG = "COMMANDS_DISPATCHER_HANDLERS";
 
-
-esp_err_t init_command_handlers(commands_dispatcher_ctx_t* ctx)
+esp_err_t init_command_handlers(commands_dispatcher_ctx_t *ctx)
 {
     // Initialize default command handlers here if needed
-
 
     LOGGER_LOG_INFO(TAG, "Command handlers initialized");
     return ESP_OK;
 }
 
-esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t* ctx)
+esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t *ctx)
 {
     // Cleanup command handlers if needed
     if (commands_dispatcher_ctx == NULL || ctx == NULL)
@@ -29,8 +27,7 @@ esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t* ctx)
         ctx->command_handlers[i] = (handler_entry_t){
             .handler = NULL,
             .handler_arg = NULL,
-            .registered = false
-        };
+            .registered = false};
     }
 
     LOGGER_LOG_INFO(TAG, "Command handlers shutdown");
@@ -43,8 +40,7 @@ esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t* ctx)
 esp_err_t register_command_handler(
     const command_target_t target,
     const command_handler_t handler,
-    void* handler_arg
-)
+    void *handler_arg)
 {
     if (commands_dispatcher_ctx == NULL || handler == NULL)
     {
@@ -67,8 +63,7 @@ esp_err_t register_command_handler(
     commands_dispatcher_ctx->command_handlers[target] = (handler_entry_t){
         .handler = handler,
         .handler_arg = handler_arg,
-        .registered = true
-    };
+        .registered = true};
     LOGGER_LOG_INFO(TAG, "Registered command handler for target: %d", target);
     return ESP_OK;
 }
@@ -96,8 +91,7 @@ esp_err_t unregister_command_handler(command_target_t target)
     commands_dispatcher_ctx->command_handlers[target] = (handler_entry_t){
         .handler = NULL,
         .handler_arg = NULL,
-        .registered = false
-    };
+        .registered = false};
     LOGGER_LOG_INFO(TAG, "Unregistered command handler for target: %d", target);
 
     return ESP_OK;

@@ -69,7 +69,7 @@ esp_err_t device_manager_create_device(const void* device_ctx, const device_ops_
             device->name = name;
             device->ops = ops;
             device->id = i;
-            device->state = DEVICE_STATE_RUNNING;
+            device->state = DEVICE_STATE_IDLE;
             device->ctx = (void*)device_ctx;
 
             *out_device = device;
@@ -98,7 +98,7 @@ esp_err_t device_manager_read_device(const device_t* device, void* data_out)
 
 esp_err_t device_manager_write_device(const device_t* device, const device_write_cmd_t* cmd)
 {
-    if (device == NULL || device->state != DEVICE_STATE_RUNNING || device->ops == NULL || device->ops->write == NULL)
+    if (device == NULL || device->state == DEVICE_STATE_UNINITIALIZED || device->ops == NULL || device->ops->write == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }

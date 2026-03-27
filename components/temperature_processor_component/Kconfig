@@ -18,7 +18,7 @@ menu "Temperature Processor"
 
     config TEMP_PROCESSOR_COMPONENT_ID
         int "Temperature processor component ID"
-        default 2
+        default 3
 
     config TEMP_PROCESSOR_TEMPERATURE_BUFFER_SIZE
         int "Temperature processor buffer size"

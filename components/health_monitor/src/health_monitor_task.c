@@ -39,6 +39,8 @@ static void health_monitor_task(void* arg)
         for (uint8_t i = 0; i < CONFIG_HEARTH_BEAT_COUNT; i++)
         {
             heartbeat_entry_t* hb = &ctx->heartbeat[i];
+            if (!hb->registered) continue;
+
             const TickType_t silence = now - hb->last_seen_tick;
 
             if (silence > hb->max_silence_ticks)

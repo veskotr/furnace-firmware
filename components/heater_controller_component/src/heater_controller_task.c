@@ -1,6 +1,7 @@
 #include "heater_controller_internal.h"
 #include "utils.h"
 #include "sdkconfig.h"
+#include "event_manager.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -22,6 +23,12 @@ static const HeaterControllerConfig_t heater_controller_config = {
 static void check_error_and_post_event(const esp_err_t err);
 
 static float get_heater_target_power_level(const heater_controller_context_t* ctx);
+
+static const health_monitor_data_t heater_health_data = {
+    .component_id = CONFIG_HEATER_CONTROLLER_COMPONENT_ID,
+    .component_name = "Heater Controller",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_HEATER_CONTROLLER_HEARTBEAT_TIMEOUT_MS)
+};
 
 void heater_controller_task(void* args)
 {
@@ -48,6 +55,8 @@ void heater_controller_task(void* args)
             check_error_and_post_event(err);
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(off_time));
         }
+
+        event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &heater_health_data);
     }
 
     toggle_heater(HEATER_OFF); // Ensure heater is turned off on exit
@@ -70,13 +79,15 @@ esp_err_t init_heater_controller_task(heater_controller_context_t* ctx)
                                heater_controller_task,
                                heater_controller_config.task_name,
                                heater_controller_config.stack_size,
-                               NULL,
+                               ctx,
                                heater_controller_config.task_priority,
                                &ctx->task_handle) == pdPASS
                            ? ESP_OK
                            : ESP_FAIL,
                            ctx->task_handle = NULL,
                            "Failed to create heater controller task");
+
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &heater_health_data);
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task initialized");
 
