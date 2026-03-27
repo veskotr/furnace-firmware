@@ -6,7 +6,6 @@
 #include "logger_internal.h"
 #include "freertos/semphr.h"
 #include "esp_littlefs.h"
-#include "time-component.h"
 #include "time_component.h"
 
 #define CONFIG_LOG_MAX_TAG_LENGTH 16
@@ -311,7 +310,7 @@ IRAM_ATTR void panic_capture()
 
     g_panic_snapshot.write_index = size - 1;
 
-    for (size_t i = 0; i < size; i++)
+    for (uint16_t i = 0; i < size; i++)
     {
         int idx = (log_index - size + 1 + i);
 
