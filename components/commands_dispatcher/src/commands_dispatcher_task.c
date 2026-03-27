@@ -3,10 +3,18 @@
 #include "logger_component.h"
 #include "sdkconfig.h"
 #include "utils.h"
+#include "event_manager.h"
+#include "event_registry.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char* TAG = "COMMANDS_DISPATCHER_TASK";
+
+static const health_monitor_data_t dispatcher_health_data = {
+    .component_id = CONFIG_COMMANDS_DISPATCHER_COMPONENT_ID,
+    .component_name = "Commands Dispatcher",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_COMMANDS_DISPATCHER_HEARTBEAT_TIMEOUT_MS),
+};
 
 static const task_config_t commands_dispatcher_task_config = {
     .task_name = CONFIG_COMMANDS_DISPATCHER_TASK_NAME,
@@ -24,8 +32,12 @@ static void commands_dispatcher_task(void* args)
 
     while (ctx->dispatcher_running)
     {
-        // Wait for a command to be available in the queue
-        if (xQueueReceive(ctx->command_queue, &received_command, portMAX_DELAY) == pdTRUE)
+        // Wait for a command with a finite timeout so we can send heartbeats
+        // Note: if the command handlers can take a long time to execute, we may want to move the heartbeat posting inside the handler execution
+        // loop or use a separate timer to ensure timely heartbeats.
+        // The only behavioral difference is that instead of sleeping indefinitely, the task wakes up every 2 seconds to say "I'm alive" 
+        // and then goes back to waiting.
+        if (xQueueReceive(ctx->command_queue, &received_command, pdMS_TO_TICKS(2000)) == pdTRUE)
         {
             LOGGER_LOG_DEBUG(TAG, "Received command for target: %d", received_command.target);
 
@@ -55,6 +67,8 @@ static void commands_dispatcher_task(void* args)
                 LOGGER_LOG_ERROR(TAG, "Invalid command target: %d", received_command.target);
             }
         }
+
+        event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &dispatcher_health_data);
     }
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task stopping");
@@ -81,6 +95,9 @@ esp_err_t init_task(commands_dispatcher_ctx_t* ctx)
                            "Failed to create Commands Dispatcher task");
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task initialized");
+
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &dispatcher_health_data);
+
     return ESP_OK;
 }
 

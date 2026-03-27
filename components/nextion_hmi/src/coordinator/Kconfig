@@ -21,4 +21,16 @@ menu "HMI Coordinator Task"
             coordinator processes them. Commands arrive at human
             interaction speed, so a small queue is sufficient.
 
+    config NEXTION_COORDINATOR_COMPONENT_ID
+        int "HMI Coordinator Component ID"
+        default 5
+        help
+            Unique identifier for the HMI Coordinator task used by the health monitor.
+
+    config NEXTION_COORDINATOR_HEARTBEAT_TIMEOUT_MS
+        int "HMI Coordinator Heartbeat Timeout (ms)"
+        default 5000
+        help
+            Maximum time between heartbeats for the HMI coordinator task.
+
 endmenu

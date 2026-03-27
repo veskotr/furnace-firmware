@@ -58,4 +58,16 @@ menu "Coordinator"
             this many extra minutes. If the temperature still hasn't
             been reached, the stage advances with a warning.
 
+    config COORDINATOR_COMPONENT_ID
+        int "Coordinator Component ID"
+        default 4
+        help
+            Unique identifier for the Coordinator component used by the health monitor.
+
+    config COORDINATOR_HEARTBEAT_TIMEOUT_MS
+        int "Coordinator Heartbeat Timeout (ms)"
+        default 5000
+        help
+            Maximum time between heartbeats before the health monitor considers the coordinator unhealthy.
+
 endmenu

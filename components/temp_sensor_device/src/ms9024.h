@@ -13,10 +13,10 @@
 #define MS9024_REG_FIN        26   /* Input filter   (LSByte)              */
 #define MS9024_REG_FIRMWARE   126  /* Firmware version (Int)               */
 #define MS9024_REG_CF         447  /* Celsius/Fahrenheit (Coil, 0=C 1=F)  */
-#define MS9024_REG_T2         730  /* Cold junction T2 (Float, +512)       */
 #define MS9024_REG_AOUT       726  /* Analog output value (Float, +512)    */
+#define MS9024_REG_PV         728  /* Process value (Float, 2 regs)        */
+#define MS9024_REG_T2         730  /* Cold junction T2 (Float, +512)       */
 #define MS9024_REG_IN_OFFSET  524  /* Input offset (Float, +512)           */
-#define MS9024_REG_PV_RAW     216  /* PV in EXP format (no +512)           */
 
 /* Sensor type IDs */
 #define SENS_PT100_385   16

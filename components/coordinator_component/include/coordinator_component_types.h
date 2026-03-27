@@ -4,6 +4,7 @@
 
 typedef struct
 {
+    uint32_t profile_index;
     float current_temperature;
     float target_temperature;
     bool is_active;

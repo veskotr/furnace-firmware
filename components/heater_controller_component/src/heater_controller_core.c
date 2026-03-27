@@ -32,10 +32,6 @@ esp_err_t init_heater_controller_component(void)
                            shutdown_heater_controller_component(),
                            "Failed to initialize heater controller");
 
-    CHECK_ERR_LOG_CALL_RET(init_heater_controller_task(g_heater_controller_context),
-                           shutdown_heater_controller_component(),
-                           "Failed to initialize heater controller task");
-
     g_heater_controller_context->power_mutex = xSemaphoreCreateMutex();
     if (g_heater_controller_context->power_mutex == NULL)
     {
@@ -43,6 +39,10 @@ esp_err_t init_heater_controller_component(void)
         shutdown_heater_controller_component();
         return ESP_ERR_NO_MEM;
     }
+
+    CHECK_ERR_LOG_CALL_RET(init_heater_controller_task(g_heater_controller_context),
+                           shutdown_heater_controller_component(),
+                           "Failed to initialize heater controller task");
 
     g_heater_controller_context->initialized = true;
 

@@ -22,4 +22,16 @@ menu "Commands Dispatcher"
         default 5
         range 1 10
 
+    config COMMANDS_DISPATCHER_COMPONENT_ID
+        int "Commands Dispatcher Component ID"
+        default 7
+        help
+            Unique identifier for the Commands Dispatcher used by the health monitor.
+
+    config COMMANDS_DISPATCHER_HEARTBEAT_TIMEOUT_MS
+        int "Commands Dispatcher Heartbeat Timeout (ms)"
+        default 10000
+        help
+            Maximum time between heartbeats for the Commands Dispatcher task.
+
 endmenu

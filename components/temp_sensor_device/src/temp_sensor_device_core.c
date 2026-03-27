@@ -40,13 +40,14 @@ esp_err_t temp_sensor_create(temp_sensor_device_t** device)
             ctx_pool[i].id = i;
             ctx_pool[i].last_temperature = 0.0f;
             ctx_pool[i].modbus_address = CONFIG_TEMP_SENSOR_MODBUS_START_ADDRESS;
-            ctx_pool[i].modbus_register = MS9024_REG_AOUT;
+            ctx_pool[i].modbus_register = MS9024_REG_PV;
             CHECK_ERR_LOG_RET(
                 device_manager_create_device(&ctx_pool[i], &device_ops, "temp_sensor", DEVICE_TYPE_TEMP_SENSOR, &
                     ctx_pool
                     [i].device_handle),
                 "Failed to create temp sensor device");
             LOGGER_LOG_INFO(TAG, "Temp sensor device created with ID %d", ctx_pool[i].id);
+            *device = &ctx_pool[i];
             return ESP_OK;
         }
     }
@@ -128,7 +129,7 @@ static esp_err_t temp_sensor_init(void* ctx)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ms9024_log_config(device_ctx->modbus_address,MS9024_REG_PV_RAW);
+    ms9024_log_config(device_ctx->modbus_address, MS9024_REG_PV);
 
     return ESP_OK;
 }
@@ -159,7 +160,7 @@ static esp_err_t temp_sensor_write(void* ctx, const device_write_cmd_t* cmd)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (cmd == NULL || cmd->params == NULL)
+    if (cmd == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
@@ -168,6 +169,10 @@ static esp_err_t temp_sensor_write(void* ctx, const device_write_cmd_t* cmd)
     {
     case TEMP_SENSOR_DEVICE_COMMAND_SET_REGISTER_VALUE:
         {
+            if (cmd->params == NULL)
+            {
+                return ESP_ERR_INVALID_ARG;
+            }
             temp_sensor_device_set_register_value_cmd_params_t* params =
                 (temp_sensor_device_set_register_value_cmd_params_t*)cmd->params;
 

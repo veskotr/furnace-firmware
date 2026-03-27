@@ -107,6 +107,8 @@ esp_err_t start_temp_processor_task(temp_processor_context_t* ctx)
                            ctx->task_handle = NULL,
                            "Failed to create temperature processor task");
 
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &health_monitor_data);
+
     return ESP_OK;
 }
 

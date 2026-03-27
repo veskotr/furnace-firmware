@@ -4,6 +4,8 @@
 #include "hmi_coordinator_internal.h"
 #include "nextion_file_reader_internal.h"
 #include "nextion_storage_internal.h"
+#include "event_manager.h"
+#include "event_registry.h"
 
 #include "driver/uart.h"
 #include "logger_component.h"
@@ -11,6 +13,12 @@
 #include "freertos/task.h"
 
 static const char *TAG = "nextion_rx";
+
+static const health_monitor_data_t nextion_rx_health_data = {
+    .component_id = CONFIG_NEXTION_RX_COMPONENT_ID,
+    .component_name = "Nextion RX",
+    .timeout_ticks = pdMS_TO_TICKS(CONFIG_NEXTION_RX_HEARTBEAT_TIMEOUT_MS),
+};
 
 static void nextion_rx_task(void *arg)
 {
@@ -23,6 +31,9 @@ static void nextion_rx_task(void *arg)
     uint32_t rx_bytes = 0;
     uint32_t rx_lines = 0;
     TickType_t last_log = xTaskGetTickCount();
+    TickType_t last_heartbeat = xTaskGetTickCount();
+
+    event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &nextion_rx_health_data);
 
     while (true) {
         // When file reader or storage is active, it handles UART directly - don't compete
@@ -50,6 +61,10 @@ static void nextion_rx_task(void *arg)
                          nextion_file_reader_active() ? 1 : 0,
                          nextion_storage_active() ? 1 : 0);
                 last_log = now;
+            }
+            if ((now - last_heartbeat) >= pdMS_TO_TICKS(2000)) {
+                event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &nextion_rx_health_data);
+                last_heartbeat = now;
             }
             continue;
         }
@@ -135,6 +150,11 @@ static void nextion_rx_task(void *arg)
                      nextion_file_reader_active() ? 1 : 0,
                      nextion_storage_active() ? 1 : 0);
             last_log = now;
+        }
+
+        if ((now - last_heartbeat) >= pdMS_TO_TICKS(2000)) {
+            event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &nextion_rx_health_data);
+            last_heartbeat = now;
         }
     }
 }

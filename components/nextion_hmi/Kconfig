@@ -36,6 +36,18 @@ if NEXTION_HMI_ENABLED
             int "RX task priority"
             default 10
 
+        config NEXTION_RX_COMPONENT_ID
+            int "Nextion RX Component ID"
+            default 6
+            help
+                Unique identifier for the Nextion RX task used by the health monitor.
+
+        config NEXTION_RX_HEARTBEAT_TIMEOUT_MS
+            int "Nextion RX Heartbeat Timeout (ms)"
+            default 5000
+            help
+                Maximum time between heartbeats for the Nextion RX task.
+
     endmenu
 
 endif # NEXTION_HMI_ENABLED

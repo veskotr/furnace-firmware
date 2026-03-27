@@ -52,7 +52,7 @@ esp_err_t ms9024_read_uint16(const uint8_t slave_address,
     uint16_t output_buffer;
     CHECK_ERR_LOG_RET_FMT(modbus_master_read_register(slave_address, reg, &output_buffer),
                           "Failed to read uint16 from reg %d", reg);
-    *out = modbus_master_swap_u16(output_buffer);
+    *out = output_buffer;
     return ESP_OK;
 }
 
