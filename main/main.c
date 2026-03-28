@@ -90,7 +90,7 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
-                  "Failed to set temp sensor device state to running");*/
+                  "Failed to set temp sensor device state to running");
 
     for (int i = 0; i < 100; i++)
     {
