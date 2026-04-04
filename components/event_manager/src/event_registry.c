@@ -1,5 +1,5 @@
 #include "event_registry.h"
-#include "logger_component.h"
+#include "logger_core.h"
 
 static const char *TAG = "EVENT_REGISTRY";
 

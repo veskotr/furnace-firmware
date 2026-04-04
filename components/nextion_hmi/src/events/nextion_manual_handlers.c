@@ -26,7 +26,7 @@
 #include "heating_program_validation.h"
 #include "event_manager.h"
 #include "event_registry.h"
-#include "logger_component.h"
+#include "logger_core.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

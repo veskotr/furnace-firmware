@@ -1,5 +1,5 @@
 #include "temperature_monitor_component.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"

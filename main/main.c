@@ -1,4 +1,4 @@
-#include "logger_component.h"
+#include "logger_core.h"
 #include "commands_dispatcher.h"
 #include "temperature_processor_component.h"
 #include "coordinator_component.h"
@@ -11,23 +11,22 @@
 #include "sdkconfig.h"
 #include "health_monitor.h"
 #include "device_manager.h"
+#include "esp_log.h"
 #include "modbus_master.h"
 #include "temp_sensor_device.h"
 #include "nvs_flash.h"
+#include "debug_console.h"
 
 static const char *TAG = "main";
 
-static void logger_output_callback(const char* formatted_log)
-{
-    // Output log to console
-    printf("%s\n", formatted_log);
-
-    // Optionally, store log in NVS or send to external storage
-    // For example, you could implement a circular buffer in NVS to store recent logs
-}
-
 void app_main(void)
 {
+    const esp_err_t debug_console_err = debug_console_init();
+    if (debug_console_err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize debug console: %s", esp_err_to_name(debug_console_err));
+    }
+
     esp_err_t nvs_err = nvs_flash_init();
     if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -97,9 +96,7 @@ void app_main(void)
         LOGGER_LOG_INFO(TAG, "Log message: %d", i);
     }
     vTaskDelay(pdMS_TO_TICKS(10000));
-    /* logger_store_log_buffer();
-    logger_dump_from_nvs();
-    logger_iterate_from_nvs(logger_output_callback); */
+    logger_store_full_log(0xDEADBEEF);
 
     while (1)
     {

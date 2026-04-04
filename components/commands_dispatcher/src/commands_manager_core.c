@@ -1,5 +1,5 @@
 #include "commands_dispatcher_internal.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "sdkconfig.h"
 
 static const char* TAG = "COMMANDS_DISPATCHER";

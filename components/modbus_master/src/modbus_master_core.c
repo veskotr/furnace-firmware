@@ -4,7 +4,7 @@
 #include "esp_err.h"
 #include "esp_modbus_common.h"
 #include "esp_modbus_master.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "modbus_master.h"
 #include "utils.h"
 

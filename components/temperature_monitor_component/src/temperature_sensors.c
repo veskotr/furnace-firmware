@@ -1,5 +1,5 @@
 #include "temperature_monitor_internal.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "spi_master_component.h"
 #include "max31865_registers.h"
 #include <math.h>

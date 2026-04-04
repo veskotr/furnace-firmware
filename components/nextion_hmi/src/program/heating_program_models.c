@@ -1,6 +1,6 @@
 #include "core_types.h"
 #include "heating_program_models_internal.h"
-#include "logger_component.h"
+#include "logger_core.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"

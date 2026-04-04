@@ -15,4 +15,5 @@ idf_component_register(SRCS "main.c"
         modbus_master
         device_manager
         temp_sensor_device
-        commands_dispatcher)
+        commands_dispatcher
+        debug_console)

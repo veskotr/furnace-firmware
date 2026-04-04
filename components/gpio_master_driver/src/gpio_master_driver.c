@@ -2,7 +2,7 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "sdkconfig.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"

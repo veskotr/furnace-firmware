@@ -5,7 +5,7 @@
 #include "nextion_transport_internal.h"
 #include "heating_program_models_internal.h"
 
-#include "logger_component.h"
+#include "logger_core.h"
 
 static const char *TAG = "nextion_hmi";
 

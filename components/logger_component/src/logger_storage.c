@@ -2,11 +2,12 @@
 // Created by vesko on 22.3.2026 г..
 //
 #include "esp_log.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "logger_internal.h"
 #include "freertos/semphr.h"
 #include "esp_littlefs.h"
 #include "time_component.h"
+#include "dirent.h"
 
 #define CONFIG_LOG_MAX_TAG_LENGTH 16
 
@@ -49,10 +50,13 @@ typedef struct
 } logger_header_t;
 
 static const char* TAG = "LOGGER_STORAGE";
+static const char* PARTITION_LABEL = "storage";
+static const char* BASE_PATH = "/crash_dumps";
 
-SemaphoreHandle_t log_mutex;
+static SemaphoreHandle_t log_mutex;
 
 static log_entry_t log_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
+static log_entry_t read_buffer[CONFIG_LOG_MAX_RING_BUFFER_SIZE];
 
 static size_t log_index = 0;
 static bool log_wrapped = false;
@@ -100,7 +104,7 @@ esp_err_t logger_init_storage(void)
     return ret;
 }
 
-void store_full_log(uint32_t error_cause)
+void logger_store_full_log(const uint32_t error_cause)
 {
     store_full_crash_log(error_cause, log_buffer, log_index, log_wrapped);
 }
@@ -150,8 +154,8 @@ static const char* level_to_string(const uint8_t level)
 static esp_err_t init_littlefs(void)
 {
     const esp_vfs_littlefs_conf_t conf = {
-        .base_path = "/littlefs",
-        .partition_label = "storage",
+        .base_path = BASE_PATH,
+        .partition_label = PARTITION_LABEL,
         .format_if_mount_failed = true,
         .dont_mount = false,
     };
@@ -165,7 +169,7 @@ static esp_err_t init_littlefs(void)
     }
 
     size_t total = 0, used = 0;
-    ret = esp_littlefs_info("storage", &total, &used);
+    ret = esp_littlefs_info(PARTITION_LABEL, &total, &used);
 
     ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", total, used);
     return ret;
@@ -177,7 +181,7 @@ static esp_err_t store_full_crash_log(const uint32_t error_cause, const log_entr
     char path[64] = {0};
 
     snprintf(path, sizeof(path),
-             "/littlefs/err_%lu.bin", error_cause);
+             "%s/err_%lu.bin", BASE_PATH, error_cause);
 
     FILE* f = fopen(path, "rb+");
 
@@ -238,18 +242,29 @@ static esp_err_t store_full_crash_log(const uint32_t error_cause, const log_entr
     // =========================
     // WRITE HEADER
     // =========================
-    fwrite(&header,
-           sizeof(header),
-           1,
-           f);
+    if (fwrite(&header,
+               sizeof(header),
+               1,
+               f) != 1)
+    {
+        ESP_LOGE("LOGGER", "Failed to write header");
+        fclose(f);
+        return ESP_FAIL;
+    }
 
     // =========================
     // WRITE LOG ENTRIES
     // =========================
-    fwrite(input_buffer,
-           sizeof(log_entry_t),
-           CONFIG_LOG_MAX_RING_BUFFER_SIZE,
-           f);
+    const uint16_t expected_entries = wrapped ? CONFIG_LOG_MAX_RING_BUFFER_SIZE : index + 1;
+    if (fwrite(input_buffer,
+               sizeof(log_entry_t),
+               expected_entries,
+               f) != expected_entries)
+    {
+        ESP_LOGE("LOGGER", "Failed to write log entries");
+        fclose(f);
+        return ESP_FAIL;
+    }
 
     fclose(f);
 
@@ -303,20 +318,124 @@ IRAM_ATTR void panic_capture()
     // g_panic_snapshot.error_code = error_code;
 
     uint16_t size = CONFIG_LOG_PANIC_BUFFER_COUNT;
-    if (log_index < CONFIG_LOG_PANIC_BUFFER_COUNT - 1)
-    {
-        size = log_index + 1;
-    }
 
+    if (!log_wrapped)
+    {
+        size = log_index < CONFIG_LOG_PANIC_BUFFER_COUNT
+                   ? log_index
+                   : CONFIG_LOG_PANIC_BUFFER_COUNT;
+    }
     g_panic_snapshot.write_index = size - 1;
 
     for (uint16_t i = 0; i < size; i++)
     {
-        int idx = (log_index - size + 1 + i);
+        int idx = (log_index - size + 1 + i + CONFIG_LOG_MAX_RING_BUFFER_SIZE) % CONFIG_LOG_MAX_RING_BUFFER_SIZE;
 
         if (idx < 0)
             idx += CONFIG_LOG_MAX_RING_BUFFER_SIZE;
 
         g_panic_snapshot.entries[i] = log_buffer[idx];
     }
+}
+
+esp_err_t list_crash_logs(void)
+{
+    DIR *dir = opendir(BASE_PATH);
+    if (!dir)
+    {
+        ESP_LOGE(TAG, "Failed to open log directory");
+        return ESP_FAIL;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_type == DT_REG)
+        {
+            ESP_LOGI(TAG, "Found crash log: %s", entry->d_name);
+        }
+    }
+    closedir(dir);
+    return ESP_OK;
+}
+
+esp_err_t read_log(char *filename)
+{
+    char path[64] = {0};
+    snprintf(path, sizeof(path), "%s/%s", BASE_PATH, filename);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        printf("Failed to open file\n");
+        return ESP_FAIL;
+    }
+
+    // =========================
+    // 1. Read header
+    // =========================
+    logger_header_t header;
+    if (fread(&header, sizeof(header), 1, f) != 1) {
+        printf("Failed to read header\n");
+        fclose(f);
+        return ESP_FAIL;
+    }
+
+    if (header.magic != LOGGER_MAGIC) {
+        printf("Invalid log file\n");
+        fclose(f);
+        return ESP_FAIL;
+    }
+
+    printf("Log info:\n");
+    printf("  Error: %lu\n", header.error_code);
+    printf("  Occurrences: %lu\n", header.times_occurred);
+    printf("  Last timestamp: %lu\n", header.last_timestamp);
+    printf("  Wrapped: %d\n", header.wrapped);
+
+    // =========================
+    // 2. Read entries
+    // =========================
+    const uint16_t count = header.wrapped
+        ? CONFIG_LOG_MAX_RING_BUFFER_SIZE
+        : header.write_index + 1;
+
+    const size_t read = fread(read_buffer,
+                        sizeof(log_entry_t),
+                        count,
+                        f);
+
+    if (read != count) {
+        printf("Partial read: %zu/%u\n", read, count);
+    }
+
+    fclose(f);
+
+    // =========================
+    // 3. Print correctly ordered
+    // =========================
+    if (header.wrapped) {
+        // ring buffer → start from write_index
+        for (uint16_t i = 0; i < count; i++) {
+            uint16_t idx = (header.write_index + 1 + i) % count;
+            log_entry_t *entry = &read_buffer[idx];
+
+            printf("[%lu ms] %s/%s: %s\n",
+                   entry->timestamp,
+                   level_to_string(entry->level),
+                   entry->tag,
+                   entry->message);
+        }
+    } else {
+        for (uint16_t i = 0; i < count; i++) {
+            log_entry_t *entry = &read_buffer[i];
+
+            printf("[%lu ms] %s/%s: %s\n",
+                   entry->timestamp,
+                   level_to_string(entry->level),
+                   entry->tag,
+                   entry->message);
+        }
+    }
+
+    return ESP_OK;
 }

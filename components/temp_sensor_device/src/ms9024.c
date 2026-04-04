@@ -11,7 +11,7 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "utils.h"
 #include "modbus_utils.h"
 

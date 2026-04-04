@@ -1,4 +1,4 @@
-#include "logger_component.h"
+#include "logger_core.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -86,8 +86,15 @@ void logger_init(void)
     xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
                 NULL);
 
-    const esp_err_t err = logger_init_storage();
-    if(err != ESP_OK){
+    esp_err_t err = logger_init_cli();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to init logger CLI: %s", esp_err_to_name(err));
+    }
+
+    err = logger_init_storage();
+    if (err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Failed to init logger: %s", esp_err_to_name(err));
     }
 

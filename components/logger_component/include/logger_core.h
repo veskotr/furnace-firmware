@@ -1,7 +1,8 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "sdkconfig.h"
-#include "esp_attr.h"
 
 typedef enum
 {
@@ -57,7 +58,7 @@ typedef void (*logger_output_fn_t)(const char* line);
 
 void logger_init(void);
 void logger_send(log_level_t log_level, const char *tag, const char *message, ...);
-void store_full_log();
+void logger_store_full_log(uint32_t error_cause);
 
 #define logger_send_info(tag, fmt, ...) logger_send(LOG_LEVEL_INFO, tag, fmt, ##__VA_ARGS__)
 #define logger_send_warn(tag, fmt, ...) logger_send(LOG_LEVEL_WARN, tag, fmt, ##__VA_ARGS__)

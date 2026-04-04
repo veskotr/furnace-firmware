@@ -1,5 +1,5 @@
 # Name,   Type, SubType, Offset,  Size
-nvs,      data, nvs,     0x9000,  0x20000   # 128 KB
+nvs,      data, nvs,     0x9000,  0x20000
 phy_init, data, phy,     0x29000, 0x1000
-factory,  app,  factory, 0x30000, 0x200000  # 2 MB
-storage,  data, littlefs, 0x230000,0x5D0000   # ~6 MB
+factory,  app,  factory, 0x30000, 0x200000
+storage,  data, littlefs, 0x230000,0x5D0000

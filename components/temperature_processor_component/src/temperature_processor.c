@@ -1,5 +1,5 @@
 #include "temperature_processor_internal.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "sdkconfig.h"
 #include <float.h>
 

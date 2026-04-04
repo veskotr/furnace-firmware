@@ -1,6 +1,6 @@
 #include "temperature_profile_controller.h"
 #include "sdkconfig.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include <math.h>
 #include <string.h>
 

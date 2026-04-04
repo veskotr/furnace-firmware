@@ -6,7 +6,7 @@
 #include "event_registry.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "logger_component.h"
+#include "logger_core.h"
 
 #define RUN_INDICATOR_GPIO CONFIG_RUN_INDICATOR_GPIO
 

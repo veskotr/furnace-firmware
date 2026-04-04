@@ -10,7 +10,7 @@
 #include "heating_program_models_internal.h"
 #include "heating_program_graph_internal.h"
 #include "heating_program_validation.h"
-#include "logger_component.h"
+#include "logger_core.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 

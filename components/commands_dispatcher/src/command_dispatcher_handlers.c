@@ -2,7 +2,7 @@
 // Created by vesko on 13.1.2026 г..
 //
 #include "commands_dispatcher_internal.h"
-#include "logger_component.h"
+#include "logger_core.h"
 
 static const char *TAG = "COMMANDS_DISPATCHER_HANDLERS";
 
