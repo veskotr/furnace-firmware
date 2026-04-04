@@ -4,7 +4,7 @@
 
 #include "utils.h"
 #include "device_manager_internal.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "sdkconfig.h"
 #include "event_manager.h"
 #include "furnace_error_types.h"

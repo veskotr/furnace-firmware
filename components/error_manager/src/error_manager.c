@@ -1,6 +1,6 @@
 #include "error_manager.h"
 #include <sdkconfig.h>
-#include "logger_core.h"
+#include "logger_component.h"
 
 static const char* TAG = "ERROR_MANAGER";
 

@@ -2,7 +2,7 @@
 // Created by vesko on 22.3.2026 г..
 //
 #include "esp_log.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "logger_internal.h"
 #include "freertos/semphr.h"
 #include "esp_littlefs.h"

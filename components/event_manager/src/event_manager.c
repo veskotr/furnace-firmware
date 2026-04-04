@@ -1,5 +1,5 @@
 #include "event_manager.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "utils.h"
 #include "freertos/FreeRTOS.h"
 #include <stdbool.h>

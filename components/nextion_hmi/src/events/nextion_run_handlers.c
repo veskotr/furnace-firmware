@@ -12,7 +12,7 @@
 #include "heating_program_graph_internal.h"
 #include "event_manager.h"
 #include "event_registry.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "commands_dispatcher.h"
 
 #include <stdio.h>

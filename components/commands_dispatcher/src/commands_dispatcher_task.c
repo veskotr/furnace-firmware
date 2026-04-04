@@ -1,6 +1,6 @@
 #include "commands_dispatcher_internal.h"
 #include "core_types.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "sdkconfig.h"
 #include "utils.h"
 #include "event_manager.h"

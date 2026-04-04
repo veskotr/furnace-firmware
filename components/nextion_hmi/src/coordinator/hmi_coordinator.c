@@ -6,7 +6,7 @@
 #include "nextion_file_reader_internal.h"
 #include "nextion_storage_internal.h"
 #include "heating_program_models_internal.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "event_manager.h"
 #include "event_registry.h"
 #include "freertos/FreeRTOS.h"

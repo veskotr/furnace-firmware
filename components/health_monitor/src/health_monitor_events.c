@@ -1,7 +1,7 @@
 #include "health_monitor_internal.h"
 #include "event_manager.h"
 #include "event_registry.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "utils.h"
 
 static const char *TAG = "HEALTH_MONITOR_EVENTS";

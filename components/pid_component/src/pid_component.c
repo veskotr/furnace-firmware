@@ -1,5 +1,5 @@
 #include "pid_component.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "PID_COMPONENT";

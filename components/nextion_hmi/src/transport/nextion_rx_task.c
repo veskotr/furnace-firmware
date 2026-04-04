@@ -8,7 +8,7 @@
 #include "event_registry.h"
 
 #include "driver/uart.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 

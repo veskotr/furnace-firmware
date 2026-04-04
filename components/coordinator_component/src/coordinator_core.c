@@ -1,5 +1,5 @@
 #include "coordinator_component.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "coordinator_component_internal.h"
 #include "utils.h"
 #include "sdkconfig.h"

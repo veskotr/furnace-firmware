@@ -1,4 +1,4 @@
-#include "logger_core.h"
+#include "logger_component.h"
 #include "commands_dispatcher.h"
 #include "temperature_processor_component.h"
 #include "coordinator_component.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "logger_core.h"
+#include "logger_component.h"
 #include "esp_err.h"
 
 // Check error and log a message (continue)

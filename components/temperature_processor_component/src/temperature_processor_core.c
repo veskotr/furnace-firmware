@@ -1,5 +1,5 @@
 #include "temperature_processor_component.h"
-#include "logger_core.h"
+#include "logger_component.h"
 #include "esp_event.h"
 #include "temperature_processor_internal.h"
 #include "utils.h"

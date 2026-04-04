@@ -2,7 +2,7 @@
 // Created by vesko on 22.3.2026 г..
 //
 #pragma once
-#include "logger_core.h"
+#include "logger_component.h"
 #include "freertos/FreeRTOS.h"
 
 esp_err_t logger_init_storage(void);
