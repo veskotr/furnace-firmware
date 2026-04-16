@@ -38,25 +38,24 @@ menu "Coordinator"
             has been reached AND the measured temperature drops below
             this value.
 
-    config COORDINATOR_SETTLE_WINDOW_MIN
-        int "Settle window after stage time expires (minutes)"
-        default 3
-        range 1 10
-        help
-            When a stage's time has elapsed and the temperature is within
-            tolerance of the target, the controller gives this many extra
-            minutes for the PID to converge to the exact target before
-            advancing to the next stage.
-
-    config COORDINATOR_MAX_STAGE_EXTENSION_MIN
-        int "Max stage extension when temp not reached (minutes)"
+    config COORDINATOR_OVERSHOOT_THRESHOLD_C
+        int "Maximum allowed overshoot above setpoint (C)"
         default 30
-        range 5 120
+        range 5 100
         help
-            When a stage's time has elapsed but the temperature is NOT
-            within tolerance of the target, the stage is extended up to
-            this many extra minutes. If the temperature still hasn't
-            been reached, the stage advances with a warning.
+            If the measured temperature exceeds the current setpoint by
+            more than this value, the program is emergency-stopped and
+            the heater is cut. Protects against runaway temperatures.
+
+    config COORDINATOR_STALL_CHECK_MS
+        int "Heating stall detection window (ms)"
+        default 180000
+        range 60000 600000
+        help
+            During HEATING, if the measured temperature has not risen by
+            at least the expected amount (based on the setpoint ramp) within
+            this time window, the program is paused and a stall error is
+            reported.  Default is 180000 ms (3 minutes).
 
     config COORDINATOR_COMPONENT_ID
         int "Coordinator Component ID"
