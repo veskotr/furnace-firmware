@@ -111,6 +111,13 @@ bool parse_optional_int(const char *text, int *out_value, bool *is_set)
         return true;
     }
 
+    /* "ASAP" marks a cooling stage — time is 0 (advance on temp only) */
+    if (strcmp(trimmed, "ASAP") == 0) {
+        *out_value = 0;
+        *is_set = true;
+        return true;
+    }
+
     int value = 0;
     if (!parse_int(trimmed, &value)) {
         return false;
@@ -134,6 +141,13 @@ bool parse_optional_delta_x10(const char *text, int *out_value_x10, bool *is_set
     char *trimmed = trim_in_place((char *)text);
     if (trimmed[0] == '\0') {
         *is_set = false;
+        return true;
+    }
+
+    /* "CD" marks a cooling stage — delta is irrelevant, store as 0 */
+    if (strcmp(trimmed, "CD") == 0) {
+        *out_value_x10 = 0;
+        *is_set = true;
         return true;
     }
 

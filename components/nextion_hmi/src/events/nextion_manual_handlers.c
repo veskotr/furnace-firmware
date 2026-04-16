@@ -128,7 +128,7 @@ static void start_manual_program(void)
     }
 
     program_draft_t program;
-    hmi_get_run_program(&program);
+    program_draft_get(&program);
 
     coordinator_command_data_t data = {
         .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
