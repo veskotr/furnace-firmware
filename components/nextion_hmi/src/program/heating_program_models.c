@@ -18,6 +18,7 @@ static float s_current_temp_f = 23.0f;
 static int s_ambient_temp_c = 23;    // User-settable ambient temp, persisted to NVS
 static int s_current_kw = 0;
 static uint32_t s_operational_time_sec = 0;  // Total operational time, persisted to NVS
+static uint32_t s_op_time_unsaved_sec = 0;   // Seconds accumulated since last NVS commit
 static bool s_manual_mode_active = false;
 static int  s_manual_target_temp_c = 20;     // Default = MIN_TEMPERATURE_C
 static int  s_manual_delta_t_x10 = 10;       // Default 1.0 C/min (stored as x10)
@@ -30,6 +31,11 @@ static SemaphoreHandle_t s_program_mutex = NULL;
 #define NVS_KEY_OP_TIME "op_time_s"
 #define NVS_KEY_FAN_MODE "fan_mode"
 #define NVS_KEY_COOLDOWN "cool_rate"
+
+/* Op-time NVS write throttle: commit at most once per minute while running.
+ * Bounds worst-case data loss on power cut to ~60 s, while keeping flash
+ * wear at ~1440 commits/day even if the furnace ran 24/7. */
+#define OP_TIME_NVS_WRITE_INTERVAL_SEC 60
 
 void program_models_init(void)
 {
@@ -227,15 +233,83 @@ void program_add_operational_time_sec(uint32_t seconds)
 {
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_operational_time_sec += seconds;
+    s_op_time_unsaved_sec += seconds;
     uint32_t current = s_operational_time_sec;
+    bool should_flush = (s_op_time_unsaved_sec >= OP_TIME_NVS_WRITE_INTERVAL_SEC);
+    if (should_flush) {
+        s_op_time_unsaved_sec = 0;
+    }
     xSemaphoreGiveRecursive(s_program_mutex);
 
-    /* Persist every time (writes are throttled externally by caller) */
+    if (!should_flush) {
+        return;
+    }
+
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
         nvs_set_u32(nvs, NVS_KEY_OP_TIME, current);
         nvs_commit(nvs);
         nvs_close(nvs);
+    }
+}
+
+/* Force-persist any unsaved seconds. Call on profile stop/complete so the
+ * final partial minute isn't lost if the user then powers the unit off. */
+void program_flush_operational_time(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    uint32_t current = s_operational_time_sec;
+    bool dirty = (s_op_time_unsaved_sec > 0);
+    s_op_time_unsaved_sec = 0;
+    xSemaphoreGiveRecursive(s_program_mutex);
+
+    if (!dirty) {
+        return;
+    }
+
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u32(nvs, NVS_KEY_OP_TIME, current);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        LOGGER_LOG_INFO(TAG, "Op time flushed to NVS: %lu sec",
+                       (unsigned long)current);
+    }
+}
+
+/* Erase the entire NVS partition (factory reset) while preserving the
+ * operational-time total. The counter is treated as permanent service
+ * data and must survive factory resets. */
+void program_nvs_factory_reset_preserve_op_time(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    uint32_t op_time_snapshot = s_operational_time_sec;
+    s_op_time_unsaved_sec = 0;
+    xSemaphoreGiveRecursive(s_program_mutex);
+
+    esp_err_t err = nvs_flash_erase();
+    if (err != ESP_OK) {
+        LOGGER_LOG_WARN(TAG, "Factory reset: NVS erase failed: %s",
+                        esp_err_to_name(err));
+        return;
+    }
+
+    err = nvs_flash_init();
+    if (err != ESP_OK) {
+        LOGGER_LOG_WARN(TAG, "Factory reset: NVS re-init failed: %s",
+                        esp_err_to_name(err));
+        return;
+    }
+
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u32(nvs, NVS_KEY_OP_TIME, op_time_snapshot);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        LOGGER_LOG_INFO(TAG, "Factory reset: op time preserved (%lu sec)",
+                       (unsigned long)op_time_snapshot);
+    } else {
+        LOGGER_LOG_WARN(TAG, "Factory reset: failed to restore op time");
     }
 }
 

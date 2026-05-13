@@ -31,9 +31,16 @@ void program_set_current_kw(int kw);
 int program_get_current_kw(void);
 void hmi_get_run_program(program_draft_t *out);
 
-// Operational time — NVS-persisted, incremented each status update
+// Operational time — NVS-persisted, only incremented while a program runs.
+// Writes to NVS are throttled (~1/min); call program_flush_operational_time
+// on profile stop/complete to commit the trailing partial minute.
 uint32_t program_get_operational_time_sec(void);
 void program_add_operational_time_sec(uint32_t seconds);
+void program_flush_operational_time(void);
+
+// Wipe NVS for factory reset, but restore the operational-time counter so
+// service-hours data is never lost.
+void program_nvs_factory_reset_preserve_op_time(void);
 
 // Manual mode state
 bool program_get_manual_mode_active(void);

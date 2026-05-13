@@ -8,7 +8,6 @@
 #include "heating_program_models_internal.h"
 #include "logger_component.h"
 #include "esp_system.h"
-#include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -223,14 +222,9 @@ void handle_factory_reset_confirm(void)
     int deleted = nextion_storage_delete_all_programs();
     LOGGER_LOG_INFO(TAG, "Factory reset: %d programs deleted", deleted);
 
-    /* Erase all NVS user preferences */
-    esp_err_t nvs_err = nvs_flash_erase();
-    if (nvs_err == ESP_OK) {
-        LOGGER_LOG_INFO(TAG, "Factory reset: NVS erased");
-    } else {
-        LOGGER_LOG_WARN(TAG, "Factory reset: NVS erase failed: %s",
-                        esp_err_to_name(nvs_err));
-    }
+    /* Erase all NVS user preferences, but preserve the operational-time
+     * total — it's service-hours data and must never be reset. */
+    program_nvs_factory_reset_preserve_op_time();
 
     /* Brief pause so the user sees the dialog close */
     vTaskDelay(pdMS_TO_TICKS(300));
