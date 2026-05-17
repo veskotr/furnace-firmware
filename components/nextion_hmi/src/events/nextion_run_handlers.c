@@ -70,12 +70,9 @@ void handle_run_start(void)
         return;
     }
 
-    program_draft_t program;
-    hmi_get_run_program(&program);
-
     coordinator_command_data_t data = {
         .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
-        .program = program,
+        .program = snapshot,
         .cooldown_rate_x10 = program_get_cooldown_rate_x10()
     };
 
@@ -469,6 +466,7 @@ static const char *coordinator_error_to_str(coordinator_error_code_t code)
         case COORDINATOR_ERROR_PROFILE_NOT_RESUMED: return "Cannot resume";
         case COORDINATOR_ERROR_PROFILE_NOT_STOPPED: return "Cannot stop";
         case COORDINATOR_ERROR_NOT_STARTED:         return "Not started";
+        case COORDINATOR_ERROR_STALL_DETECTED:       return "Heating stall: check heater";
         default:                                    return "System error";
     }
 }

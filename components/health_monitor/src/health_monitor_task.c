@@ -70,9 +70,11 @@ static void health_monitor_task(void* arg)
             esp_task_wdt_reset();
         }
 
-        const uint32_t ticks_to_wait = (last_wake + period) - xTaskGetTickCount();
-        if (ticks_to_wait > 0)
-            ulTaskNotifyTake(pdTRUE, ticks_to_wait);
+        const TickType_t now_ticks = xTaskGetTickCount();
+        const TickType_t target_ticks = last_wake + period;
+        if ((BaseType_t)(target_ticks - now_ticks) > 0) {
+            ulTaskNotifyTake(pdTRUE, target_ticks - now_ticks);
+        }
         last_wake += period;
     }
 
