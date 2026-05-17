@@ -1,0 +1,19 @@
+menu "Transmitter Diagnostics"
+
+    config TRANSMITTER_DIAGNOSTICS_SCAN_START_ADDR
+        int "Modbus slave scan range start"
+        default 1
+        range 1 247
+        help
+            First Modbus slave address probed when searching for the transmitter.
+
+    config TRANSMITTER_DIAGNOSTICS_SCAN_END_ADDR
+        int "Modbus slave scan range end"
+        default 16
+        range 1 247
+        help
+            Last Modbus slave address probed when searching for the transmitter.
+            Keep this small for fast boot-time scans; widen if the unit can sit
+            on any address.
+
+endmenu

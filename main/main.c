@@ -1,4 +1,5 @@
 #include "logger_component.h"
+#include "transmitter_diagnostics.h"
 #include "commands_dispatcher.h"
 #include "temperature_processor_component.h"
 #include "coordinator_component.h"
@@ -80,12 +81,44 @@ void app_main(void)
 
     vTaskDelay(pdMS_TO_TICKS(2000)); // Let the device manager start and initialize devices
 
-    CHECK_ERR_LOG(temperature_processor_init(),
-                  "Failed to initialize temperature processor");
-   
-    LOGGER_LOG_INFO(TAG, "System initialized successfully");
+    #define NUM_TEMP_SENSORS 5
+    temp_sensor_device_t *temp_sensors[NUM_TEMP_SENSORS] = {0};
+
+    for (int i = 0; i < NUM_TEMP_SENSORS; i++)
+    {
+        CHECK_ERR_LOG_FMT(temp_sensor_create(&temp_sensors[i]),
+                          "Failed to create temp sensor device %d", i + 1);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    for (int i = 0; i < NUM_TEMP_SENSORS; i++)
+    {
+        if (temp_sensors[i] == NULL) continue;
+        CHECK_ERR_LOG_FMT(temp_sensor_set_device_state(temp_sensors[i], DEVICE_STATE_RUNNING),
+                          "Failed to set temp sensor device %d state to running", i + 1);
+    }
+
+    // Spawn the dump task
+    // transmitter_diagnostics_auto_init();
+
     while (1)
     {
+        for (int i = 0; i < NUM_TEMP_SENSORS; i++)
+        {
+            if (temp_sensors[i] == NULL) continue;
+            float temperature;
+            const uint16_t preset_id = temp_sensor_get_id(temp_sensors[i]);
+            CHECK_ERR_LOG_FMT(temp_sensor_read_device(temp_sensors[i], &temperature),
+                              "Failed to read temperature from sensor id=%u", preset_id);
+            LOGGER_LOG_INFO(TAG, "Temperature[id=%u]: %.2f C", preset_id, temperature);
+
+            CHECK_ERR_LOG_FMT(event_manager_post_immediate(TEMP_PROCESSOR_EVENT,
+                                                          PROCESS_TEMPERATURE_EVENT_DATA,
+                                                          &temperature,
+                                                          sizeof(temperature)),
+                              "Failed to publish temperature update for sensor id=%u", preset_id);
+        }
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

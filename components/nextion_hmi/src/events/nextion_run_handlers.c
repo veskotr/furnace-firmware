@@ -383,6 +383,10 @@ void nextion_event_handle_profile_stopped(void)
     nextion_send_cmd("machineState.txt=\"Stopped\"");
     s_waveform_active = false;
 
+    /* Commit the trailing partial minute of op-time before the user
+     * potentially powers the unit off. */
+    program_flush_operational_time();
+
     /* Clean up manual mode: hide controls and clear flag */
     if (program_get_manual_mode_active()) {
         program_set_manual_mode_active(false);
@@ -401,6 +405,9 @@ void nextion_event_handle_profile_completed(void)
     /* Zero out time remaining and power displays */
     nextion_send_cmd("timeRamaining.txt=\"00:00:00\"");
     nextion_send_cmd("currentKw.txt=\"0.0\"");
+
+    /* Commit the trailing partial minute of op-time. */
+    program_flush_operational_time();
 
     /* Clean up manual mode: hide controls and clear flag */
     if (program_get_manual_mode_active()) {
@@ -427,17 +434,22 @@ void nextion_run_tick(void)
     }
     s_last_tick = now;
 
-    /* ── Operational time: always counting (wall-clock) ────────────── */
-    program_add_operational_time_sec(1);
-    if (nextion_get_current_page() == NEXTION_PAGE_ID_MAIN) {
-        char cmd[64];
-        uint32_t op_sec = program_get_operational_time_sec();
-        uint32_t oh = op_sec / 3600;
-        uint32_t om = (op_sec % 3600) / 60;
-        uint32_t os = op_sec % 60;
-        snprintf(cmd, sizeof(cmd), "opTime.txt=\"%02lu:%02lu:%02lu\"",
-                 (unsigned long)oh, (unsigned long)om, (unsigned long)os);
-        nextion_send_cmd(cmd);
+    /* ── Operational time: count only while a program is running.
+     * Pause time is included (per spec — the run hasn't been ended).
+     * The counter is the unit's service-hours record and is never
+     * incremented during idle wall-clock time. ──────────────────── */
+    if (s_profile_active) {
+        program_add_operational_time_sec(1);
+        if (nextion_get_current_page() == NEXTION_PAGE_ID_MAIN) {
+            char cmd[64];
+            uint32_t op_sec = program_get_operational_time_sec();
+            uint32_t oh = op_sec / 3600;
+            uint32_t om = (op_sec % 3600) / 60;
+            uint32_t os = op_sec % 60;
+            snprintf(cmd, sizeof(cmd), "opTime.txt=\"%02lu:%02lu:%02lu\"",
+                     (unsigned long)oh, (unsigned long)om, (unsigned long)os);
+            nextion_send_cmd(cmd);
+        }
     }
 
     /* ── Pause-time display updates ────────────────────────────────── */
