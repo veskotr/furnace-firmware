@@ -74,41 +74,18 @@ void app_main(void)
 
     nextion_hmi_init();
 
-    LOGGER_LOG_INFO(TAG, "System initialized successfully");
 
     CHECK_ERR_LOG(device_manager_init(),
                   "Failed to initialize device manager");
 
     vTaskDelay(pdMS_TO_TICKS(2000)); // Let the device manager start and initialize devices
 
-    temp_sensor_device_t *temp_sensor_device;
-
-    CHECK_ERR_LOG(temp_sensor_create(&temp_sensor_device),
-                  "Failed to create temp sensor device");
-
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
-                  "Failed to set temp sensor device state to running");
-
-    for (int i = 0; i < 100; i++)
-    {
-        LOGGER_LOG_INFO(TAG, "Log message: %d", i);
-    }
-    vTaskDelay(pdMS_TO_TICKS(10000));
-    logger_store_full_log(0xDEADBEEF);
-
+    CHECK_ERR_LOG(temperature_processor_init(),
+                  "Failed to initialize temperature processor");
+   
+    LOGGER_LOG_INFO(TAG, "System initialized successfully");
     while (1)
     {
-        float temperature;
-        CHECK_ERR_LOG(temp_sensor_read_device(temp_sensor_device, &temperature),
-                      "Failed to read temperature from device");
-        CHECK_ERR_LOG(event_manager_post_immediate(TEMP_PROCESSOR_EVENT,
-                                                   PROCESS_TEMPERATURE_EVENT_DATA,
-                                                   &temperature,
-                                                   sizeof(temperature)),
-                      "Failed to publish temperature update");
-        LOGGER_LOG_INFO(TAG, "Temperature: %.2f C", temperature);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

@@ -60,6 +60,10 @@ static esp_err_t heater_command_handler(void* handler_arg, void* command_data, c
         return toggle_heater(data->heater_state);
     case COMMAND_TYPE_HEATER_CLEAR:
         return reset_heater_power_level_samples(ctx);
+    case COMMAND_TYPE_HEATER_START:
+        return start_heater();
+    case COMMAND_TYPE_HEATER_STOP:
+        return stop_heater();
     default:
         LOGGER_LOG_ERROR(TAG, "Unknown heater command type: %d", data->type);
         return ESP_OK;

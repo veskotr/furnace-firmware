@@ -66,3 +66,6 @@ esp_err_t post_heater_controller_error(furnace_error_t error);
 
 esp_err_t post_heater_controller_event(heater_controller_event_t event_type,
                                        void* event_data, size_t event_data_size);
+
+esp_err_t start_heater();
+esp_err_t stop_heater();

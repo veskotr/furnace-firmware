@@ -376,6 +376,9 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         return ESP_FAIL;
     }
 
+    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
+    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
+
     /* Set running BEFORE task creation — the new task checks ctx->running
      * in its while-loop condition and may be scheduled before we return. */
     ctx->running = true;
@@ -494,6 +497,9 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 
     kill_heater();
     shutdown_profile_controller();
+
+    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
+    send_heater_command(COMMAND_TYPE_HEATER_STOP, 0.0f);
 
     LOGGER_LOG_INFO(TAG, "Coordinator task shutdown complete");
 

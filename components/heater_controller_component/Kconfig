@@ -1,7 +1,15 @@
 menu "Heater Controller"
-    config HEATER_CONTROLLER_GPIO
+    config HEATER_CONTACTOR_GPIO_PIN
         int "GPIO Pin"
-        default 25
+        default 22
+
+    config HEATER_SSR_GPIO_PIN
+        int "GPIO Pin"
+        default 21
+
+    config FAN_CONTROL_GPIO_PIN
+        int "GPIO Pin"
+        default 19
 
     config HEATER_WINDOW_SIZE_MS
         int "Heater Window Size (ms)"
