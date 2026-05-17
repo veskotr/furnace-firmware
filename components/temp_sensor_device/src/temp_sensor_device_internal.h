@@ -11,6 +11,7 @@
 struct temp_sensor_device
 {
     uint16_t id;
+    uint16_t device_id; /* Preset device ID read from MS9024 reg 127; 0 until init runs */
     float last_temperature;
     bool valid;
     bool allocated;
