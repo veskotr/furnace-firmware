@@ -29,7 +29,7 @@ esp_err_t modbus_master_init(const modbus_config_t* config)
         .ser_opts.data_bits = UART_DATA_8_BITS,
         .ser_opts.stop_bits = UART_STOP_BITS_1,
         .ser_opts.uid = 0,
-        .ser_opts.response_tout_ms = 1000,
+        .ser_opts.response_tout_ms = 300,
     };
 
     CHECK_ERR_LOG_CALL_RET(mbc_master_create_serial(&comm_info, &master_handle),

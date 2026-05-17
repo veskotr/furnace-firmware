@@ -115,7 +115,10 @@ static void temp_processor_event_bridge(void* handler_arg, esp_event_base_t base
     {
         return;
     }
-
+    if(id != PROCESS_TEMPERATURE_EVENT_DATA || !event_data)
+    {
+        return;
+    }
     const float temperature = *((const float*)event_data);
     hmi_cmd_t cmd = {0};
     cmd.type = HMI_CMD_TEMP_UPDATE;

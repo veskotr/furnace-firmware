@@ -8,7 +8,7 @@ static const char* TAG = "TEMP_PROCESSOR_EVENTS";
 static void device_manager_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     temp_processor_context_t* ctx = (temp_processor_context_t*)handler_arg;
-    if (base == DEVICE_MANAGER_UPDATED_EVENT)
+    if (id == DEVICE_MANAGER_UPDATED_EVENT)
     {
         xTaskNotifyGive(ctx->task_handle);
         LOGGER_LOG_INFO(TAG, "Device manager updated event received");

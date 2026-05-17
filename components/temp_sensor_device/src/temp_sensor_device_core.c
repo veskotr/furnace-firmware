@@ -152,47 +152,47 @@ static esp_err_t temp_sensor_init(void* ctx)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ms9024_log_config(device_ctx->modbus_address, MS9024_REG_PV);
+    // ms9024_log_config(device_ctx->modbus_address, MS9024_REG_PV);
 
-    /* Decide whether this sensor needs normalization based on whether PV is
-     * sane. Healthy units are left alone — the repair function targets a
-     * specific bad-unit signature and writing its hard-coded values to
-     * healthy units just produces noise (and writes to reg 129 are rejected
-     * by the slave with a Modbus exception). */
-    float pv = 0.0f;
-    const esp_err_t pv_err = ms9024_read_float(device_ctx->modbus_address, MS9024_REG_PV, &pv);
-    const bool pv_sane = (pv_err == ESP_OK)
-                         && (pv >= TEMP_SENSOR_PV_SANE_MIN_C)
-                         && (pv <= TEMP_SENSOR_PV_SANE_MAX_C);
+    // /* Decide whether this sensor needs normalization based on whether PV is
+    //  * sane. Healthy units are left alone — the repair function targets a
+    //  * specific bad-unit signature and writing its hard-coded values to
+    //  * healthy units just produces noise (and writes to reg 129 are rejected
+    //  * by the slave with a Modbus exception). */
+    // float pv = 0.0f;
+    // const esp_err_t pv_err = ms9024_read_float(device_ctx->modbus_address, MS9024_REG_PV, &pv);
+    // const bool pv_sane = (pv_err == ESP_OK)
+    //                      && (pv >= TEMP_SENSOR_PV_SANE_MIN_C)
+    //                      && (pv <= TEMP_SENSOR_PV_SANE_MAX_C);
 
-    if (!pv_sane)
-    {
-        LOGGER_LOG_WARN(TAG, "Sensor at addr %d has bad PV (%s, %.2f C) — running diagnostic scan + repair",
-                        device_ctx->modbus_address,
-                        (pv_err == ESP_OK) ? "out of range" : esp_err_to_name(pv_err), pv);
-        ms9024_diagnostic_scan(device_ctx->modbus_address);
+    // if (!pv_sane)
+    // {
+    //     LOGGER_LOG_WARN(TAG, "Sensor at addr %d has bad PV (%s, %.2f C) — running diagnostic scan + repair",
+    //                     device_ctx->modbus_address,
+    //                     (pv_err == ESP_OK) ? "out of range" : esp_err_to_name(pv_err), pv);
+    //     ms9024_diagnostic_scan(device_ctx->modbus_address);
 
-        const esp_err_t repair_err = ms9024_repair_from_good_unit(device_ctx->modbus_address);
-        if (repair_err != ESP_OK)
-        {
-            LOGGER_LOG_WARN(TAG, "Repair did not complete cleanly for sensor at addr %d (%s) — continuing",
-                            device_ctx->modbus_address, esp_err_to_name(repair_err));
-        }
-    }
-    else
-    {
-        LOGGER_LOG_INFO(TAG, "Sensor at addr %d PV=%.2f C looks healthy — skipping normalization",
-                        device_ctx->modbus_address, pv);
+    //     const esp_err_t repair_err = ms9024_repair_from_good_unit(device_ctx->modbus_address);
+    //     if (repair_err != ESP_OK)
+    //     {
+    //         LOGGER_LOG_WARN(TAG, "Repair did not complete cleanly for sensor at addr %d (%s) — continuing",
+    //                         device_ctx->modbus_address, esp_err_to_name(repair_err));
+    //     }
+    // }
+    // else
+    // {
+    //     LOGGER_LOG_INFO(TAG, "Sensor at addr %d PV=%.2f C looks healthy — skipping normalization",
+    //                     device_ctx->modbus_address, pv);
 
-        /* Optional: capture a healthy reference register map for diffing. */
-        if (TEMP_SENSOR_DIAG_DUMP_HEALTHY_ADDR != 0
-            && device_ctx->modbus_address == TEMP_SENSOR_DIAG_DUMP_HEALTHY_ADDR)
-        {
-            LOGGER_LOG_INFO(TAG, "Dumping reference diagnostics for healthy sensor at addr %d",
-                            device_ctx->modbus_address);
-            ms9024_diagnostic_scan(device_ctx->modbus_address);
-        }
-    }
+    //     /* Optional: capture a healthy reference register map for diffing. */
+    //     if (TEMP_SENSOR_DIAG_DUMP_HEALTHY_ADDR != 0
+    //         && device_ctx->modbus_address == TEMP_SENSOR_DIAG_DUMP_HEALTHY_ADDR)
+    //     {
+    //         LOGGER_LOG_INFO(TAG, "Dumping reference diagnostics for healthy sensor at addr %d",
+    //                         device_ctx->modbus_address);
+    //         ms9024_diagnostic_scan(device_ctx->modbus_address);
+    //     }
+    // }
 
     /* Read the preset device ID from reg 127. Never written by our code. */
     uint16_t device_id = 0;

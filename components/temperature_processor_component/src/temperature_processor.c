@@ -42,6 +42,8 @@ esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_
         return ESP_ERR_INVALID_STATE;
     }
 
+    LOGGER_LOG_DEBUG(TAG, "Processing %d temperature samples", number_of_samples);
+
     // Calculate overall average temperature
     *output_temperature = average_float_array(ctx->temperatures_buffer, number_of_samples);
 

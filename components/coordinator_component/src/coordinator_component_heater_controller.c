@@ -492,7 +492,6 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
         }
     }
 
-    ctx->heating_task_state.profile_index = INVALID_PROFILE_INDEX;
     ctx->heating_task_state.is_paused = false;
 
     kill_heater();
