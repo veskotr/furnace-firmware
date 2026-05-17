@@ -1,12 +1,10 @@
 #include "core_types.h"
 #include "heating_program_models_internal.h"
-#include "nextion_hmi.h"
 #include "logger_component.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "nvs_flash.h"
 #include "nvs.h"
 
 static const char *TAG = "program_models";

@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "logger_internal.h"
 
 // Component tag
 static const char* TAG = "LOGGER";
@@ -53,10 +54,15 @@ static void logger_task(void* args)
             case LOG_LEVEL_DEBUG:
                 ESP_LOGD(msg.tag, "%s", msg.message);
                 break;
+            case LOG_LEVEL_VERBOSE:
+                ESP_LOGV(msg.tag, "%s", msg.message);
+                break;
             default:
                 ESP_LOGI(msg.tag, "%s", msg.message);
                 break;
             }
+            // Store log in ring buffer for potential future retrieval
+            store_log_entry(msg.level, msg.tag, msg.message);
         }
     }
 }
@@ -73,16 +79,29 @@ void logger_init(void)
     logger_queue = xQueueCreate(CONFIG_LOG_QUEUE_SIZE, sizeof(log_message_t));
     if (logger_queue == NULL)
     {
-        ESP_LOGE(TAG, "%s", "Failed to create logger queue");
+        ESP_LOGE(TAG, "Failed to create logger queue");
         return;
     }
 
     xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
                 NULL);
+
+    esp_err_t err = logger_init_cli();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to init logger CLI: %s", esp_err_to_name(err));
+    }
+
+    err = logger_init_storage();
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to init logger: %s", esp_err_to_name(err));
+    }
+
     logger_initialized = true;
 }
 
-void logger_send(log_level_t log_level, const char* tag, const char* fmt, ...)
+void logger_send(const log_level_t log_level, const char* tag, const char* fmt, ...)
 {
     if (logger_queue == NULL)
     {

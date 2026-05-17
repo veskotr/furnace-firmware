@@ -1,0 +1,39 @@
+menu "Debug Console Configuration"
+
+
+    config DEBUG_CONSOLE_TASK_STACK_SIZE
+        int "Debug Console Task Stack Size"
+        default 4096
+        help
+            Stack size for the Debug Console task. Adjust this value based on the expected workload and memory constraints.
+
+    config DEBUG_CONSOLE_TASK_PRIORITY
+        int "Debug Console Task Priority"
+        default 2
+        help
+            Priority for the Debug Console task. Higher values indicate higher priority. Adjust this based on your application's needs.
+
+    config DEBUG_CONSOLE_TASK_NAME
+        string "Debug Console Task Name"
+        default "debug_console_task"
+        help
+            Name for the Debug Console task. This is used for debugging and monitoring purposes.
+
+    config DEBUG_CONSOLE_MAX_COMMAND_LENGTH
+        int "Debug Console Max Command Length"
+        default 256
+        help
+            Maximum length of commands that can be entered into the Debug Console. Adjust this based on the expected command complexity.
+
+   config DEBUG_CONSOLE_MAX_ARGUMENTS
+        int "Debug Console Max Arguments"
+        default 8
+        help
+            Maximum number of arguments that can be passed to a command in the Debug Console. Adjust this based on the expected command complexity.
+
+   config DEBUG_CONSOLE_MAX_REGISTERED_COMMANDS
+       int "Debug Console Max Registered Commands"
+       default 20
+       help
+           Maximum number of commands that can be registered with the Debug Console. Adjust this based on the expected number of commands in your application.
+endmenu

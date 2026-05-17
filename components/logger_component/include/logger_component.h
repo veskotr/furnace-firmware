@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "sdkconfig.h"
 
 typedef enum
@@ -8,7 +10,8 @@ typedef enum
     LOG_LEVEL_ERROR,
     LOG_LEVEL_WARN,
     LOG_LEVEL_INFO,
-    LOG_LEVEL_DEBUG
+    LOG_LEVEL_DEBUG,
+    LOG_LEVEL_VERBOSE
 } log_level_t;
 
 #if CONFIG_LOG_ENABLE
@@ -51,8 +54,11 @@ typedef struct
     log_level_t level;
 } log_message_t;
 
+typedef void (*logger_output_fn_t)(const char* line);
+
 void logger_init(void);
 void logger_send(log_level_t log_level, const char *tag, const char *message, ...);
+void logger_store_full_log(uint32_t error_cause);
 
 #define logger_send_info(tag, fmt, ...) logger_send(LOG_LEVEL_INFO, tag, fmt, ##__VA_ARGS__)
 #define logger_send_warn(tag, fmt, ...) logger_send(LOG_LEVEL_WARN, tag, fmt, ##__VA_ARGS__)

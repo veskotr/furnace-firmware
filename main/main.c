@@ -11,15 +11,21 @@
 #include "sdkconfig.h"
 #include "health_monitor.h"
 #include "device_manager.h"
+#include "esp_log.h"
 #include "modbus_master.h"
 #include "temp_sensor_device.h"
 #include "nvs_flash.h"
+#include "debug_console.h"
 
 static const char *TAG = "main";
 
 void app_main(void)
 {
-    logger_init();
+    const esp_err_t debug_console_err = debug_console_init();
+    if (debug_console_err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to initialize debug console: %s", esp_err_to_name(debug_console_err));
+    }
 
     esp_err_t nvs_err = nvs_flash_init();
     if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -31,6 +37,8 @@ void app_main(void)
     {
         LOGGER_LOG_ERROR(TAG, "NVS flash init failed: %s", esp_err_to_name(nvs_err));
     }
+
+    logger_init();
 
     CHECK_ERR_LOG_CALL(event_manager_init(),
                        return,
@@ -82,6 +90,13 @@ void app_main(void)
 
     CHECK_ERR_LOG(temp_sensor_set_device_state(temp_sensor_device, DEVICE_STATE_RUNNING),
                   "Failed to set temp sensor device state to running");
+
+    for (int i = 0; i < 100; i++)
+    {
+        LOGGER_LOG_INFO(TAG, "Log message: %d", i);
+    }
+    vTaskDelay(pdMS_TO_TICKS(10000));
+    logger_store_full_log(0xDEADBEEF);
 
     while (1)
     {
