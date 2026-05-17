@@ -532,6 +532,13 @@ void handle_autofill(const char *payload)
         int temp_diff_x10 = temp_diff * 10;
 
         if (temp_diff == 0) {
+            /* Holding stage: autofill sets delta to 0.0 but requires
+               the user to enter time (at least 1 min). */
+            if (!f.t_set) {
+                snprintf(error_msg, sizeof(error_msg), "Stage %d: Enter hold time", f.stage_num);
+                any_error = true;
+                continue;
+            }
             if (!f.delta_t_set) {
                 snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"0.0\"", (unsigned)f.field_num);
                 nextion_send_cmd(cmd);
@@ -540,6 +547,31 @@ void handle_autofill(const char *payload)
             if (!f.t_delta_set) {
                 snprintf(cmd, sizeof(cmd), "tDelta%u.txt=\"%d\"", (unsigned)f.field_num, CONFIG_NEXTION_T_DELTA_MIN_MIN);
                 nextion_send_cmd(cmd);
+                any_calculated = true;
+            }
+            current_temp = f.target_t;
+            continue;
+        }
+
+        /* Cooling stage: target < current → write "CD" + "ASAP" */
+        if (temp_diff < 0) {
+            bool wrote_something = false;
+            if (!f.delta_t_set) {
+                snprintf(cmd, sizeof(cmd), "tempDelta%u.txt=\"CD\"", (unsigned)f.field_num);
+                nextion_send_cmd(cmd);
+                wrote_something = true;
+            }
+            if (!f.t_set) {
+                snprintf(cmd, sizeof(cmd), "t%u.txt=\"ASAP\"", (unsigned)f.field_num);
+                nextion_send_cmd(cmd);
+                wrote_something = true;
+            }
+            if (!f.t_delta_set) {
+                snprintf(cmd, sizeof(cmd), "tDelta%u.txt=\"%d\"", (unsigned)f.field_num, CONFIG_NEXTION_T_DELTA_MIN_MIN);
+                nextion_send_cmd(cmd);
+                wrote_something = true;
+            }
+            if (wrote_something) {
                 any_calculated = true;
             }
             current_temp = f.target_t;
@@ -790,7 +822,7 @@ void handle_delete_prog(const char *current_name)
     }
 
     char msg[48];
-    snprintf(msg, sizeof(msg), "Delete \"%.26s\"?", s_original_program_name);
+    snprintf(msg, sizeof(msg), "Delete %.26s?", s_original_program_name);
     show_confirm_dialog(DIALOG_DELETE, msg, "Delete");
 }
 
