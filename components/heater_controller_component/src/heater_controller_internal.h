@@ -24,9 +24,8 @@ typedef struct
     // Current heater state
     volatile bool heater_state;
 
-    // Target power level (0.0 to 1.0)
-    float accumulated_power_level;
-    uint8_t power_level_sample_count;
+    // Target power level (0.0 to 1.0) — latest commanded value.
+    float target_power_level;
 
     // Task running flag
     volatile bool task_running;
@@ -50,7 +49,7 @@ esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx);
 // ----------------------------
 esp_err_t init_heater_controller();
 esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float power_level);
-esp_err_t reset_heater_power_level_samples(heater_controller_context_t* ctx);
+esp_err_t clear_heater_target_power_level(heater_controller_context_t* ctx);
 esp_err_t toggle_heater(bool state);
 esp_err_t shutdown_heater_controller();
 

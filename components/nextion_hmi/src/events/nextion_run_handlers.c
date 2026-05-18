@@ -70,16 +70,13 @@ void handle_run_start(void)
         return;
     }
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
-        .program = snapshot,
-        .cooldown_rate_x10 = program_get_cooldown_rate_x10()
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
+            .program = snapshot,
+            .cooldown_rate_x10 = program_get_cooldown_rate_x10()
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
@@ -96,14 +93,11 @@ void handle_run_pause(void)
         return;
     }
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
@@ -138,14 +132,11 @@ void handle_confirm_end(void)
     nextion_send_cmd("vis confirmEnd,0");
     nextion_send_cmd("vis confirmCancel,0");
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_STOP_PROFILE
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_STOP_PROFILE
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);

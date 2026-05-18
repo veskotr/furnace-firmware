@@ -8,6 +8,7 @@
 #include "event_registry.h"
 #include "nextion_hmi.h"
 #include "run_indicator.h"
+#include "fan_controller.h"
 #include "utils.h"
 #include "sdkconfig.h"
 #include "health_monitor.h"
@@ -57,8 +58,8 @@ void app_main(void)
                        return,
                        "Failed to initialize coordinator");
 
-    CHECK_ERR_LOG(init_health_monitor(),
-                  "Failed to initialize health monitor");
+    // CHECK_ERR_LOG(init_health_monitor(),
+    //               "Failed to initialize health monitor");
 
     const modbus_config_t modbus_config = {
         .uart_num = CONFIG_DEVICE_MANAGER_MODBUS_UART_NUMBER,
@@ -72,6 +73,8 @@ void app_main(void)
                   "Failed to initialize Modbus master");
 
     run_indicator_init();
+
+    fan_controller_init();
 
     nextion_hmi_init();
 
@@ -102,7 +105,7 @@ void app_main(void)
     //                       "Failed to set temp sensor device %d state to running", i + 1);
     // }
 
-    // // Spawn the dump task
+    // Spawn the dump task
     // // transmitter_diagnostics_auto_init();
 
     while (1)

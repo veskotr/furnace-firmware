@@ -25,11 +25,6 @@ esp_err_t init_heater_controller(void)
         heater_gpio_pull_down),
         "Failed to set SSR GPIO pin mode");
 
-
-    CHECK_ERR_LOG_RET(gpio_master_set_pin_mode(CONFIG_FAN_CONTROL_GPIO_PIN, GPIO_MODE_OUTPUT, heater_gpio_pull_up,
-        heater_gpio_pull_down),
-        "Failed to set fan GPIO pin mode");
-
     CHECK_ERR_LOG_RET(stop_heater(), "Failed to stop heater during initialization");
         
     return ESP_OK;
@@ -62,9 +57,6 @@ esp_err_t start_heater()
 {
     LOGGER_LOG_INFO(TAG, "Starting Heater");
 
-    CHECK_ERR_LOG_RET(gpio_master_set_level(CONFIG_FAN_CONTROL_GPIO_PIN, 1),
-                      "Failed to set fan GPIO level to start heater");
-
     CHECK_ERR_LOG_RET(gpio_master_set_level(CONFIG_HEATER_CONTACTOR_GPIO_PIN, 1),
                       "Failed to set heater contactor GPIO level to start heater");
 
@@ -77,9 +69,6 @@ esp_err_t stop_heater()
 
     CHECK_ERR_LOG_RET(gpio_master_set_level(CONFIG_HEATER_CONTACTOR_GPIO_PIN, 0),
                       "Failed to set heater contactor GPIO level to stop heater");
-
-    CHECK_ERR_LOG_RET(gpio_master_set_level(CONFIG_FAN_CONTROL_GPIO_PIN, 0),
-                      "Failed to set fan GPIO level to stop heater");
 
     return ESP_OK;
 }

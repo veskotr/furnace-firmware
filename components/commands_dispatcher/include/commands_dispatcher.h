@@ -40,14 +40,6 @@ typedef enum
 
 typedef struct
 {
-    command_target_t target;
-    void* data;
-    size_t data_size;
-} command_t;
-
-
-typedef struct
-{
     coordinator_command_type_t type;
     program_draft_t program;
     int cooldown_rate_x10; // User-configured cooldown rate (x10)
@@ -55,7 +47,20 @@ typedef struct
     int  delta_t_per_min_x10;   ///< New heating rate (x10, e.g. 15 = 1.5 °C/min)
 } coordinator_command_data_t;
 
-typedef esp_err_t (*command_handler_t)(void* handler_arg, void* command_data, size_t command_data_size);
+/* Payload is embedded by value (not by pointer) so the FreeRTOS queue
+ * carries a complete, self-contained copy. Pointer-based payloads
+ * dangled when the sender's stack frame was reused before the dispatcher
+ * task pulled the command. */
+typedef struct
+{
+    command_target_t target;
+    union {
+        heater_command_data_t heater;
+        coordinator_command_data_t coordinator;
+    } data;
+} command_t;
+
+typedef esp_err_t (*command_handler_t)(void* handler_arg, const void* command_data);
 
 esp_err_t commands_dispatcher_init(void);
 

@@ -49,8 +49,7 @@ static void commands_dispatcher_task(void* args)
                 {
                     const esp_err_t err = handler_entry->handler(
                         handler_entry->handler_arg,
-                        received_command.data,
-                        received_command.data_size);
+                        &received_command.data);
                     if (err != ESP_OK)
                     {
                         LOGGER_LOG_ERROR(TAG, "Command handler for target %d failed with error: %d",

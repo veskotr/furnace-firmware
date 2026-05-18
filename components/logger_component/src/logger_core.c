@@ -83,8 +83,8 @@ void logger_init(void)
         return;
     }
 
-    xTaskCreate(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
-                NULL);
+    xTaskCreatePinnedToCore(logger_task, logger_config.task_name, logger_config.stack_size, NULL, logger_config.task_priority,
+                NULL, 1);
 
     esp_err_t err = logger_init_cli();
     if (err != ESP_OK)
@@ -121,7 +121,7 @@ void logger_send(const log_level_t log_level, const char* tag, const char* fmt, 
     va_end(args);
 
     // Send to queue - wait up to a tick if full
-    if (xQueueSend(logger_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE)
+    if (xQueueSend(logger_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE)
     {
         ESP_LOGW("LOGGER", "Logger queue full, message dropped: %s", msg.message);
     }

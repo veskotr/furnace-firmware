@@ -1,6 +1,7 @@
 #include "pid_component.h"
 #include "logger_component.h"
 #include "sdkconfig.h"
+#include <stdbool.h>
 
 static const char *TAG = "PID_COMPONENT";
 
@@ -33,26 +34,52 @@ static pid_controller_state_t pid_state = {
 
 float pid_controller_compute(const float setpoint, const float measured_value, const float dt)
 {
+    if (dt <= 0.0f)
+    {
+        return 0.0f;
+    }
+
     const float error = setpoint - measured_value;
-    pid_state.integral += error * dt;
+
+    /* Tentatively integrate, then compute the unclamped output. */
+    const float tentative_integral = pid_state.integral + error * dt;
     const float derivative = (error - pid_state.previous_error) / dt;
 
-    float output = (pid_params.kp * error) + (pid_params.ki * pid_state.integral) + (pid_params.kd * derivative);
+    const float p_term = pid_params.kp * error;
+    const float i_term = pid_params.ki * tentative_integral;
+    const float d_term = pid_params.kd * derivative;
+    const float unclamped = p_term + i_term + d_term;
 
-    // Clamp output to min/max
+    /* Clamp output to min/max. */
+    float output = unclamped;
+    bool saturated_high = false;
+    bool saturated_low = false;
     if (output > pid_params.output_max)
     {
         output = pid_params.output_max;
+        saturated_high = true;
     }
     else if (output < pid_params.output_min)
     {
         output = pid_params.output_min;
+        saturated_low = true;
+    }
+
+    /* Anti-windup (conditional integration): only commit the integral update
+     * if we are not saturated, or if the new error would pull the output
+     * back out of saturation. This stops the integral from "storing up"
+     * demand while the heater is already at max. */
+    const bool error_pushes_further_into_high_sat = saturated_high && error > 0.0f;
+    const bool error_pushes_further_into_low_sat  = saturated_low  && error < 0.0f;
+    if (!error_pushes_further_into_high_sat && !error_pushes_further_into_low_sat)
+    {
+        pid_state.integral = tentative_integral;
     }
 
     pid_state.previous_error = error;
 
-    LOGGER_LOG_DEBUG(TAG, "PID Compute - Setpoint: %.2f, Measured: %.2f, Output: %.2f",
-                     setpoint, measured_value, output);
+    LOGGER_LOG_DEBUG(TAG, "PID Compute - Setpoint: %.2f, Measured: %.2f, dt: %.3f s, P: %.3f, I: %.3f, D: %.3f, Output: %.3f",
+                     setpoint, measured_value, dt, p_term, i_term, d_term, output);
 
     return output;
 }

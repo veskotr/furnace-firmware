@@ -82,9 +82,10 @@ static esp_err_t init_devices(void)
     {
         CHECK_ERR_LOG_RET(temp_sensor_create(&g_temp_processor_ctx->temp_sensor_devices[i]),
                           "Failed to create temp sensor device for processor");
-
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Small delay to let device manager process the new device
         CHECK_ERR_LOG_RET(temp_sensor_set_device_state(g_temp_processor_ctx->temp_sensor_devices[i], DEVICE_STATE_RUNNING),
                           "Failed to set temp sensor device state to running");
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Small delay to let device manager process the new device
     }
 
     LOGGER_LOG_INFO(TAG, "Initialized temp sensor devices");

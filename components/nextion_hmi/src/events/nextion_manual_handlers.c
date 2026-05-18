@@ -130,16 +130,13 @@ static void start_manual_program(void)
     program_draft_t program;
     program_draft_get(&program);
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
-        .program = program,
-        .cooldown_rate_x10 = program_get_cooldown_rate_x10()
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
+            .program = program,
+            .cooldown_rate_x10 = program_get_cooldown_rate_x10()
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
@@ -162,16 +159,13 @@ static void live_update_if_running(void)
 {
     if (program_get_manual_mode_active() && nextion_is_profile_running()) {
 
-        coordinator_command_data_t data = {
-            .type = COMMAND_TYPE_UPDATE_MANUAL_TARGET,
-            .target_t_c          = program_get_manual_target_temp_c(),
-            .delta_t_per_min_x10 = program_get_manual_delta_t_x10(),
-        };
-
         command_t command = {
             .target = COMMAND_TARGET_COORDINATOR,
-            .data = &data,
-            .data_size = sizeof(coordinator_command_data_t),
+            .data.coordinator = {
+                .type = COMMAND_TYPE_UPDATE_MANUAL_TARGET,
+                .target_t_c          = program_get_manual_target_temp_c(),
+                .delta_t_per_min_x10 = program_get_manual_delta_t_x10(),
+            }
         };
 
         const esp_err_t err = commands_dispatcher_dispatch_command(&command);

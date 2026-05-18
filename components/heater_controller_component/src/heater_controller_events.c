@@ -6,7 +6,7 @@
 
 static const char* TAG = "HEATER_CTRL_EVENTS";
 
-static esp_err_t heater_command_handler(void* handler_arg, void* command_data, const size_t command_data_size);
+static esp_err_t heater_command_handler(void* handler_arg, const void* command_data);
 
 esp_err_t init_events(heater_controller_context_t* ctx)
 {
@@ -40,15 +40,15 @@ esp_err_t post_heater_controller_event(heater_controller_event_t event_type, voi
     return ESP_OK;
 }
 
-static esp_err_t heater_command_handler(void* handler_arg, void* command_data, const size_t command_data_size)
+static esp_err_t heater_command_handler(void* handler_arg, const void* command_data)
 {
     heater_controller_context_t* ctx = (heater_controller_context_t*)handler_arg;
-    const heater_command_data_t* data = (heater_command_data_t*)command_data;
-    if (data == NULL || command_data_size != sizeof(heater_command_data_t))
+    if (command_data == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid heater command data");
         return ESP_ERR_INVALID_ARG;
     }
+    const heater_command_data_t* data = (const heater_command_data_t*)command_data;
 
     switch (data->type)
     {
@@ -59,7 +59,7 @@ static esp_err_t heater_command_handler(void* handler_arg, void* command_data, c
     case COMMAND_TYPE_HEATER_TOGGLE:
         return toggle_heater(data->heater_state);
     case COMMAND_TYPE_HEATER_CLEAR:
-        return reset_heater_power_level_samples(ctx);
+        return clear_heater_target_power_level(ctx);
     case COMMAND_TYPE_HEATER_START:
         return start_heater();
     case COMMAND_TYPE_HEATER_STOP:

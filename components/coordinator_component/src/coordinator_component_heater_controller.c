@@ -69,14 +69,12 @@ static void post_status_update(const coordinator_ctx_t *ctx,
 
 static void send_heater_command(heater_command_type_t type, float power_level)
 {
-    heater_command_data_t cmd = {
-        .type = type,
-        .power_level = power_level
-    };
     command_t command = {
         .target = COMMAND_TARGET_HEATER,
-        .data = &cmd,
-        .data_size = sizeof(cmd)
+        .data.heater = {
+            .type = type,
+            .power_level = power_level
+        }
     };
     post_heater_controller_command(&command);
 }
@@ -272,9 +270,10 @@ static void heater_controller_task(void* args)
         /* During cooling/cooldown the heater is off — skip PID computation */
         if (tick_result.phase != STAGE_PHASE_COOLDOWN &&
             tick_result.phase != STAGE_PHASE_COOLING) {
+            const float dt_seconds = (float)last_update_duration / 1000.0f;
             power_output = pid_controller_compute(tick_result.setpoint,
                                                   ctx->current_temperature,
-                                                  last_update_duration);
+                                                  dt_seconds);
 
             if (tick_result.stage_changed) {
                 send_heater_command(COMMAND_TYPE_HEATER_CLEAR, power_output);

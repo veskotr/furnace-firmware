@@ -59,6 +59,7 @@ static void device_manager_task(void *args)
             }
             event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &health_monitor_data);
             LOGGER_LOG_INFO(TAG, "Device manager tick: updated device %s (ID: %d)", device->name, device->id);
+            vTaskDelay(pdMS_TO_TICKS(100)); // Small delay to spread out device updates and avoid blocking the task for too long
         }
         LOGGER_LOG_INFO(TAG, "Device manager tick complete, posting update event and heartbeat");
         post_device_manager_event(DEVICE_MANAGER_UPDATED_EVENT, NULL, 0);
