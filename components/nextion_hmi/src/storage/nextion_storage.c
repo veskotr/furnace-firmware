@@ -118,6 +118,36 @@ static void sanitize_filename(const char* name, char* out, size_t out_len)
     out[idx] = '\0';
 }
 
+static bool build_program_path(const char* name_or_filename, char* out, size_t out_len)
+{
+    if (!name_or_filename || name_or_filename[0] == '\0' || !out || out_len == 0)
+    {
+        return false;
+    }
+
+    if (strncmp(name_or_filename, "sd0/", 4) == 0 || strncmp(name_or_filename, "ram/", 4) == 0)
+    {
+        int written = snprintf(out, out_len, "%s", name_or_filename);
+        return written > 0 && (size_t)written < out_len;
+    }
+
+    if (strchr(name_or_filename, '.') != NULL)
+    {
+        int written = snprintf(out, out_len, "sd0/%s", name_or_filename);
+        return written > 0 && (size_t)written < out_len;
+    }
+
+    char filename[64];
+    sanitize_filename(name_or_filename, filename, sizeof(filename));
+    if (filename[0] == '\0')
+    {
+        return false;
+    }
+
+    int written = snprintf(out, out_len, "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
+    return written > 0 && (size_t)written < out_len;
+}
+
 bool nextion_serialize_program(const program_draft_t* draft, char* out, size_t out_len)
 {
     size_t used = 0;
@@ -221,16 +251,12 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
     size_t payload_len = strlen(payload);
     LOGGER_LOG_INFO(TAG, "Saving program, payload len=%u", (unsigned)payload_len);
 
-    char filename[64];
-    sanitize_filename(draft->name, filename, sizeof(filename));
-    if (filename[0] == '\0')
+    char path[96];
+    if (!build_program_path(draft->name, path, sizeof(path)))
     {
         set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
-
-    char path[96];
-    snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
     if (nextion_file_exists(path))
     {
@@ -376,16 +402,12 @@ bool nextion_storage_delete_program(const char* name, char* error_msg, size_t er
         return false;
     }
 
-    char filename[64];
-    sanitize_filename(name, filename, sizeof(filename));
-    if (filename[0] == '\0')
+    char path[96];
+    if (!build_program_path(name, path, sizeof(path)))
     {
         set_error(error_msg, error_len, "Invalid program name");
         return false;
     }
-
-    char path[96];
-    snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
 
     if (!nextion_file_exists(path))
     {
@@ -430,13 +452,10 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
     }
 
     char path[128];
-    if (strstr(filename, "."))
+    if (!build_program_path(filename, path, sizeof(path)))
     {
-        snprintf(path, sizeof(path), "sd0/%s", filename);
-    }
-    else
-    {
-        snprintf(path, sizeof(path), "sd0/%s%s", filename, CONFIG_NEXTION_PROGRAM_FILE_EXTENSION);
+        set_error(error_msg, error_len, "Invalid program name");
+        return false;
     }
 
     static char file_data[CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1];

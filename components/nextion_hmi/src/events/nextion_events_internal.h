@@ -21,7 +21,9 @@ void nextion_update_main_status(void);
 void nextion_event_handle_temp_update(float temperature, bool valid);
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                        float current_temp, float target_temp,
-                                       float power_output);
+                                       float power_output,
+                                       int8_t stage_index, int8_t total_stages,
+                                       uint8_t phase);
 void nextion_event_handle_profile_started(void);
 void nextion_event_handle_profile_paused(void);
 void nextion_event_handle_profile_resumed(void);

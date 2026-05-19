@@ -47,6 +47,9 @@ typedef struct {
             float power_output;
             uint32_t elapsed_ms;
             uint32_t total_ms;
+            int8_t  stage_index;                     /* 0-based, -1 if N/A */
+            int8_t  total_active_stages;
+            uint8_t phase;                           /* coordinator_stage_phase_t */
         } status;
         struct {
             float current_temperature;               // HMI_CMD_PROFILE_*

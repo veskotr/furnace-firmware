@@ -171,6 +171,9 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             cmd.status.power_output = s->power_output;
             cmd.status.elapsed_ms = s->elapsed_ms;
             cmd.status.total_ms = s->total_ms;
+            cmd.status.stage_index = s->stage_index;
+            cmd.status.total_active_stages = s->total_active_stages;
+            cmd.status.phase = s->phase;
         }
         break;
 
@@ -323,7 +326,10 @@ static void hmi_coordinator_task(void* arg)
                 cmd.status.total_ms,
                 cmd.status.current_temperature,
                 cmd.status.target_temperature,
-                cmd.status.power_output);
+                cmd.status.power_output,
+                cmd.status.stage_index,
+                cmd.status.total_active_stages,
+                cmd.status.phase);
             break;
 
         case HMI_CMD_PROFILE_STARTED:

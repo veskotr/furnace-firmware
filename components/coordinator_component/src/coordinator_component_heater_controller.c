@@ -50,18 +50,67 @@ static void pid_tick_timer_cb(void* arg)
 }
 
 /**
+ * @brief Count is_set stages in the active program (used for "S2/5" displays).
+ */
+static int8_t count_active_stages(const coordinator_ctx_t *ctx)
+{
+    if (!ctx->has_program) {
+        return 0;
+    }
+    int8_t n = 0;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        if (ctx->run_program.stages[i].is_set) ++n;
+    }
+    return n;
+}
+
+/**
+ * @brief Map the profile controller's phase to the wire-format enum.
+ */
+static uint8_t map_phase(stage_phase_t p)
+{
+    switch (p) {
+        case STAGE_PHASE_HEATING:  return COORD_STAGE_PHASE_HEATING;
+        case STAGE_PHASE_HOLDING:  return COORD_STAGE_PHASE_HOLDING;
+        case STAGE_PHASE_COOLING:  return COORD_STAGE_PHASE_COOLING;
+        case STAGE_PHASE_COOLDOWN: return COORD_STAGE_PHASE_COOLDOWN;
+        case STAGE_PHASE_COMPLETE: return COORD_STAGE_PHASE_COMPLETE;
+        default:                   return COORD_STAGE_PHASE_COMPLETE;
+    }
+}
+
+/**
+ * @brief Convert profile_tick's stage index into the active-stage ordinal
+ *        (0-based position within is_set stages), which is what we display.
+ */
+static int8_t active_stage_ordinal(const coordinator_ctx_t *ctx, int profile_stage_index)
+{
+    if (!ctx->has_program || profile_stage_index < 0) return -1;
+    int8_t ord = 0;
+    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
+        if (!ctx->run_program.stages[i].is_set) continue;
+        if (i == profile_stage_index) return ord;
+        ++ord;
+    }
+    return -1;
+}
+
+/**
  * @brief Build and post a coordinator status update event.
  */
 static void post_status_update(const coordinator_ctx_t *ctx,
-                                float setpoint,
+                                const profile_tick_result_t *tick,
                                 float power_output)
 {
     coordinator_status_data_t status = {
         .current_temperature = ctx->current_temperature,
-        .target_temperature  = setpoint,
+        .target_temperature  = tick->setpoint,
         .power_output        = power_output,
         .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
         .total_ms            = ctx->heating_task_state.estimated_total_duration_ms,
+        .stage_index         = active_stage_ordinal(ctx, tick->current_stage_index),
+        .total_active_stages = count_active_stages(ctx),
+        .phase               = map_phase(tick->phase),
     };
     post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE,
                            &status, sizeof(status));
@@ -270,6 +319,12 @@ static void heater_controller_task(void* args)
         /* During cooling/cooldown the heater is off — skip PID computation */
         if (tick_result.phase != STAGE_PHASE_COOLDOWN &&
             tick_result.phase != STAGE_PHASE_COOLING) {
+            /* Phase-aware adaptive ceiling: only clamp tightly while HOLDING.
+             * On a ramped HEATING setpoint the lag sits in the 1-3 °C band,
+             * which the adaptive limiter would clamp to ~10 % power — far
+             * too low to track the ramp. Enable tight ceiling only at dwell. */
+            pid_controller_set_adaptive_enabled(tick_result.phase == STAGE_PHASE_HOLDING);
+
             const float dt_seconds = (float)last_update_duration / 1000.0f;
             power_output = pid_controller_compute(tick_result.setpoint,
                                                   ctx->current_temperature,
@@ -281,7 +336,7 @@ static void heater_controller_task(void* args)
             send_heater_command(COMMAND_TYPE_HEATER_SET_POWER, power_output);
         }
 
-        post_status_update(ctx, tick_result.setpoint, power_output);
+        post_status_update(ctx, &tick_result, power_output);
 
         if (tick_result.profile_complete) {
             handle_profile_completion(ctx);

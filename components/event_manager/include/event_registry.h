@@ -56,6 +56,18 @@ typedef struct
  * next PID tick without stopping the profile.
  */
 
+/**
+ * @brief Stage phase, mirrored from temperature_profile_types.h so HMI
+ *        code can switch on it without pulling that header in.
+ */
+typedef enum {
+    COORD_STAGE_PHASE_HEATING  = 0,
+    COORD_STAGE_PHASE_HOLDING  = 1,
+    COORD_STAGE_PHASE_COOLING  = 2,
+    COORD_STAGE_PHASE_COOLDOWN = 3,
+    COORD_STAGE_PHASE_COMPLETE = 4,
+} coordinator_stage_phase_t;
+
 typedef struct
 {
     float current_temperature;
@@ -63,6 +75,11 @@ typedef struct
     float power_output;         // 0.0 – 1.0  (PID output)
     uint32_t elapsed_ms;
     uint32_t total_ms;
+
+    /* Stage tracking (added so HMI can show e.g. "S2/5 RAMP 150C"). */
+    int8_t  stage_index;                /* 0..N-1 active stage; -1 in cooldown/complete */
+    int8_t  total_active_stages;        /* Count of is_set stages in the program */
+    uint8_t phase;                      /* coordinator_stage_phase_t */
 } coordinator_status_data_t;
 
 // ============================================================================

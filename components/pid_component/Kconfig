@@ -1,18 +1,18 @@
 menu "PID Controller Configuration"
     config PID_KP
         int "Proportional Coefficient (Kp) percent"
-        default 100
-        range 0 100
+        default 30
+        range 0 1000
 
     config PID_KI
         int "Integral Coefficient (Ki) percent"
-        default 10
-        range 0 100
+        default 2
+        range 0 1000
 
     config PID_KD
         int "Derivative Coefficient (Kd) percent"
-        default 1
-        range 0 100
+        default 0
+        range 0 1000
 
     config PID_OUTPUT_MIN
         int "Minimum Output Limit percent"
@@ -21,7 +21,73 @@ menu "PID Controller Configuration"
 
     config PID_OUTPUT_MAX
         int "Maximum Output Limit percent"
-        default 100
+        default 40
         range 0 100
+
+    config PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+        bool "Enable adaptive output limit near setpoint"
+        default n
+        help
+            When enabled, the upper output clamp shrinks as the chamber
+            temperature approaches setpoint. This prevents overshoot caused
+            by thermal inertia of heating elements (which keep radiating
+            after the SSR turns off). When disabled, the static
+            PID_OUTPUT_MAX is used at all times.
+
+    config PID_ADAPTIVE_BAND_FAR_C
+        int "Adaptive: full-power band threshold (deg C)"
+        default 20
+        range 1 500
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+        help
+            When |error| >= this many degrees C, the full configured
+            PID_OUTPUT_MAX is allowed.
+
+    config PID_ADAPTIVE_BAND_MID_C
+        int "Adaptive: mid-band threshold (deg C)"
+        default 10
+        range 1 500
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_BAND_NEAR_C
+        int "Adaptive: near-band threshold (deg C)"
+        default 5
+        range 1 500
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_BAND_CLOSE_C
+        int "Adaptive: close-band threshold (deg C)"
+        default 2
+        range 1 500
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_FACTOR_MID_PCT
+        int "Adaptive: mid-band output factor (% of OUTPUT_MAX)"
+        default 70
+        range 0 100
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_FACTOR_NEAR_PCT
+        int "Adaptive: near-band output factor (% of OUTPUT_MAX)"
+        default 40
+        range 0 100
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_FACTOR_CLOSE_PCT
+        int "Adaptive: close-band output factor (% of OUTPUT_MAX)"
+        default 25
+        range 0 100
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+
+    config PID_ADAPTIVE_FACTOR_HOLD_PCT
+        int "Adaptive: hold-band output factor (% of OUTPUT_MAX)"
+        default 15
+        range 0 100
+        depends on PID_ADAPTIVE_OUTPUT_LIMIT_ENABLED
+        help
+            When |error| is below all band thresholds (we're "on setpoint"),
+            output is capped at this fraction of OUTPUT_MAX. Keep this
+            non-zero so the controller can still supply enough heat to
+            offset steady-state losses.
 endmenu
 

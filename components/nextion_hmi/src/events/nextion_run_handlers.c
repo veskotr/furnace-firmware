@@ -316,11 +316,57 @@ static void plot_graph_point(float current_temp, uint32_t elapsed_ms)
     }
 }
 
+/**
+ * Format machineState for the Nextion (max 26 chars including quotes).
+ *
+ * Layouts we produce, all ≤26 chars of payload (quotes are added by the
+ * `.txt=` assignment and don't count toward the field's text limit):
+ *   Active stage:  "S2/5 RAMP 150C 23>150"  (≤24 ch)
+ *                  "S3/5 HOLD 150C 10m"     (≤22 ch)
+ *                  "S4/5 COOL 80C"          (≤16 ch)
+ *   Cooldown:      "Cooldown"
+ *   Complete:      "Completed"
+ *   Paused:        "Paused S2/5"
+ */
+static void format_machine_state(char *out, size_t out_len,
+                                 int8_t stage_index, int8_t total_stages,
+                                 uint8_t phase, float target_temp)
+{
+    const int stage_n = stage_index + 1;       /* 1-based for display */
+    const int target  = (int)(target_temp + 0.5f);
+
+    switch ((coordinator_stage_phase_t)phase) {
+        case COORD_STAGE_PHASE_HEATING:
+            snprintf(out, out_len, "S%d/%d RAMP %dC",
+                     stage_n, total_stages, target);
+            break;
+        case COORD_STAGE_PHASE_HOLDING:
+            snprintf(out, out_len, "S%d/%d HOLD %dC",
+                     stage_n, total_stages, target);
+            break;
+        case COORD_STAGE_PHASE_COOLING:
+            snprintf(out, out_len, "S%d/%d COOL %dC",
+                     stage_n, total_stages, target);
+            break;
+        case COORD_STAGE_PHASE_COOLDOWN:
+            snprintf(out, out_len, "Cooldown");
+            break;
+        case COORD_STAGE_PHASE_COMPLETE:
+            snprintf(out, out_len, "Completed");
+            break;
+        default:
+            snprintf(out, out_len, "Running");
+            break;
+    }
+}
+
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                         float current_temp, float target_temp,
-                                        float power_output)
+                                        float power_output,
+                                        int8_t stage_index, int8_t total_stages,
+                                        uint8_t phase)
 {
-    char cmd[64];
+    char cmd[96];
 
     /* Cache for pause calculations */
     s_last_elapsed_ms = elapsed_ms;
@@ -338,6 +384,16 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
     if (kw_frac < 0) kw_frac = 0;
     snprintf(cmd, sizeof(cmd), "currentKw.txt=\"%d.%d\"", kw_int, kw_frac);
     nextion_send_cmd(cmd);
+
+    /* ── machineState: stage + phase + target ─────────────────────────
+     * Skip while paused — the pause/resume handlers own the field then. */
+    if (!s_profile_paused) {
+        char state_txt[27];   /* 26 chars + NUL — matches Nextion field limit */
+        format_machine_state(state_txt, sizeof(state_txt),
+                             stage_index, total_stages, phase, target_temp);
+        snprintf(cmd, sizeof(cmd), "machineState.txt=\"%s\"", state_txt);
+        nextion_send_cmd(cmd);
+    }
 
     /* ── Live waveform: plot one point per elapsed minute ─────────── */
     uint32_t elapsed_min = elapsed_ms / 60000;
