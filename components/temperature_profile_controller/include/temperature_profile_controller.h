@@ -17,7 +17,7 @@ profile_controller_error_t get_target_temperature_at_time(const uint32_t time_ms
  * @brief Advance the stateful profile controller by one tick.
  *
  * Must be called every PID interval.  Tracks stage progress, handles
- * the RAMP → HOLD → SETTLE → EXTEND state machine, and returns the
+ * the auto-detected HEATING / HOLDING / COOLING phases, and returns the
  * setpoint the PID should chase this tick.
  *
  * @param elapsed_since_last_ms  Wall time since the previous tick (ms).
@@ -33,7 +33,7 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
  * @brief Reset the stateful tick state.
  *
  * Called when loading a new profile so that profile_tick() starts from
- * stage 0, phase RAMPING, with zero accumulated time.
+ * stage 0 with zero accumulated time.  Stage phase is auto-detected.
  */
 void profile_tick_reset(void);
 

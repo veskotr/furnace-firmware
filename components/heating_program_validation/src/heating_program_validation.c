@@ -90,22 +90,13 @@ bool autofill_calc_time(int temp_diff_x10, int delta_t_x10,
                         int *result_time,
                         char *err, size_t err_len)
 {
-    int calc_time = temp_diff_x10 / delta_t_x10;
-    if (calc_time < 0) calc_time = -calc_time;
-    if (calc_time < 1) calc_time = 1;
-
     int abs_delta = delta_t_x10 >= 0 ? delta_t_x10 : -delta_t_x10;
     int abs_diff  = temp_diff_x10 >= 0 ? temp_diff_x10 : -temp_diff_x10;
 
-    if (abs_delta * calc_time != abs_diff) {
-        int t_up = calc_time + 1;
-        char dbuf[16];
-        format_x10_value(delta_t_x10, dbuf, sizeof(dbuf));
-        snprintf(err, err_len,
-            "Stg %d: Use t=%d or t=%d at dT=%s",
-            stage_num, calc_time, t_up, dbuf);
-        return false;
-    }
+    /* Ceiling division: round up so the ramp always has enough time */
+    int calc_time = (abs_diff + abs_delta - 1) / abs_delta;
+    if (calc_time < 1) calc_time = 1;
+
     *result_time = calc_time;
     return true;
 }
@@ -280,28 +271,35 @@ bool program_validate_draft_with_temp(const program_draft_t *draft, int start_te
             return false;
         }
 
-        if (!validate_time_in_range(stage->t_min, stage_num, error_msg, error_len)) {
-            return false;
-        }
-
         if (!validate_temp_in_range(stage->target_t_c, stage_num, error_msg, error_len)) {
             return false;
         }
 
-        if (stage->t_delta_min < CONFIG_NEXTION_T_DELTA_MIN_MIN) {
-            snprintf(error_msg, error_len, "Stage %d: Delta t below min %d",
-                stage_num, CONFIG_NEXTION_T_DELTA_MIN_MIN);
-            return false;
-        }
+        /* Cooling stages (target < current): skip time, delta-T, and math
+         * validation. Time is ASAP (0), delta is CD — the profile controller
+         * just waits for temperature to drop to target. */
+        bool is_cooling_stage = (stage->target_t_c < current_temp);
 
-        if (!validate_delta_t_in_range(stage->delta_t_per_min_x10, stage_num, error_msg, error_len)) {
-            return false;
-        }
+        if (!is_cooling_stage) {
+            if (!validate_time_in_range(stage->t_min, stage_num, error_msg, error_len)) {
+                return false;
+            }
 
-        // Mathematical consistency check
-        if (!validate_stage_math(current_temp, stage->target_t_c, stage->t_min,
-                stage->delta_t_per_min_x10, stage_num, error_msg, error_len)) {
-            return false;
+            if (stage->t_delta_min < CONFIG_NEXTION_T_DELTA_MIN_MIN) {
+                snprintf(error_msg, error_len, "Stage %d: Delta t below min %d",
+                    stage_num, CONFIG_NEXTION_T_DELTA_MIN_MIN);
+                return false;
+            }
+
+            if (!validate_delta_t_in_range(stage->delta_t_per_min_x10, stage_num, error_msg, error_len)) {
+                return false;
+            }
+
+            // Mathematical consistency check
+            if (!validate_stage_math(current_temp, stage->target_t_c, stage->t_min,
+                    stage->delta_t_per_min_x10, stage_num, error_msg, error_len)) {
+                return false;
+            }
         }
 
         total_time += stage->t_min;
@@ -365,6 +363,7 @@ bool program_validate_draft_for_run(const program_draft_t *draft,
 
     int total_time = 0;
     bool any_stage = false;
+    int prev_temp = 0;  /* Track previous stage temp for cooling detection */
 
     for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
         const program_stage_t *stage = &draft->stages[i];
@@ -381,18 +380,19 @@ bool program_validate_draft_for_run(const program_draft_t *draft,
             return false;
         }
 
-        /* Individual range checks against device limits */
-        if (!validate_time_in_range(stage->t_min, stage_num, error_msg, error_len)) {
-            return false;
-        }
-
         if (!validate_temp_in_range(stage->target_t_c, stage_num, error_msg, error_len)) {
             return false;
         }
 
-        if (!validate_delta_t_in_range(stage->delta_t_per_min_x10, stage_num,
-                                       error_msg, error_len)) {
-            return false;
+        /* Cooling stages: skip time and delta-T validation */
+        if (stage->target_t_c >= prev_temp) {
+            if (!validate_time_in_range(stage->t_min, stage_num, error_msg, error_len)) {
+                return false;
+            }
+            if (!validate_delta_t_in_range(stage->delta_t_per_min_x10, stage_num,
+                                           error_msg, error_len)) {
+                return false;
+            }
         }
 
         total_time += stage->t_min;
@@ -402,6 +402,8 @@ bool program_validate_draft_for_run(const program_draft_t *draft,
                 total_time, CONFIG_NEXTION_MAX_OPERATIONAL_TIME_MIN, stage_num);
             return false;
         }
+
+        prev_temp = stage->target_t_c;
     }
 
     if (!any_stage) {
