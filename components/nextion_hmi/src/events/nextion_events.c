@@ -85,7 +85,12 @@ void nextion_update_main_status(void)
 
 void nextion_event_handle_init(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(500));
+    /* Reset the Nextion so it boots from a known state regardless of what
+     * page/values were left on the panel from a prior run. The display
+     * needs ~500 ms to come back up before it accepts new commands. */
+    nextion_send_cmd("rest");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     s_current_page = NEXTION_PAGE_ID_MAIN;
     nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
     vTaskDelay(pdMS_TO_TICKS(30));

@@ -50,6 +50,7 @@ typedef struct {
             int8_t  stage_index;                     /* 0-based, -1 if N/A */
             int8_t  total_active_stages;
             uint8_t phase;                           /* coordinator_stage_phase_t */
+            uint32_t stage_remaining_ms;             /* Time left in current stage (HOLD) */
         } status;
         struct {
             float current_temperature;               // HMI_CMD_PROFILE_*

@@ -9,7 +9,7 @@ menu "Heater Controller"
 
     config HEATER_WINDOW_SIZE_MS
         int "Heater Window Size (ms)"
-        default 500
+        default 5000
         help
             Time-proportioning window for the SSR. With a zero-cross AC SSR
             (e.g. Autonics SRH3-1430) 1000 ms is comfortable. For a mechanical

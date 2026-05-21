@@ -174,6 +174,7 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             cmd.status.stage_index = s->stage_index;
             cmd.status.total_active_stages = s->total_active_stages;
             cmd.status.phase = s->phase;
+            cmd.status.stage_remaining_ms = s->stage_remaining_ms;
         }
         break;
 
@@ -329,7 +330,8 @@ static void hmi_coordinator_task(void* arg)
                 cmd.status.power_output,
                 cmd.status.stage_index,
                 cmd.status.total_active_stages,
-                cmd.status.phase);
+                cmd.status.phase,
+                cmd.status.stage_remaining_ms);
             break;
 
         case HMI_CMD_PROFILE_STARTED:

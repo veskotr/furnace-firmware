@@ -23,7 +23,8 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                        float current_temp, float target_temp,
                                        float power_output,
                                        int8_t stage_index, int8_t total_stages,
-                                       uint8_t phase);
+                                       uint8_t phase,
+                                       uint32_t stage_remaining_ms);
 void nextion_event_handle_profile_started(void);
 void nextion_event_handle_profile_paused(void);
 void nextion_event_handle_profile_resumed(void);

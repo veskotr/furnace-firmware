@@ -34,10 +34,6 @@ static uint32_t s_total_ms          = 0;   // program total duration
 static uint32_t s_pause_extra_ms    = 0;   // accumulated pause time added to remaining
 static uint32_t s_pause_start_tick  = 0;   // tick count when pause began
 
-/* ── Graph: plot one point per minute ───────────────────────────────── */
-
-static uint32_t s_last_graph_min    = UINT32_MAX;  // last elapsed minute plotted
-
 /* ── Live waveform state ───────────────────────────────────────────── */
 
 static bool     s_waveform_active       = false;
@@ -51,6 +47,14 @@ static uint32_t s_waveform_ms_per_pixel = 1;
  */
 #define WAVEFORM_RESERVE_PX  4
 #define WAVEFORM_USABLE_WIDTH  (CONFIG_NEXTION_MAIN_GRAPH_WIDTH - WAVEFORM_RESERVE_PX)
+
+/**
+ * Target sampling interval: place a waveform point every 5 seconds when
+ * the run is short enough that the graph still fits. Long runs stretch
+ * past this — `ms_per_pixel` is clamped to whatever is needed to fit
+ * the whole run inside WAVEFORM_USABLE_WIDTH.
+ */
+#define WAVEFORM_MIN_MS_PER_PIXEL  5000U
 
 /* ── User-initiated commands ───────────────────────────────────────── */
 
@@ -188,29 +192,28 @@ void nextion_event_handle_profile_started(void)
     snprintf(cmd, sizeof(cmd), "progNameDisp.txt=\"%s\"", draft.name);
     nextion_send_cmd(cmd);
 
-    uint32_t total_min = 0;
-    float last_stage_temp = 0.0f;
-    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        if (draft.stages[i].is_set) {
-            total_min += (uint32_t)draft.stages[i].t_min;
-            last_stage_temp = (float)draft.stages[i].target_t_c;
-        }
-    }
-    s_waveform_total_ms = total_min * 60U * 1000U;
-
-    /* Include implicit cooldown in the graph time span */
+    /* Compute total via the shared rate-based walk so the projected curve
+     * (rendered by program_build_graph below) and the live waveform's
+     * ms-per-pixel agree on the X axis. Same math as the coordinator's
+     * runtime stage duration, so the displayed remaining time also aligns. */
     int cd_rate = program_get_cooldown_rate_x10();
+    float last_stage_temp = 0.0f;
+    uint32_t stages_only_ms = program_calculate_stages_duration_ms(
+        &draft, program_get_current_temp_c(), cd_rate, &last_stage_temp);
+    s_waveform_total_ms = stages_only_ms;
+
+    /* Include implicit cooldown in the graph time span only — the displayed
+     * remaining time tracks the program stages, not the cooldown phase. */
     if (last_stage_temp > 0.0f && cd_rate > 0) {
         float cooldown_min = (last_stage_temp * 10.0f) / (float)cd_rate;
         if (cooldown_min < 1.0f) cooldown_min = 1.0f;
         s_waveform_total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
 
-    /* Init time tracking */
-    s_total_ms         = s_waveform_total_ms;
+    /* Init time tracking — total for the remaining-time readout is stages only. */
+    s_total_ms         = stages_only_ms;
     s_last_elapsed_ms  = 0;
     s_pause_extra_ms   = 0;
-    s_last_graph_min   = UINT32_MAX;  /* force first graph point */
 
     /* Init waveform */
     s_waveform_x = 0;
@@ -221,9 +224,13 @@ void nextion_event_handle_profile_started(void)
         /* Manual mode: 1 pixel = 1 minute — graph fills over GRAPH_WIDTH minutes */
         s_waveform_ms_per_pixel = 60000;
     } else {
-        s_waveform_ms_per_pixel = (s_waveform_total_ms > 0)
-            ? (s_waveform_total_ms / WAVEFORM_USABLE_WIDTH)
-            : 1;
+        /* Default: 1 pixel per 5s. If the run is too long to fit at that
+         * density, stretch ms/pixel just enough to span the usable width. */
+        uint32_t fit_mpp = (s_waveform_total_ms > 0)
+            ? ((s_waveform_total_ms + WAVEFORM_USABLE_WIDTH - 1) / WAVEFORM_USABLE_WIDTH)
+            : WAVEFORM_MIN_MS_PER_PIXEL;
+        s_waveform_ms_per_pixel = (fit_mpp < WAVEFORM_MIN_MS_PER_PIXEL)
+            ? WAVEFORM_MIN_MS_PER_PIXEL : fit_mpp;
     }
     s_waveform_active = true;
 
@@ -298,19 +305,18 @@ static void plot_graph_point(float current_temp, uint32_t elapsed_ms)
         target_x = (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH;
     }
 
-    int temp_c = (int)(current_temp + 0.5f);
-    int y = 0;
-    if (CONFIG_NEXTION_MAX_TEMPERATURE_C > 0) {
-        y = (temp_c * CONFIG_NEXTION_MAIN_GRAPH_HEIGHT)
-            / CONFIG_NEXTION_MAX_TEMPERATURE_C;
-    }
-    if (y < 0) y = 0;
-    if (y > CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) y = CONFIG_NEXTION_MAIN_GRAPH_HEIGHT;
+    /* Use the same encoder as the projected curve so the two traces overlap
+     * exactly. The Nextion graph element scales the 0..255 byte to its own
+     * pixel height internally — encoding against GRAPH_HEIGHT (a pixel value)
+     * was the bug that made the live trace sit a few pixels below the
+     * projected one. */
+    const uint8_t y = program_graph_encode_temp(current_temp,
+                                                CONFIG_NEXTION_MAX_TEMPERATURE_C);
 
     char cmd[64];
     while (s_waveform_x < target_x) {
         snprintf(cmd, sizeof(cmd), "add %d,1,%d",
-                 CONFIG_NEXTION_GRAPH_DISP_ID, y);
+                 CONFIG_NEXTION_GRAPH_DISP_ID, (int)y);
         nextion_send_cmd(cmd);
         s_waveform_x++;
     }
@@ -330,7 +336,8 @@ static void plot_graph_point(float current_temp, uint32_t elapsed_ms)
  */
 static void format_machine_state(char *out, size_t out_len,
                                  int8_t stage_index, int8_t total_stages,
-                                 uint8_t phase, float target_temp)
+                                 uint8_t phase, float target_temp,
+                                 uint32_t stage_remaining_ms)
 {
     const int stage_n = stage_index + 1;       /* 1-based for display */
     const int target  = (int)(target_temp + 0.5f);
@@ -340,10 +347,16 @@ static void format_machine_state(char *out, size_t out_len,
             snprintf(out, out_len, "S%d/%d RAMP %dC",
                      stage_n, total_stages, target);
             break;
-        case COORD_STAGE_PHASE_HOLDING:
-            snprintf(out, out_len, "S%d/%d HOLD %dC",
-                     stage_n, total_stages, target);
+        case COORD_STAGE_PHASE_HOLDING: {
+            /* Round up to the next whole minute so a 10-min hold shows
+             * "10m" for almost the entire stage instead of dropping to
+             * "9m" on the first tick. */
+            uint32_t mins_left = (stage_remaining_ms + 59999U) / 60000U;
+            snprintf(out, out_len, "S%d/%d HOLD %dC %lum",
+                     stage_n, total_stages, target,
+                     (unsigned long)mins_left);
             break;
+        }
         case COORD_STAGE_PHASE_COOLING:
             snprintf(out, out_len, "S%d/%d COOL %dC",
                      stage_n, total_stages, target);
@@ -364,7 +377,8 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                         float current_temp, float target_temp,
                                         float power_output,
                                         int8_t stage_index, int8_t total_stages,
-                                        uint8_t phase)
+                                        uint8_t phase,
+                                        uint32_t stage_remaining_ms)
 {
     char cmd[96];
 
@@ -390,17 +404,17 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
     if (!s_profile_paused) {
         char state_txt[27];   /* 26 chars + NUL — matches Nextion field limit */
         format_machine_state(state_txt, sizeof(state_txt),
-                             stage_index, total_stages, phase, target_temp);
+                             stage_index, total_stages, phase, target_temp,
+                             stage_remaining_ms);
         snprintf(cmd, sizeof(cmd), "machineState.txt=\"%s\"", state_txt);
         nextion_send_cmd(cmd);
     }
 
-    /* ── Live waveform: plot one point per elapsed minute ─────────── */
-    uint32_t elapsed_min = elapsed_ms / 60000;
-    if (elapsed_min != s_last_graph_min) {
-        s_last_graph_min = elapsed_min;
-        plot_graph_point(current_temp, elapsed_ms);
-    }
+    /* ── Live waveform: advance one or more pixels if enough time has
+     * elapsed since the last plotted point. plot_graph_point is a no-op
+     * when target_x has not advanced past s_waveform_x, so calling it on
+     * every status update is safe and gives 5s resolution by default. */
+    plot_graph_point(current_temp, elapsed_ms);
 }
 
 void nextion_event_handle_profile_paused(void)

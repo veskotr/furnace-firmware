@@ -59,6 +59,10 @@ static esp_err_t heater_command_handler(void* handler_arg, const void* command_d
     case COMMAND_TYPE_HEATER_TOGGLE:
         return toggle_heater(data->heater_state);
     case COMMAND_TYPE_HEATER_CLEAR:
+        /* Drop the SSR pin immediately — the heater task may be mid-cycle
+         * with the SSR held high; without this it would finish its current
+         * on-window before noticing the new zero power level. */
+        toggle_heater(HEATER_OFF);
         return clear_heater_target_power_level(ctx);
     case COMMAND_TYPE_HEATER_START:
         return start_heater();

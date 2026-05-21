@@ -199,14 +199,37 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
     const program_draft_t *prog = g_temp_profile_controller_ctx->program;
     const program_stage_t *stage = &prog->stages[idx];
 
-    s_tick.stage_index      = idx;
-    s_tick.stage_elapsed_ms = 0;
-    s_tick.stage_planned_ms = (uint32_t)stage->t_min * 60U * 1000U;
-    s_tick.stage_start_temp = current_temp;  /* Start from ACTUAL temperature */
+    s_tick.stage_index       = idx;
+    s_tick.stage_elapsed_ms  = 0;
+    s_tick.stage_start_temp  = current_temp;  /* Start from ACTUAL temperature */
     s_tick.stage_target_temp = (float)stage->target_t_c;
 
     const float tolerance = (float)CONFIG_NEXTION_TEMP_TOLERANCE_C;
     s_tick.phase = detect_stage_phase(current_temp, s_tick.stage_target_temp, tolerance);
+
+    /* Compute stage_planned_ms:
+     *
+     * For a HEATING stage with a configured rate (delta_t_per_min_x10 > 0),
+     * derive the ramp duration from the ACTUAL start temperature and the
+     * configured °C/min. This is the critical bit — t_min was baked in at
+     * program-edit time against an *assumed* start temp (the previous
+     * stage's target, or 0 for stage 1), so using t_min directly would
+     * stretch the same wall-clock duration across a different temperature
+     * span and silently change the rate.
+     *
+     *     planned_ms = |target − start| / rate(°C/min)  × 60_000 ms/min
+     *                = |target − start| × 600_000 / delta_t_per_min_x10
+     *
+     * HOLDING stages: keep t_min, it IS the dwell duration.
+     * COOLING stages (and any stage with no rate set): fall back to t_min. */
+    if (s_tick.phase == STAGE_PHASE_HEATING && stage->delta_t_per_min_x10 > 0) {
+        float diff_c = s_tick.stage_target_temp - current_temp;
+        if (diff_c < 0.0f) diff_c = -diff_c;
+        const float planned_ms_f = (diff_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        s_tick.stage_planned_ms = (uint32_t)planned_ms_f;
+    } else {
+        s_tick.stage_planned_ms = (uint32_t)stage->t_min * 60U * 1000U;
+    }
 
     result->stage_changed = true;
 
@@ -214,8 +237,10 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
                             (s_tick.phase == STAGE_PHASE_HOLDING)  ? "HOLDING" :
                             (s_tick.phase == STAGE_PHASE_COOLING)  ? "COOLING" : "??";
 
-    LOGGER_LOG_INFO(TAG, "Stage %d started [%s]: %.1f C → %d C over %d min",
-                    idx + 1, phase_str, current_temp, stage->target_t_c, stage->t_min);
+    LOGGER_LOG_INFO(TAG, "Stage %d started [%s]: %.1f C → %d C, rate x10 = %d, planned %lu ms",
+                    idx + 1, phase_str, current_temp, stage->target_t_c,
+                    stage->delta_t_per_min_x10,
+                    (unsigned long)s_tick.stage_planned_ms);
 }
 
 profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
@@ -235,6 +260,8 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     result->stage_changed       = false;
     result->profile_complete    = false;
     result->threshold_violation = false;
+    result->stage_elapsed_ms    = 0;
+    result->stage_planned_ms    = 0;
 
     /* First call: build stage list and enter first stage */
     if (!s_tick.initialized) {
@@ -378,6 +405,8 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     result->current_stage_index = s_tick.stage_index;
     result->phase = s_tick.phase;
     result->setpoint = setpoint;
+    result->stage_elapsed_ms = s_tick.stage_elapsed_ms;
+    result->stage_planned_ms = s_tick.stage_planned_ms;
 
     /* ── Overshoot threshold check ─────────────────────────────────── */
     if (s_tick.phase != STAGE_PHASE_COOLDOWN &&

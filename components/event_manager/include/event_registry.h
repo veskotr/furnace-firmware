@@ -80,6 +80,7 @@ typedef struct
     int8_t  stage_index;                /* 0..N-1 active stage; -1 in cooldown/complete */
     int8_t  total_active_stages;        /* Count of is_set stages in the program */
     uint8_t phase;                      /* coordinator_stage_phase_t */
+    uint32_t stage_remaining_ms;        /* Time left in the active stage (HOLDING etc.); 0 if N/A */
 } coordinator_status_data_t;
 
 // ============================================================================

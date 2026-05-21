@@ -14,9 +14,11 @@ typedef struct {
 } pid_controller_params_t;
 
 static const pid_controller_params_t pid_params = {
-    .kp = ((float) CONFIG_PID_KP / 100.0f),
-    .ki = ((float) CONFIG_PID_KI / 100.0f),
-    .kd = ((float) CONFIG_PID_KD / 100.0f),
+    /* Kp/Ki/Kd are stored in thousandths (range 0..1000) so menuconfig
+     * stays integer-only. Output limits remain plain percent (0..100). */
+    .kp = ((float) CONFIG_PID_KP / 1000.0f),
+    .ki = ((float) CONFIG_PID_KI / 1000.0f),
+    .kd = ((float) CONFIG_PID_KD / 1000.0f),
     .output_min = ((float) CONFIG_PID_OUTPUT_MIN / 100.0f),
     .output_max = ((float) CONFIG_PID_OUTPUT_MAX / 100.0f)
 };
@@ -141,7 +143,7 @@ float pid_controller_compute(const float setpoint, const float measured_value, c
     pid_state.previous_measurement = measured_value;
     pid_state.initialized = true;
 
-    LOGGER_LOG_DEBUG(TAG,
+    LOGGER_LOG_INFO(TAG,
                      "PID - SP: %.2f, PV: %.2f, err: %.2f, dt: %.3fs, dyn_max: %.2f, P: %.3f, I: %.3f, D: %.3f, Out: %.3f",
                      setpoint, measured_value, error, dt, dyn_output_max, p_term, i_term, d_term, output);
 
