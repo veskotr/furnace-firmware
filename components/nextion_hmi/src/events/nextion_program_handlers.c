@@ -380,6 +380,11 @@ void handle_save_prog(const char *payload)
         }
     }
 
+    /* Fields are valid — show the buttonless loading overlay for the slow
+     * part (buffer sync + SD write). Every exit path below ends in
+     * show_error/show_success, which auto-dismiss it. */
+    nextion_show_loading("Saving...");
+
     sync_program_buffer();
 
     char error_msg[64];
@@ -396,8 +401,7 @@ void handle_save_prog(const char *payload)
                                      save_error, sizeof(save_error))) {
         nextion_show_error(save_error);
     } else {
-        nextion_show_error("Saved");
-        nextion_send_cmd("errTxtHead.txt=\"Success\"");
+        nextion_show_success("Saved");
         strncpy(s_original_program_name, validated.name,
                 sizeof(s_original_program_name) - 1);
         s_original_program_name[sizeof(s_original_program_name) - 1] = '\0';

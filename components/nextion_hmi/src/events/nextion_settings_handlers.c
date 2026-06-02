@@ -73,6 +73,10 @@ void handle_save_settings(const char *payload)
     LOGGER_LOG_INFO(TAG, "save_settings raw payload: [%s]", payload);
     LOGGER_LOG_INFO(TAG, "save_settings payload length: %d", (int)strlen(payload));
 
+    /* Buttonless loading overlay — dismissed automatically by the
+     * show_error/show_success calls on every exit path below. */
+    nextion_show_loading("Saving...");
+
     char buffer[256];
     strncpy(buffer, payload, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
@@ -176,12 +180,19 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "Cooldown rate set: %d x10", rate_x10);
     }
 
-    nextion_clear_error();
+    nextion_show_success("Saved");
 }
 
 void handle_restart(void)
 {
     LOGGER_LOG_INFO(TAG, "Restart requested");
+
+    /* Buttonless loading overlay so the user gets feedback during the brief
+     * window before the panel resets. Not paired with a hide — the Nextion
+     * reset below clears it as the panel reboots, and esp_restart() never
+     * returns. */
+    nextion_show_loading("Restarting...");
+    vTaskDelay(pdMS_TO_TICKS(300));
 
     /* Reset the Nextion display first (best-effort) */
     nextion_send_cmd("rest");

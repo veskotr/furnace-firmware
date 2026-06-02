@@ -13,7 +13,7 @@ menu "PID Controller Configuration"
 
     config PID_KP
         int "Kp - Proportional gain (thousandths; 300 = 0.300)"
-        default 300
+        default 115
         range 0 1000
         help
             Proportional gain, stored as Kp x 1000. Example: 300 = Kp 0.300.
@@ -58,7 +58,7 @@ menu "PID Controller Configuration"
 
     config PID_KI
         int "Ki - Integral gain (thousandths; 20 = 0.020)"
-        default 0
+        default 1
         range 0 1000
         help
             Integral gain, stored as Ki x 1000. Example: 20 = Ki 0.020.
@@ -110,7 +110,7 @@ menu "PID Controller Configuration"
 
     config PID_KD
         int "Kd - Derivative gain (thousandths; 50 = 0.050)"
-        default 50
+        default 0
         range 0 1000
         help
             Derivative gain, stored as Kd x 1000. Example: 50 = Kd 0.050.

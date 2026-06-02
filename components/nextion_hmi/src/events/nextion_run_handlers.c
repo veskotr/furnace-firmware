@@ -100,14 +100,16 @@ void handle_run_pause(void)
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
         .data.coordinator = {
-            .type = COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
+            .type = s_profile_paused
+                  ? COMMAND_TYPE_COORDINATOR_RESUME_PROFILE
+                  : COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
         }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
 
     if (err != ESP_OK) {
-        nextion_show_error("Pause failed");
+        nextion_show_error(s_profile_paused ? "Resume failed" : "Pause failed");
     }
 }
 
@@ -182,6 +184,7 @@ void nextion_event_handle_profile_started(void)
     s_profile_active = true;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Running\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     nextion_clear_error();
 
     program_draft_t draft;
@@ -423,6 +426,7 @@ void nextion_event_handle_profile_paused(void)
     s_profile_paused = true;
     s_pause_start_tick = xTaskGetTickCount();
     nextion_send_cmd("machineState.txt=\"Paused\"");
+    nextion_send_cmd("pauseProgB.txt=\"Resume\"");
 }
 
 void nextion_event_handle_profile_resumed(void)
@@ -434,6 +438,7 @@ void nextion_event_handle_profile_resumed(void)
     s_pause_extra_ms += pause_duration_ms;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Running\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
 }
 
 void nextion_event_handle_profile_stopped(void)
@@ -442,6 +447,7 @@ void nextion_event_handle_profile_stopped(void)
     s_profile_active = false;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Stopped\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     s_waveform_active = false;
 
     /* Commit the trailing partial minute of op-time before the user
@@ -461,6 +467,7 @@ void nextion_event_handle_profile_completed(void)
     s_profile_active = false;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Completed\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     s_waveform_active = false;
 
     /* Zero out time remaining and power displays */

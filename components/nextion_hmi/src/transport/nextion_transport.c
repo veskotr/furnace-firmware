@@ -60,6 +60,7 @@ void nextion_send_cmd(const char *cmd)
     }
 
     nextion_uart_lock();
+    uart_write_bytes(CONFIG_NEXTION_UART_PORT_NUM, (const char *)s_cmd_terminator, NEXTION_CMD_TERMINATOR_COUNT);
     uart_write_bytes(CONFIG_NEXTION_UART_PORT_NUM, cmd, (size_t)strlen(cmd));
     uart_write_bytes(CONFIG_NEXTION_UART_PORT_NUM, (const char *)s_cmd_terminator, NEXTION_CMD_TERMINATOR_COUNT);
     nextion_uart_unlock();
