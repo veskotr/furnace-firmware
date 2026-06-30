@@ -84,7 +84,9 @@ static void flush_deferred(void)
             break;
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                c->error.error_code, c->error.esp_error);
+                c->error.error_code, c->error.esp_error,
+                c->error.temperature_c, c->error.setpoint_c,
+                c->error.stage_index, c->error.fault_elapsed_ms);
             break;
         default:
             break;
@@ -185,6 +187,10 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             const coordinator_error_data_t* err = event_data;
             cmd.error.error_code = err->error_code;
             cmd.error.esp_error = err->esp_error_code;
+            cmd.error.temperature_c = err->temperature_c;
+            cmd.error.setpoint_c = err->setpoint_c;
+            cmd.error.stage_index = err->stage_index;
+            cmd.error.fault_elapsed_ms = err->fault_elapsed_ms;
         }
         break;
 
@@ -356,7 +362,9 @@ static void hmi_coordinator_task(void* arg)
 
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                cmd.error.error_code, cmd.error.esp_error);
+                cmd.error.error_code, cmd.error.esp_error,
+                cmd.error.temperature_c, cmd.error.setpoint_c,
+                cmd.error.stage_index, cmd.error.fault_elapsed_ms);
             break;
 
         default:

@@ -31,4 +31,8 @@ void nextion_event_handle_profile_resumed(void);
 void nextion_event_handle_profile_stopped(void);
 void nextion_event_handle_profile_completed(void);
 void nextion_event_handle_profile_error(coordinator_error_code_t code,
-                                        esp_err_t esp_err);
+                                        esp_err_t esp_err,
+                                        float temperature_c,
+                                        float setpoint_c,
+                                        int8_t stage_index,
+                                        uint32_t fault_elapsed_ms);

@@ -110,7 +110,7 @@ menu "PID Controller Configuration"
 
     config PID_KD
         int "Kd - Derivative gain (thousandths; 50 = 0.050)"
-        default 0
+        default 30
         range 0 1000
         help
             Derivative gain, stored as Kd x 1000. Example: 50 = Kd 0.050.
@@ -194,18 +194,53 @@ menu "PID Controller Configuration"
         help
             EXPERIMENTAL / OFF BY DEFAULT.
 
-            When enabled, the upper output clamp shrinks as the chamber
-            approaches setpoint (gain-scheduled by |error|). The idea is
-            to prevent the elements from being driven hard right before
-            you arrive, so the stored thermal energy can't push past the
-            setpoint.
+            WHAT IT DOES
+              Shrinks the UPPER output clamp as |error| shrinks (gain-scheduled
+              by how far the measured temp is from the setpoint). Far from
+              setpoint the full PID_OUTPUT_MAX is allowed; near setpoint output
+              is capped at a small fraction (the bands/factors below). The aim
+              is to stop the elements being driven hard right before arrival, so
+              their stored heat cannot coast the chamber past setpoint.
 
-            This is NOT recommended for normal use. A well-tuned PID with
-            non-zero Kd already brakes against incoming temperature rise
-            via derivative-on-measurement. Only enable this if a single
-            set of P/I/D gains genuinely cannot cover the full operating
-            range — e.g. great control at 100 C, big overshoot at 400 C —
-            and you need an extra clamp on top.
+            WHICH SETPOINT DOES IT MEASURE AGAINST? (important)
+              The CURRENT, MOVING ramp setpoint — NOT the stage's end target.
+              During a HEATING stage the profile feeds the PID a setpoint that
+              ramps linearly from the stage start temp up to the target, and
+              this clamp keys off |moving_setpoint − measured|. So if a stage's
+              end target is 100 C but the ramp is currently at 70.4 C, the band
+              uses 70.4, not 100.
+
+            DOES THIS FIX STAGE-CHANGE / TOP-OF-RAMP OVERSHOOT?
+              Partly, but bluntly — and with a side effect you must understand.
+              Because it keys off the MOVING setpoint, a well-tracked ramp keeps
+              |error| small (the chamber follows the ramp within a degree or
+              two) for the WHOLE climb. So this clamp throttles output across
+              the entire ramp, not just at the final approach — the ramp then
+              lags or stair-steps because the heater is pinned to the "hold"
+              fraction while it is still meant to be climbing. It can cut
+              overshoot, but it tends to strangle ramp tracking at the same
+              time. It is a hard CLAMP, not a smooth brake.
+
+            PREFER Kd FOR OVERSHOOT
+              The clean fix for thermal-inertia overshoot is derivative gain
+              (PID_KD). Being derivative-on-measurement, it subtracts power in
+              proportion to how fast the chamber is RISING, easing off the
+              elements BEFORE error reaches zero. Unlike this clamp, a steady
+              ramp produces a steady, modest D offset (constant rise rate)
+              rather than a throttled ceiling — so Kd brakes the arrival without
+              choking the climb. Reach for Kd first (your field notes already
+              trend that way: Kd=5 on the 25 kW unit).
+
+            WHEN TO USE THIS INSTEAD
+              Only if a single Kd genuinely cannot tame overshoot across the
+              whole range AND raising Kd makes the SSR chatter. In a narrow band
+              like this furnace (<=200 C) one Kd value should cover it, so you
+              will likely never need this. If you do enable it, gate it to
+              HOLDING only (see the commented pid_controller_set_adaptive_enabled
+              call in the coordinator) so it never throttles a ramp.
+
+            DO NOT combine with feedforward: near setpoint this clamp can cut
+            the feedforward base power itself and reintroduce droop.
 
             When OFF (default), the static PID_OUTPUT_MAX is used at all
             times and the bands/factors below are ignored.
@@ -265,4 +300,112 @@ menu "PID Controller Configuration"
             output is capped at this fraction of OUTPUT_MAX. Keep this
             non-zero so the controller can still supply enough heat to
             offset steady-state losses.
+
+    # ──────────────────────────────────────────────────────────────────
+    # Feedforward (steady-state power model)
+    #
+    # The calibration points below are intentionally NOT "depends on" the
+    # enable switch: the same model is also used to seed the integrator on a
+    # bumpless restart (pid_controller_reset_for_setpoint), even when the
+    # additive feedforward term itself is left off. With the inert defaults
+    # (both percentages 0) the model returns 0, so behaviour is identical to a
+    # plain PID until you calibrate it.
+    # ──────────────────────────────────────────────────────────────────
+
+    config PID_FEEDFORWARD_ENABLED
+        bool "Enable feedforward (add steady-state power model to output)"
+        default n
+        help
+            OFF BY DEFAULT. Even when ON, behaviour is unchanged until the two
+            calibration points below are set to non-zero percentages.
+
+            FORMULA
+              FF = interp(setpoint; (T_LOW -> PCT_LOW), (T_HIGH -> PCT_HIGH))
+              Out = P_term + I_term + D_term + FF        (then clamped)
+              (flat-clamped to PCT_LOW below T_LOW and PCT_HIGH above T_HIGH.)
+
+            INTUITION
+              "Before the feedback loop does anything, hand the heater the duty
+              we ALREADY KNOW it takes to sit at this temperature." The PID then
+              only has to trim the small leftover error instead of discovering
+              the entire hold power from scratch with the integrator.
+
+            WHY IT HELPS
+              Furnace heat loss rises with temperature, so the duty to HOLD
+              180 C is higher than to hold 100 C. Without feedforward only the
+              integral can supply that base power, and it must wind up from zero
+              every time -> the chamber sits below setpoint ("droop") and lags
+              on ramps while the integral catches up. Feedforward supplies the
+              base power instantly, so the integral hovers near zero and
+              droop/lag shrink markedly.
+
+            HOW TO CALIBRATE  (do this once per furnace, like the Kp/Ki/Kd recipe)
+              You are simply measuring "what steady duty holds each temperature."
+              1. Leave both percentages at 0 (model inert) and run a normal HOLD
+                 at a LOW temperature in your range, e.g. 100 C. Let it fully
+                 settle (no more drift).
+              2. Read the steady "Out:" value from the PID log line. Out is a
+                 fraction 0..1, so "Out: 0.12" means 12 %. Watch it for a minute
+                 and take the value it hovers around. That is PCT_LOW at
+                 PID_FF_T_LOW_C (e.g. T_LOW=100, PCT_LOW=12).
+              3. Repeat at a HIGH temperature in your range, e.g. 180 C, and
+                 read the steady Out (e.g. 0.28 -> PCT_HIGH=28 at T_HIGH=180).
+              4. Enter the two points, set PID_FEEDFORWARD_ENABLED=y, rebuild.
+              5. Re-run a hold. In the log the "I:" term should now sit near 0
+                 and the chamber should reach setpoint faster with less droop.
+                 If it now floats slightly ABOVE setpoint while holding, your
+                 percentages are a touch high — trim them by 1-2 points.
+
+            EXAMPLE FOR THIS FURNACE  (operates <=200 C, usually <=150 C)
+              Pick the two points to STRADDLE where you actually run so the
+              interpolation is accurate there. Good bracket: T_LOW=100,
+              T_HIGH=200, with PCT_LOW/PCT_HIGH measured at those temps. At
+              150 C the model then interpolates halfway between the two duties.
+              Below 100 C it clamps flat to PCT_LOW, above 200 C to PCT_HIGH
+              (you never go there). Because your span is narrow and low, the
+              two duties will be fairly close and even a rough calibration helps.
+
+            NOTES
+              - Inert defaults (PCT 0/0) == identical to a plain PID, so it is
+                safe to leave enabled-but-uncalibrated.
+              - DO NOT combine with the adaptive output ceiling: near setpoint
+                the adaptive clamp can throttle the feedforward base power itself
+                and reintroduce the droop feedforward removes.
+              - Feedforward and Kd are COMPLEMENTARY: feedforward sets the steady
+                base power, Kd brakes the approach to limit overshoot.
+
+    config PID_FF_T_LOW_C
+        int "Feedforward: low calibration temperature (deg C)"
+        default 100
+        range 0 2000
+        help
+            Temperature of the low calibration point. PID_FF_PCT_LOW is the
+            steady hold duty observed at this temperature. Pick a value near
+            the LOW end of where you actually run (this furnace: ~100 C).
+
+    config PID_FF_PCT_LOW
+        int "Feedforward: hold duty at low temp (% of full SSR duty)"
+        default 0
+        range 0 100
+        help
+            Steady-state % duty needed to HOLD PID_FF_T_LOW_C, read from the
+            PID log "Out:" value once settled (Out 0.12 -> enter 12). Default 0
+            makes the model inert; set it from a field measurement to enable.
+
+    config PID_FF_T_HIGH_C
+        int "Feedforward: high calibration temperature (deg C)"
+        default 200
+        range 0 2000
+        help
+            Temperature of the high calibration point. PID_FF_PCT_HIGH is the
+            steady hold duty observed at this temperature. Pick a value near
+            the HIGH end of where you actually run (this furnace: ~200 C).
+
+    config PID_FF_PCT_HIGH
+        int "Feedforward: hold duty at high temp (% of full SSR duty)"
+        default 0
+        range 0 100
+        help
+            Steady-state % duty needed to HOLD PID_FF_T_HIGH_C. Default 0 makes
+            the model inert; set it from a field measurement to enable.
 endmenu
