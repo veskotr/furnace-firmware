@@ -47,6 +47,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Evidence:** `temp_sensor_device_core.c:temp_sensor_create/temp_sensor_update/temp_sensor_read`; `temperature_processor_task.c:read_temp_sensors`; `coordinator_component_events.c:temperature_processor_event_handler`; `coordinator_component_heater_controller.c:heater_controller_task`.
 - **Trigger/impact:** profile starts before first physical sample or Modbus fails after a valid sample. Initial `0.0f` or cached value has no timestamp/validity and continues into profile/PID logic.
 - **Direction:** publish one synchronized sample snapshot with validity, age, contributors, and quorum; require freshness before and during heat; independently inhibit on timeout.
+- **Investigation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md) separates a safe boot-start gate from the larger stale-sample/output-inhibit contract.
 
 ### F-002 — Dispatcher self-deadlock can precede heater-off
 
