@@ -69,6 +69,24 @@ void program_models_init(void)
         }
         nvs_close(nvs);
     }
+    
+    #ifdef CONFIG_NEXTION_OP_TIME_OVERRIDE_ENABLE
+    {
+        uint32_t override_sec = (uint32_t)CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS * 3600U;
+        s_operational_time_sec = override_sec;
+        s_op_time_unsaved_sec  = 0;
+        nvs_handle_t nvs_w;
+        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_w) == ESP_OK) {
+            nvs_set_u32(nvs_w, NVS_KEY_OP_TIME, override_sec);
+            nvs_commit(nvs_w);
+            nvs_close(nvs_w);
+        }
+        LOGGER_LOG_WARN(TAG, "OP-TIME OVERRIDE: forced to %d h (%lu sec)",
+                        CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS,
+                        (unsigned long)override_sec);
+    }
+#endif
+
 }
 
 void program_draft_clear(void)

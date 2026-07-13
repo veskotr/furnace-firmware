@@ -40,12 +40,21 @@ typedef enum
     COORDINATOR_ERROR_PROFILE_NOT_STOPPED,
     COORDINATOR_ERROR_NOT_STARTED,
     COORDINATOR_ERROR_STALL_DETECTED,
+    COORDINATOR_ERROR_HOLD_DEVIATION,
 } coordinator_error_code_t;
 
 typedef struct
 {
     coordinator_error_code_t error_code;
     esp_err_t esp_error_code;
+
+    /* Diagnostic context for run-time faults (stall / hold deviation) so the
+     * HMI can tell the worker WHERE and WHEN it failed. Left zero by the
+     * control-flow errors (start/pause/resume/stop), which don't use them. */
+    float    temperature_c;     ///< Chamber temp when the fault tripped
+    float    setpoint_c;        ///< Active setpoint when the fault tripped
+    int8_t   stage_index;       ///< 0-based active-stage ordinal, -1 if N/A
+    uint32_t fault_elapsed_ms;  ///< How long the fault condition persisted
 } coordinator_error_data_t;
 
 /**

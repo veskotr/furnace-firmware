@@ -17,6 +17,21 @@ endmenu
 
 menu "Operational Limits"
 
+    config NEXTION_OP_TIME_OVERRIDE_ENABLE
+    bool "Override stored operational time on boot (service tool)"
+    default n
+    help
+        One-shot correction. When ticked, on every boot the stored
+        operational-time counter is forced to NEXTION_OP_TIME_OVERRIDE_HOURS.
+        Use once to trim the historical powered-on hours the old method
+        accumulated, then UNTICK and re-flash — otherwise the counter is
+        reset to this value on every reboot.
+
+    config NEXTION_OP_TIME_OVERRIDE_HOURS
+        int "Operational time override value (hours)"
+        depends on NEXTION_OP_TIME_OVERRIDE_ENABLE
+        default 0
+
     config NEXTION_MAX_OPERATIONAL_TIME_MIN
         int "Maximum total program time (minutes)"
         default 10080

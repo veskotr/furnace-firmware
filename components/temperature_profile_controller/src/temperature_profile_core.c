@@ -4,6 +4,21 @@
 #include <math.h>
 #include <string.h>
 
+/* Fallback in case this component is built against an sdkconfig that predates
+ * the ramp soft-landing knob (e.g. before the next menuconfig regen). 6 C
+ * matches the Kconfig default, so behaviour is identical whether or not the
+ * symbol is present; 0 would disable the soft-landing (pure linear ramp). */
+#ifndef CONFIG_COORDINATOR_RAMP_EASE_BAND_C
+#define CONFIG_COORDINATOR_RAMP_EASE_BAND_C 6
+#endif
+
+/* Dedicated, tighter tolerance (tenths C) for the HEATING->HOLDING hand-over,
+ * kept separate from the shared whole-degree NEXTION_TEMP_TOLERANCE_C. Fallback
+ * matches the Kconfig default so behaviour is identical before a menuconfig regen. */
+#ifndef CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10
+#define CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10 5
+#endif
+
 static const char *TAG = "TEMP_PROFILE_CONTROLLER";
 
 typedef struct {
@@ -178,6 +193,54 @@ static stage_phase_t detect_stage_phase(float start_temp, float target_temp, flo
 }
 
 /**
+ * @brief Soft-landing shape for the final approach of a heating ramp.
+ *
+ * A pure linear ramp commands a constant rise rate right up to the target, then
+ * the setpoint goes flat the instant we hand over to the HOLDING stage. At that
+ * corner the chamber is still climbing at full ramp rate and the PID integrator
+ * is wound up for "climbing" power, so the chamber coasts past the target
+ * before the controller can back off — the classic ramp->hold overshoot, with
+ * a slow tail while the integrator unwinds.
+ *
+ * This eases the LAST @p ease_band_c degrees of the ramp: the commanded rate is
+ * tapered smoothly to zero as the setpoint reaches the target, so the heater is
+ * already near hold power (and the integrator already unwound) by the time the
+ * setpoint goes flat. It is a C1-continuous cubic-Hermite blend on the
+ * normalised ramp position:
+ *
+ *     q(u) = f0 + w*(u + u^2 - u^3),   u = (frac - f0)/w,   w = 1 - f0
+ *
+ * which matches the linear position AND slope at the seam f0 (no rate kink) and
+ * reaches the target (q = 1) with zero slope. q is monotonic on [0,1], so the
+ * setpoint never steps backwards, and q(1) = 1 keeps the planned arrival time
+ * unchanged — only the shape of the final approach changes.
+ *
+ * @param frac        elapsed/planned ramp fraction, already clamped to [0,1].
+ * @param span        target - start in deg C (> 0 for a heating ramp).
+ * @param ease_band_c degrees over which to taper; 0 disables (pure linear).
+ * @return normalised setpoint position in [0,1] (caller does start + span*q).
+ */
+static float ramp_ease_position(float frac, float span, float ease_band_c)
+{
+    if (ease_band_c <= 0.0f || span <= 0.0f) {
+        return frac;                       /* easing disabled -> linear ramp */
+    }
+
+    /* Where (as a ramp fraction) the ease begins. Clamp the band to the whole
+     * ramp so a short span (band >= span) just eases the entire climb. */
+    float w = ease_band_c / span;          /* width of the ease zone, = 1 - f0 */
+    if (w > 1.0f) w = 1.0f;
+    const float f0 = 1.0f - w;             /* seam: linear below, ease above */
+
+    if (frac <= f0) {
+        return frac;                       /* still on the linear segment */
+    }
+
+    const float u = (frac - f0) / w;       /* 0..1 across the ease zone */
+    return f0 + w * (u + u * u - u * u * u);
+}
+
+/**
  * @brief Advance to the next stage (or cooldown if no more stages).
  */
 static void advance_stage(float current_temp, profile_tick_result_t *result)
@@ -279,6 +342,10 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     }
 
     const float tolerance = (float)CONFIG_NEXTION_TEMP_TOLERANCE_C;
+    /* Tighter, dedicated tolerance for the HEATING->HOLDING hand-over only, so
+     * the chamber tracks the eased ramp almost to target and arrives gently.
+     * The shared `tolerance` above still drives cooling advance + phase detect. */
+    const float handover_tol = (float)CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10 / 10.0f;
     const float overshoot_threshold = (float)CONFIG_COORDINATOR_OVERSHOOT_THRESHOLD_C;
 
     /* ── Handle cooldown phase ────────────────────────────────────── */
@@ -328,15 +395,21 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
         if (s_tick.stage_planned_ms > 0) {
             float frac = (float)s_tick.stage_elapsed_ms / (float)s_tick.stage_planned_ms;
             if (frac > 1.0f) frac = 1.0f;
-            setpoint = s_tick.stage_start_temp
-                     + (target - s_tick.stage_start_temp) * frac;
+            /* Soft-land the final approach: taper the ramp rate to zero as we
+             * reach the target so the chamber isn't still climbing at full rate
+             * when we hand over to HOLDING (which it would coast past). A band
+             * of 0 reduces this to the original linear ramp. */
+            const float span = target - s_tick.stage_start_temp;
+            const float shaped = ramp_ease_position(
+                frac, span, (float)CONFIG_COORDINATOR_RAMP_EASE_BAND_C);
+            setpoint = s_tick.stage_start_temp + span * shaped;
         } else {
             setpoint = target;
         }
 
-        if (current_temp >= target - tolerance) {
+        if (current_temp >= target - handover_tol) {
             LOGGER_LOG_INFO(TAG, "Stage %d [HEATING]: target reached (%.1f C >= %.1f C), advancing",
-                            s_tick.stage_index + 1, current_temp, target - tolerance);
+                            s_tick.stage_index + 1, current_temp, target - handover_tol);
             advance_stage(current_temp, result);
             if (s_tick.phase == STAGE_PHASE_COOLDOWN) {
                 setpoint = 0.0f;

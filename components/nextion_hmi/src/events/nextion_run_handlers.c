@@ -546,20 +546,46 @@ static const char *coordinator_error_to_str(coordinator_error_code_t code)
         case COORDINATOR_ERROR_PROFILE_NOT_RESUMED: return "Cannot resume";
         case COORDINATOR_ERROR_PROFILE_NOT_STOPPED: return "Cannot stop";
         case COORDINATOR_ERROR_NOT_STARTED:         return "Not started";
-        case COORDINATOR_ERROR_STALL_DETECTED:       return "Heating stall: check heater";
+        case COORDINATOR_ERROR_STALL_DETECTED:      return "Heating stall";
+        case COORDINATOR_ERROR_HOLD_DEVIATION:      return "Hold off-target";
         default:                                    return "System error";
     }
 }
 
 void nextion_event_handle_profile_error(coordinator_error_code_t code,
-                                        esp_err_t esp_err)
+                                        esp_err_t esp_err,
+                                        float temperature_c,
+                                        float setpoint_c,
+                                        int8_t stage_index,
+                                        uint32_t fault_elapsed_ms)
 {
-    LOGGER_LOG_ERROR(TAG, "Profile error: code=%d esp_err=%s",
-                     (int)code, esp_err_to_name(esp_err));
+    LOGGER_LOG_ERROR(TAG,
+                     "Profile error: code=%d esp_err=%s temp=%.1f sp=%.1f stage=%d dur=%lums",
+                     (int)code, esp_err_to_name(esp_err),
+                     temperature_c, setpoint_c, (int)stage_index,
+                     (unsigned long)fault_elapsed_ms);
 
     char msg[96];
-    snprintf(msg, sizeof(msg), "%s (%s)",
-             coordinator_error_to_str(code), esp_err_to_name(esp_err));
+    /* Run-time faults carry diagnostic context (which stage, the chamber vs
+     * target temp, and how long it persisted) so the worker knows where and
+     * when it failed. The control-flow errors have no context — show the
+     * plain label plus the esp_err. */
+    if (code == COORDINATOR_ERROR_STALL_DETECTED ||
+        code == COORDINATOR_ERROR_HOLD_DEVIATION) {
+        unsigned int dur_min = (unsigned int)(fault_elapsed_ms / 60000U);
+        if (stage_index >= 0) {
+            snprintf(msg, sizeof(msg), "%s S%d: %.0f/%.0fC after %umin",
+                     coordinator_error_to_str(code), (int)stage_index + 1,
+                     temperature_c, setpoint_c, dur_min);
+        } else {
+            snprintf(msg, sizeof(msg), "%s: %.0f/%.0fC after %umin",
+                     coordinator_error_to_str(code),
+                     temperature_c, setpoint_c, dur_min);
+        }
+    } else {
+        snprintf(msg, sizeof(msg), "%s (%s)",
+                 coordinator_error_to_str(code), esp_err_to_name(esp_err));
+    }
     nextion_show_error(msg);
 }
 

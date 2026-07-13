@@ -6,14 +6,14 @@ config FAN_CONTROLLER_GPIO_PIN
 
 config FAN_CONTROLLER_AUTO_ON_C
     int "Auto-on threshold (C)"
-    default 35
+    default 43
     help
         When no program is running, the fan turns on once the
         measured ambient/internal temperature reaches this value.
 
 config FAN_CONTROLLER_AUTO_OFF_C
     int "Auto-off threshold (C)"
-    default 32
+    default 40
     help
         When no program is running, the fan turns off once the
         measured temperature falls below this value. Must be
