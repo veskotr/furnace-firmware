@@ -299,6 +299,8 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **F-041 — missing test:** no recorded device-bench or powered-controller validation covers boot/reset GPIO states, sensor loss, Modbus timeout, queue saturation, pause/stop races, watchdog reset, and independent output removal.
 - **F-052 — missing test:** no deterministic coverage exists for eased-ramp shape/graph parity, handover tolerance, stall lag/rate, sustained hold deviation, PID reset/feedforward/anti-windup, non-finite control inputs, or coordinator error-payload delivery.
 
+Deferred test, build-profile, production-logging, and per-board configuration work is tracked in [FUTURE_WORK_ITEMS.md](FUTURE_WORK_ITEMS.md); it is not part of the current hardening scope.
+
 ## Unresolved questions
 
 - **F-042:** What are the deployed GPIO active polarities, external pull states, schematic-approved indicator pin, and reset behavior?
