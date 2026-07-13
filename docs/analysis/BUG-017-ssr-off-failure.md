@@ -14,7 +14,7 @@ The PWM task calls `toggle_heater(HEATER_OFF)` at the end of each SSR window. If
 
 ## Expected behavior
 
-Any failed attempt to de-energize the SSR must immediately prevent further software authorization of heat, attempt the independent contactor-off path without using the command dispatcher, and report whether either physical-off attempt failed. Recovery must require explicit, reviewed action rather than a later queued power command.
+Any failed attempt to de-energize the SSR must immediately prevent further software authorization of heat, attempt the independent contactor-off path without using the command dispatcher, and report whether either physical-off attempt failed through the existing `FURNACE_ERROR_EVENT`. HMI handling is deliberately deferred; recovery must not occur through a later queued power command.
 
 ## Reproduction
 
@@ -53,18 +53,18 @@ Without a latch and direct contactor-off attempt, a failed SSR-low operation may
 2. On any failed SSR GPIO operation, set the latch and target demand to zero first; then directly attempt SSR-low and `stop_heater()` in the heater task/component, without dispatcher or event-loop dependence.
 3. Make the PWM task check the latch immediately before SSR-on and skip all further ON transitions while latched.
 4. Reject or ignore heater `SET_POWER` and `START` commands while latched; provide no automatic clear path in this change.
-5. Only after direct physical-off attempts, emit detailed error telemetry; if contactor-off also fails, preserve that distinct failure in logs/event data.
-6. Define a separate, explicitly authorized fault-acknowledgement/recovery workflow before allowing a later change to clear the latch.
+5. Only after direct physical-off attempts, emit detailed error telemetry through the existing `FURNACE_ERROR_EVENT`; if contactor-off also fails, preserve that distinct failure in logs/event data.
+6. Keep HMI handling, a central fault manager, and fault acknowledgement/recovery workflow out of this change; document the event payload and semantics so they can be wired when the HMI is ready.
 
 This does not solve F-002/F-003 globally, but it establishes a local actuator-boundary fail-off response for the SSR-write failure that triggers this bug.
 
 ## Allowed scope and correction authority
 
-Authorized next step: a narrow production fix on `hardening/field-fixes` implementing the six steps above, plus focused tests and documentation updates. Any cross-component direct-inhibit API, fault acknowledgement UI, GPIO remapping, or changes to fault policy require a separate ADR/authority decision.
+Authorized next step: a narrow production fix on `hardening/field-fixes` implementing the six steps above, plus focused tests and documentation updates. The existing `FURNACE_ERROR_EVENT` remains the only notification mechanism. Any central fault manager, coordinator gate, HMI fault display/acknowledgement, cross-component direct-inhibit API, GPIO remapping, or change to recovery policy requires separate authority.
 
 ## ADR required, link, and status
 
-No ADR is required for the local latch/direct-contact-off correction. An ADR is required before generalizing this into a system-wide independent inhibit and recovery model for F-001/F-002/F-003/F-004/F-017.
+No ADR is required for the local latch/direct-contact-off correction. Future HMI integration must consume the documented event only after the panel has an approved fault-state/error-display design. An ADR is required before generalizing this into a system-wide independent inhibit and recovery model for F-001/F-002/F-003/F-004/F-017.
 
 ## Regression test
 

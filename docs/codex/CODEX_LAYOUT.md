@@ -1,6 +1,6 @@
 # Codex project-local layout
 
-Verified 2026-07-13 against installed `codex-cli 0.144.1` and official OpenAI Codex documentation.
+Verified 2026-07-13 against installed `codex-cli 0.144.3` and official OpenAI Codex documentation.
 
 | Purpose | Supported repository-local location | Choice here |
 | --- | --- | --- |

@@ -31,4 +31,4 @@ Harden and standardize the current ESP-IDF/FreeRTOS architecture. Do not perform
 
 ## Repository-local Codex setup
 
-Codex 0.144.1 discovers agents in `.codex/agents/*.toml`, skills in `.agents/skills/*/SKILL.md`, and nested `AGENTS.md` instructions from repository root toward the working directory. See `docs/codex/CODEX_LAYOUT.md`. Run `python3 tools/codex/verify_repository_setup.py` after changing this setup.
+Codex 0.144.3 discovers agents in `.codex/agents/*.toml`, skills in `.agents/skills/*/SKILL.md`, and nested `AGENTS.md` instructions from repository root toward the working directory. See `docs/codex/CODEX_LAYOUT.md`. Run `python3 tools/codex/verify_repository_setup.py` after changing this setup.
