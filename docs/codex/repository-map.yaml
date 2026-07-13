@@ -1,0 +1,75 @@
+schema_version: 1
+mapped_date: 2026-07-13
+platform: {framework: ESP-IDF, language: C, rtos: FreeRTOS, target: ESP32}
+entry_points:
+  build: CMakeLists.txt
+  firmware: main/main.c::app_main
+instructions: [AGENTS.md, components/AGENTS.md]
+codex:
+  config: .codex/config.toml
+  agents: .codex/agents
+  skills: .agents/skills
+  verification: tools/codex/verify_repository_setup.py
+startup:
+  - debug_console_init
+  - nvs_flash_init
+  - logger_init
+  - event_manager_init
+  - event_registry_init
+  - commands_dispatcher_init
+  - init_heater_controller_component
+  - init_coordinator
+  - modbus_master_init
+  - run_indicator_init
+  - fan_controller_init
+  - nextion_hmi_init
+  - device_manager_init
+  - init_temp_processor
+tasks:
+  active:
+    - {name: debug_console, owner: debug_console, source: components/debug_console/src/debug_console.c}
+    - {name: logger, owner: logger_component, source: components/logger_component/src/logger_core.c, core: 1}
+    - {name: private_event_loop, owner: event_manager, source: components/event_manager/src/event_manager.c}
+    - {name: command_dispatcher, owner: commands_dispatcher, source: components/commands_dispatcher/src/commands_dispatcher_task.c}
+    - {name: heater_pwm, owner: heater_controller_component, source: components/heater_controller_component/src/heater_controller_task.c}
+    - {name: coordinator_control, owner: coordinator_component, source: components/coordinator_component/src/coordinator_component_heater_controller.c, conditional: profile_running}
+    - {name: device_manager, owner: device_manager, source: components/device_manager/src/device_manager_task.c}
+    - {name: temperature_processor, owner: temperature_processor_component, source: components/temperature_processor_component/src/temperature_processor_task.c}
+    - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c}
+    - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c}
+    - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c}
+  inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics]
+callbacks:
+  event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, run_indicator_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
+  command_dispatcher: [heater_command_handler, coordinator_command_handler]
+  timers: [{name: pid_tick_timer_cb, dispatch: ESP_TIMER_TASK}]
+  application_hardware_isrs: []
+primitives:
+  queues: [event_manager_private_queue, command_dispatcher_queue, logger_queue, hmi_command_queue]
+  mutexes: [heater_power_mutex, gpio_mutex, spi_mutex, logger_storage_mutex, nextion_uart_recursive_mutex, program_model_recursive_mutex, legacy_temperature_ring_mutex]
+  event_groups: [legacy_temperature_processor_event_group]
+  notifications: [heater_pwm, coordinator_control, device_manager, temperature_processor, health_monitor]
+pipelines:
+  temperature: [MS9024, modbus_master, temp_sensor_device_cache, device_manager, temperature_processor, TEMP_PROCESSOR_EVENT, coordinator_and_fan_and_hmi]
+  control: [nextion_hmi, commands_dispatcher, coordinator, temperature_profile_controller, pid_component, commands_dispatcher, heater_controller, contactor_and_ssr]
+  persistence: [nextion_program_model, NVS_user_prefs, nextion_panel_SD]
+hardware_defaults:
+  contactor_gpio: 22
+  ssr_gpio: 21
+  fan_gpio: 19
+  run_indicator_gpio: 22
+  modbus: {uart: 2, tx_gpio: 27, rx_gpio: 26, de_gpio: 25, baud: 9600}
+  nextion: {uart: 1, tx_gpio: 32, rx_gpio: 33, baud: 115200}
+safety_invariants: docs/codex/ENGINEERING_STANDARDS.md
+findings: docs/analysis/FIRMWARE_FINDINGS.md
+build:
+  standard: idf.py build
+  flash_monitor: idf.py -p PORT flash monitor
+  tests_found: false
+known_architecture_debt:
+  - no independent synchronous heater inhibit
+  - temperature event lacks validity and freshness
+  - global mutable coordinator state spans tasks and callbacks
+  - task stop paths generally lack join acknowledgements
+  - furnace error events have no production subscriber
+  - default run-indicator and contactor GPIOs collide

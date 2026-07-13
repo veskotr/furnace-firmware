@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Hardware Validation"
+  short_description: "Plan safe bench, controller, or furnace evidence"
+  default_prompt: "Use $plan-hardware-validation to design a safe hardware validation plan without executing it."

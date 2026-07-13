@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orient Furnace Repository"
+  short_description: "Navigate the firmware with durable source maps"
+  default_prompt: "Use $orient-furnace-repository to locate the relevant firmware path and specialist workflow."

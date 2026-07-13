@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Furnace Docs and Map"
+  short_description: "Keep repository-local context accurate and concise"
+  default_prompt: "Use $maintain-furnace-docs-map to update repository maps and verify all context links."

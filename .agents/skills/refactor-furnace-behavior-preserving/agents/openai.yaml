@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor Furnace Safely"
+  short_description: "Refactor one characterized boundary at a time"
+  default_prompt: "Use $refactor-furnace-behavior-preserving to plan a reversible behavior-preserving boundary refactor."
