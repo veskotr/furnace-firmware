@@ -40,6 +40,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Evidence:** `heater_controller_task.c:heater_controller_task` checks `toggle_heater(HEATER_OFF)` only by calling `check_error_and_post_event`; that helper posts `FURNACE_ERROR_EVENT`. No production subscriber to that event was found, and the PWM loop continues.
 - **Trigger/impact:** an SSR-low GPIO operation returns failure while output remains asserted. The contactor is not synchronously dropped, so heat can remain continuously demanded.
 - **Direction:** latch a direct actuator inhibit and synchronously attempt independent contactor-off on any output-write failure; require explicit recovery.
+- **Investigation/proposal:** [BUG-017-ssr-off-failure.md](BUG-017-ssr-off-failure.md) defines the bounded heater-component correction and required regression/bench validation.
 
 ### F-001 — Control accepts nonexistent or stale temperature
 
