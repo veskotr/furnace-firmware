@@ -16,13 +16,13 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 6 | F-004 | confirmed defect | critical control safety | An anomalous sensor batch is still published as valid control input |
 | 7 | F-018 | highly likely defect | high reset safety | Restart/factory-reset path does not first synchronously inhibit outputs |
 | 8 | F-019 | confirmed defect | high startup/control | Profile start queues contactor START before control task creation is proven |
-| 9 | F-020 | confirmed defect | high control | PID integral/derivative history persists across separate runs |
-| 10 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
-| 11 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
-| 12 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
-| 13 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
-| 14 | F-024 | confirmed defect | high data integrity | Save deletes last good program before replacement succeeds |
-| 15 | F-005, F-010–F-015, F-025–F-034 | mixed below | medium/low | Correctness, configuration, lifecycle, and observability backlog |
+| 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
+| 10 | F-053 | confirmed defect | high conditional control safety | Non-finite PID input can propagate to heater demand |
+| 11 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
+| 12 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
+| 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
+| 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
+| 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
 
 ## Safety and control findings
 
@@ -30,7 +30,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 - **Category/confidence:** confirmed defect / high.
 - **Evidence:** `components/heater_controller_component/Kconfig` and current config select `CONFIG_HEATER_CONTACTOR_GPIO_PIN=22`; `components/run_indicator/Kconfig` and current config select `CONFIG_RUN_INDICATOR_GPIO=22`; `run_indicator.c:run_indicator_task` writes the pin every 200 ms; `heater_controller.c:start_heater/stop_heater` writes the same pin.
-- **Trigger/impact:** any indicator ON/OFF/BLINK write also drives the contactor. After natural completion, F-015 leaves indicator ON, so it can reassert the contactor after coordinator STOP. SSR state limits immediate heat in the nominal case, but independent contactor isolation is defeated.
+- **Trigger/impact:** any indicator ON/OFF/BLINK write also drives the contactor. After natural completion, F-015 leaves indicator ON, so it can reassert the contactor after coordinator STOP. The pulled `6741c72` fault-pause path emits `PROFILE_PAUSED`, which selects BLINK, so a stall or hold-deviation fault can now periodically drive the contactor pin. SSR state limits immediate heat in the nominal case, but independent contactor isolation is defeated.
 - **Direction:** determine the schematic-approved indicator pin, separate pin ownership, and add compile/startup validation for collisions among actuator, indicator, fan, and UART pins.
 - **Uncertainty:** deployed wiring, active polarity, and external interlocks.
 
@@ -85,16 +85,15 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-020 — PID history persists across runs
 
-- **Category/confidence:** confirmed defect / high.
-- **Evidence:** `pid_component.c` owns file-static integral/previous measurement; `pid_controller_reset()` is used on resume/stall but absent from normal profile start/stop paths in `coordinator_component_heater_controller.c`.
-- **Trigger/impact:** run B begins after run A accumulated state; first demand includes stale integral/derivative history, causing spike or suppression.
-- **Direction:** reset after profile load and before enabling heat; characterize first-tick behavior.
+- **Category/confidence:** source-level mitigation added; regression and hardware characterization still missing.
+- **Evidence:** `6741c72` calls `pid_controller_reset()` before profile load in `start_heating_profile`; it also adds `pid_controller_reset_for_setpoint()` at heating-to-hold and resume. `pid_component.c` remains a file-static singleton.
+- **Current status:** the previously confirmed fresh-run carryover path is addressed in source, but the exact first-tick/hold/resume behavior and all reset paths are not regression-tested. Retain this ID until the behavior is characterized rather than silently treating it as release-verified.
 
 ### F-021 — Current temperature is a cross-task data race
 
 - **Category/confidence:** confirmed defect / high under the C memory model.
 - **Evidence:** private event-loop callback writes coordinator temperature in `coordinator_component_events.c`; coordinator control task reads it in profile/PID/stall logic in `coordinator_component_heater_controller.c`; no mutex, queue, or atomic snapshot exists.
-- **Impact:** undefined cross-core visibility/torn/stale behavior can affect setpoint transitions and demand.
+- **Impact:** undefined cross-core visibility/torn/stale behavior can affect setpoint transitions and demand. The new stall and hold-deviation decisions consume this same value, widening the impact to fault detection.
 - **Direction:** transfer an immutable validity/freshness sample to the control task or guard a complete snapshot with one synchronization protocol.
 
 ## Concurrency and lifecycle findings
@@ -231,7 +230,8 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 ### F-014 — HMI bridge silently drops lifecycle/error telemetry
 
 - **Category/confidence:** confirmed defect / medium.
-- **Evidence:** `hmi_coordinator.c` event bridges send to bounded queue with zero wait and ignore failure.
+- **Evidence:** `hmi_coordinator.c` event bridges send to bounded queue with zero wait and ignore failure. In `6741c72`, a control fault posts separate `ERROR_OCCURRED` and `PROFILE_PAUSED` events; each bridge attempt is independently lossy. The transfer-time critical-event buffer is also bounded (eight entries).
+- **Impact:** an operator can see a pause with no fault context, or an error with no corresponding paused state. A UI-side resume can therefore be based on incomplete information; the queued fault-off path must not rely on HMI delivery.
 
 ### F-015 — Natural completion leaves run indicator ON
 
@@ -258,11 +258,46 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Category/confidence:** confirmed low defect / low.
 - **Evidence:** `device_manager_context_t.count` is checked but no increment/decrement was found; slot scan still enforces the physical array limit, making this currently misleading rather than overflowing.
 
+### F-048 — Cubic soft-landing accelerates before it decelerates
+
+- **Category/confidence:** confirmed defect / medium-high control quality.
+- **Evidence:** `temperature_profile_core.c:ramp_ease_position` uses `q=f0+w*(u+u²-u³)` in the final ease band. Relative to linear interpolation, `q-linear = w*u²*(1-u)`, which is positive for all interior points; its rate multiplier is `1+2u-3u²`, peaking at 4/3.
+- **Trigger/impact:** every heating ramp using a nonzero ease band commands up to 33% faster setpoint movement before tapering, leading the former linear profile by up to `4*ease_band/27` (0.89 C at the 6 C default). This contradicts the stated soft-landing/taper intent and can increase pre-handover control demand. The physical overshoot consequence requires bench validation.
+- **Direction:** select and document the intended trajectory, then test seam continuity, monotonicity, rate bounds, endpoint, short-span behavior, and HMI graph parity.
+
+### F-049 — Control defaults, resolved build, and field-tuning documentation disagree
+
+- **Category/confidence:** highly likely defect / high operational uncertainty.
+- **Evidence:** changed Kconfig defaults are overshoot 20 C, stall check 300 s, PID Kd 0.030, and fan 43/40 C. The reviewed resolved `sdkconfig` is 30 C, 180 s, Kd 0, and 35/32 C; it disables feedforward and service-time override. No tracked `sdkconfig.defaults` was found. `components/pid_component/pid_values.md` mixes different gains/feedforward calibration and labels unproven values as field information.
+- **Impact:** fresh configurations, upgraded local configurations, and claimed field tuning can run materially different control and guard behavior. The successful build validates only the retained local configuration, not the changed defaults.
+- **Direction:** track an explicit per-furnace/release configuration artifact, record its commit/hash with bench evidence, define upgrade behavior, and add a build-time effective-symbol check.
+
+### F-050 — Operational-time service override can wrap and misreport persistence
+
+- **Category/confidence:** confirmed defect / medium.
+- **Evidence:** `components/nextion_hmi/src/program/Kconfig` gives `NEXTION_OP_TIME_OVERRIDE_HOURS` no range. `heating_program_models.c` casts it to `uint32_t` and multiplies by 3600 before writing NVS; negative values or values above 1,193,046 hours wrap. The enabled override executes at every boot and NVS set/commit failures are not surfaced before reporting the value.
+- **Impact:** service hours can be corrupted or falsely reported as restored, weakening maintenance records.
+- **Direction:** impose a valid range, check persistence errors, and make the operation a consumed one-shot or rename/document it as a persistent boot override.
+
+### F-051 — New coordinator error payload has an unversioned compatibility contract
+
+- **Category/confidence:** design weakness / medium.
+- **Evidence:** `coordinator_error_data_t` in `event_registry.h` grew from the prior code's small payload to temperature/setpoint/stage/elapsed fields, and gained `COORDINATOR_ERROR_HOLD_DEVIATION`. In-tree producers/consumers build, but independently compiled subscribers and fixed-size bridges have no version/size contract.
+- **Direction:** state a payload compatibility policy or version the message, and add a producer/consumer copy-size regression test.
+
+### F-053 — Non-finite PID input can become non-finite actuator demand
+
+- **Category/confidence:** confirmed defect / high conditional control safety.
+- **Evidence:** `pid_controller_compute` rejects only nonpositive `dt`; it does not reject NaN/Inf measurement, setpoint, or state. Comparisons used by its output clamp are false for NaN, allowing NaN to leave the function. `heater_controller_task.c:set_heater_target_power_level` likewise checks only `< 0` and `> 1`, so NaN bypasses its range rejection.
+- **Trigger/impact:** a non-finite value from any upstream calculation can propagate to SSR demand and history state. The current Modbus parser's reachability of non-finite values needs a focused trace, but the PID/actuator boundary is source-confirmed unsafe for them.
+- **Direction:** explicitly reject non-finite inputs/state/output at each control boundary, force zero through an independent inhibit path, and add NaN/Inf regression cases.
+
 ## Missing tests
 
 - **F-039 — missing test:** no project host test suite or ESP-IDF unit-test component was found for PID/profile, parsers, validation, or failure paths.
-- **F-040 — missing test:** no automated alternate-Kconfig build matrix validates optional features, pin collisions, queue depths, or timing bounds.
+- **F-040 — missing test:** no automated alternate-Kconfig/effective-configuration build matrix validates optional features, pin collisions, queue depths, timing bounds, source defaults versus upgrade configuration, or incompatible feedforward/adaptive settings.
 - **F-041 — missing test:** no recorded device-bench or powered-controller validation covers boot/reset GPIO states, sensor loss, Modbus timeout, queue saturation, pause/stop races, watchdog reset, and independent output removal.
+- **F-052 — missing test:** no deterministic coverage exists for eased-ramp shape/graph parity, handover tolerance, stall lag/rate, sustained hold deviation, PID reset/feedforward/anti-windup, non-finite control inputs, or coordinator error-payload delivery.
 
 ## Unresolved questions
 
@@ -277,14 +312,14 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 These five are independent, source-confirmed, testable with low architectural risk. They reduce incorrect control/data behavior while the larger actuator-inhibit and fresh-sample architecture is decided:
 
-1. **F-020:** reset PID state at each new profile; add first-tick regression coverage.
+1. **F-048:** replace or explicitly characterize the soft-landing trajectory; add trajectory and graph-parity coverage.
 2. **F-005:** compact successful temperature samples; add sparse-success batch tests.
 3. **F-022:** reject partial file reads and parse atomically into a temporary draft.
 4. **F-025:** verify full register width for MS9024 writes.
-5. **F-011/F-019:** make profile start resource creation transactional and inhibit/unwind on failure.
+5. **F-050:** bound service operational-time override and propagate NVS write failures.
 
 Before any powered release, investigate/resolve F-016, then make an ADR for the direct actuator-inhibit/fresh-temperature gate needed by F-017/F-001/F-002/F-003/F-004. Those are higher risk but cross multiple current boundaries and should not be patched piecemeal.
 
 ## Existing build evidence
 
-A clean ESP-IDF 5.5.4 build completed on 2026-07-13: application `0x60fc0` bytes, 62% of the 1 MiB partition free. Warnings included discarded `const` in `logger_cli.c`, unused/conflicting recovery declarations in `logger_storage.c`, unused MAX31865 parser, and an impossible unsigned `< 0` check in health monitoring. Build evidence does not validate hardware behavior.
+ESP-IDF 5.5.4 build completed on pulled commit `16467e0` on 2026-07-13 using `IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake --build build -j2`: application `0x614f0` bytes, 62% of the smallest 1 MiB app partition free. The build used the retained local `sdkconfig`, not the new Kconfig defaults (F-049). Warnings included discarded `const` in logger CLI code, logger-storage declaration issues, unused legacy MAX31865 parser, and an impossible unsigned `< 0` check in health monitoring. Build evidence does not validate hardware behavior.

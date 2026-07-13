@@ -1,5 +1,6 @@
 schema_version: 1
 mapped_date: 2026-07-13
+reviewed_commit: 16467e0
 platform: {framework: ESP-IDF, language: C, rtos: FreeRTOS, target: ESP32}
 entry_points:
   build: CMakeLists.txt
@@ -51,7 +52,7 @@ primitives:
   notifications: [heater_pwm, coordinator_control, device_manager, temperature_processor, health_monitor]
 pipelines:
   temperature: [MS9024, modbus_master, temp_sensor_device_cache, device_manager, temperature_processor, TEMP_PROCESSOR_EVENT, coordinator_and_fan_and_hmi]
-  control: [nextion_hmi, commands_dispatcher, coordinator, temperature_profile_controller, pid_component, commands_dispatcher, heater_controller, contactor_and_ssr]
+  control: [nextion_hmi, commands_dispatcher, coordinator, temperature_profile_controller_eased_handover, pid_component_optional_feedforward, commands_dispatcher, heater_controller, contactor_and_ssr]
   persistence: [nextion_program_model, NVS_user_prefs, nextion_panel_SD]
 hardware_defaults:
   contactor_gpio: 22
@@ -66,6 +67,21 @@ build:
   standard: idf.py build
   flash_monitor: idf.py -p PORT flash monitor
   tests_found: false
+  last_reviewed_build:
+    commit: 16467e0
+    command: "IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake --build build -j2"
+    result: passed
+    app_size: 0x614f0
+    partition_free_percent: 62
+    resolved_configuration:
+      overshoot_threshold_c: 30
+      stall_check_ms: 180000
+      pid_kd: 0
+      fan_auto_on_c: 35
+      fan_auto_off_c: 32
+      pid_feedforward_enabled: false
+      op_time_override_enabled: false
+    caveat: "These retained local values differ from new Kconfig defaults; no tracked sdkconfig defaults were found."
 known_architecture_debt:
   - no independent synchronous heater inhibit
   - temperature event lacks validity and freshness
@@ -73,3 +89,6 @@ known_architecture_debt:
   - task stop paths generally lack join acknowledgements
   - furnace error events have no production subscriber
   - default run-indicator and contactor GPIOs collide
+  - fault pauses still use queued output commands rather than an independent inhibit
+  - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
+  - profile soft-landing is cubic while HMI graph projection remains linear

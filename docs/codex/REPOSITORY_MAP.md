@@ -1,6 +1,6 @@
 # Furnace firmware repository map
 
-Last source-mapped: 2026-07-13. Source and build output are authoritative; update both this file and `repository-map.yaml` after architectural changes.
+Last source-mapped: 2026-07-13. Pulled-change review: `16467e0` (feature commit `6741c72`). Source and resolved build configuration are authoritative; update both this file and `repository-map.yaml` after architectural changes.
 
 ## Repository shape
 
@@ -86,9 +86,9 @@ No application counting/binary semaphore or explicit spinlock was found.
 | --- | --- | --- | --- | --- |
 | `event_manager` + `event_registry` | Private event loop; `event_manager_*`; event bases/IDs | Global loop handle; event task callbacks | ESP event | Global singleton; payload/lifetime contracts are distributed |
 | `commands_dispatcher` | Queued `command_t` routing; register/dispatch APIs | Queue, handler table, task, running state | FreeRTOS queue | Unbounded submissions; handlers execute on sole consumer; teardown unsafe |
-| `coordinator_component` | Program commands/status, control task, heater command production | Global program/profile/current temp/state/timer/task | Dispatcher, events, PID/profile | Multi-context unsynchronized state; output shutdown is queued |
-| `temperature_profile_controller` | `load_heating_profile`, `profile_tick`, profile state/status | File-static profile context and tick counter | Common profile types | Lifetime/tick ownership coupled to coordinator; stage safety assumptions |
-| `pid_component` | `pid_controller_compute/reset/set_adaptive_enabled` | File-static integral/history/adaptive flag | Kconfig, logger | Single implicit instance; caller must supply correct `dt` and valid input |
+| `coordinator_component` | Program commands/status, control task, heater command production; stall/hold-deviation fault pause | Global program/profile/current temp/state/timer/task and fault timers | Dispatcher, events, PID/profile | Multi-context unsynchronized state; fault shutdown is still queued |
+| `temperature_profile_controller` | `load_heating_profile`, `profile_tick`, profile state/status and eased heating setpoint/handover | File-static profile context and tick counter | Common profile types | Lifetime/tick ownership coupled to coordinator; cubic “soft landing” differs from legacy/UI linear projection |
+| `pid_component` | `pid_controller_compute/reset/reset_for_setpoint/set_adaptive_enabled` | File-static integral/history/adaptive/feedforward flag | Kconfig, logger | Single implicit instance; optional feedforward and adaptive clamp can both be enabled; caller must supply finite valid input |
 | `heater_controller_component` | Contactor/SSR commands and time-proportional output | Global context, target mutex, PWM task | GPIO master; contactor GPIO 22, SSR GPIO 21 defaults | Physical gate is command-driven; lifecycle/output-off paths need hardening |
 | `device_manager` | Device abstraction, state, periodic updates | Global device array/task/running/count | FreeRTOS, events | API mutation can overlap task traversal; stop has no join |
 | `modbus_master` | ESP-Modbus RTU init/read/write helpers | ESP-Modbus master instance | UART2 TX27/RX26/DE25, 9600 defaults | No application serialization contract documented; timeout fixed at 300 ms |
@@ -117,7 +117,7 @@ Key debt: physical-read success, cache age, validity, contributing sensor identi
 
 ### Profile and control
 
-Nextion run handler → coordinator command in dispatcher queue → `start_heating_profile` → load profile, queue heater clear/start, create control task and periodic timer → timer notifies control task → `profile_tick` calculates phase/setpoint → PID computes 0..1 demand → coordinator queues heater set-power → dispatcher invokes heater handler → PWM task windows SSR output.
+Nextion run handler → coordinator command in dispatcher queue → `start_heating_profile` resets PID, loads profile, queues heater clear/start, creates control task and periodic timer → timer notifies control task → `profile_tick` calculates phase/eased heating setpoint and handover → PID computes 0..1 demand (optional feedforward) → coordinator queues heater set-power → dispatcher invokes heater handler → PWM task windows SSR output. Sustained hold deviation or a ramp-stall condition posts enriched error data and pauses through the same queued `kill_heater` path.
 
 Pause/stop/completion call a queued `kill_heater`; there is no independent synchronous safety-inhibit path in the current code.
 
@@ -130,7 +130,7 @@ Pause/stop/completion call a queued `kill_heater`; there is no independent synch
 
 ### HMI and persistence
 
-Nextion RX task parses lines → HMI command queue → coordinator task/handlers → dispatcher or model/storage APIs. System events bridge into the same queue for display updates. User preferences are stored in NVS namespace `user_prefs`; program files live on the Nextion panel SD through FileStream/twfile. Factory reset erases ESP NVS then restores operational time.
+Nextion RX task parses lines → HMI command queue → coordinator task/handlers → dispatcher or model/storage APIs. System events bridge into the same queue for display updates; error payloads now carry temperature, setpoint, stage, and elapsed-fault context but may still be independently dropped. User preferences are stored in NVS namespace `user_prefs`; program files live on the Nextion panel SD through FileStream/twfile. Factory reset erases ESP NVS then restores operational time; the optional service-time override writes a configured value at every boot while enabled.
 
 ### Logging, faults, watchdog, recovery
 
@@ -151,6 +151,8 @@ Local ESP-IDF 5.5.4 fallback used successfully when the `idf.py` Python environm
 IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake -S . -B build -G Ninja -DPYTHON=/home/vesko/.espressif/tools/python/v5.5.4/venv/bin/python3 -DPYTHON_DEPS_CHECKED=1
 IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake --build build -j2
 ```
+
+The pulled branch built successfully at `16467e0` with the local resolved `sdkconfig`: application `0x614f0` bytes (62% free of the smallest 1 MiB app partition). That configuration retains overshoot 30 C, stall check 180 s, PID Kd 0, and fan thresholds 35/32 C, while the changed Kconfig defaults specify 20 C, 300 s, Kd 0.030, and 43/40 C. Feedforward and the service operational-time override are disabled in that build. A build therefore does not validate fresh-default behavior unless its resolved configuration is recorded and checked.
 
 No project host test suite or ESP-IDF unit-test component was found. Flashing, device bench, powered-controller, and powered-furnace work require explicit authorization and a validation plan.
 
