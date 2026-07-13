@@ -17,7 +17,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 7 | F-018 | highly likely defect | high reset safety | Restart/factory-reset path does not first synchronously inhibit outputs |
 | 8 | F-019 | confirmed defect | high startup/control | Profile start queues contactor START before control task creation is proven |
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
-| 10 | F-053 | confirmed defect | high conditional control safety | Non-finite PID input can propagate to heater demand |
+| 10 | F-053 | source fix pending regression | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
 | 12 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
 | 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
@@ -287,10 +287,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-053 — Non-finite PID input can become non-finite actuator demand
 
-- **Category/confidence:** confirmed defect / high conditional control safety.
-- **Evidence:** `pid_controller_compute` rejects only nonpositive `dt`; it does not reject NaN/Inf measurement, setpoint, or state. Comparisons used by its output clamp are false for NaN, allowing NaN to leave the function. `heater_controller_task.c:set_heater_target_power_level` likewise checks only `< 0` and `> 1`, so NaN bypasses its range rejection.
-- **Trigger/impact:** a non-finite value from any upstream calculation can propagate to SSR demand and history state. The current Modbus parser's reachability of non-finite values needs a focused trace, but the PID/actuator boundary is source-confirmed unsafe for them.
-- **Direction:** explicitly reject non-finite inputs/state/output at each control boundary, force zero through an independent inhibit path, and add NaN/Inf regression cases.
+- **Category/confidence:** source fix implemented; executable regression coverage pending.
+- **Evidence:** PID now rejects non-finite input/state/output, resets, and returns zero; the heater setter clears a non-finite command and the PWM reader treats a non-finite stored target as zero. `ms9024_read_float` already rejects decoded NaN/Inf and out-of-range values, so the remaining normal-path risk is lower than originally stated.
+- **Residual risk:** finite-but-stale values and cross-task temperature ownership remain F-001/F-021; zero demand still follows the existing output command path.
+- **Validation:** [BUG-053-nonfinite-control-input.md](BUG-053-nonfinite-control-input.md) and [CHANGE-VALIDATION-F53.md](CHANGE-VALIDATION-F53.md).
 
 ## Missing tests
 

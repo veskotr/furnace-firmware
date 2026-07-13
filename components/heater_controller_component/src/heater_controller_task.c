@@ -4,6 +4,7 @@
 #include "event_manager.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char* TAG = "HEATER_CTRL_TASK";
 
@@ -117,6 +118,14 @@ esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx)
 
 esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, const float power_level)
 {
+    if (!isfinite(power_level))
+    {
+        LOGGER_LOG_ERROR(TAG, "Rejected non-finite heater power command; clearing target");
+        return clear_heater_target_power_level(ctx) == ESP_OK
+                   ? ESP_ERR_INVALID_ARG
+                   : ESP_FAIL;
+    }
+
     if (power_level < 0.0f || power_level > 1.0f)
     {
         return ESP_ERR_INVALID_ARG;
@@ -191,6 +200,13 @@ static float get_heater_target_power_level(const heater_controller_context_t* ct
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
     const float power_level = ctx->target_power_level;
     xSemaphoreGive(ctx->power_mutex);
+
+    if (!isfinite(power_level))
+    {
+        LOGGER_LOG_ERROR(TAG, "Non-finite heater target detected; treating as zero");
+        return 0.0f;
+    }
+
     return power_level;
 }
 

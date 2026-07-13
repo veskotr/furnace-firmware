@@ -93,3 +93,4 @@ known_architecture_debt:
   - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
   - profile soft-landing is cubic while HMI graph projection remains linear
   - heater local inhibit handles SSR GPIO failure; central fault state and HMI handling are deferred by ADR-0001
+  - PID/heater now reject non-finite values, but finite stale temperature and cross-task ownership remain unresolved

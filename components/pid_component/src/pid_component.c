@@ -2,6 +2,7 @@
 #include "logger_component.h"
 #include "sdkconfig.h"
 #include <stdbool.h>
+#include <math.h>
 
 /* Fallbacks for the feedforward calibration points, in case this component is
  * built against an sdkconfig that predates them (e.g. before the first
@@ -161,8 +162,12 @@ static float compute_dynamic_output_max(const float abs_error)
 
 float pid_controller_compute(const float setpoint, const float measured_value, const float dt)
 {
-    if (dt <= 0.0f)
+    if (!isfinite(setpoint) || !isfinite(measured_value) || !isfinite(dt) || dt <= 0.0f ||
+        !isfinite(pid_state.integral) ||
+        (pid_state.initialized && !isfinite(pid_state.previous_measurement)))
     {
+        LOGGER_LOG_ERROR(TAG, "Rejected non-finite PID input or state; resetting controller");
+        pid_controller_reset();
         return 0.0f;
     }
 
@@ -197,6 +202,13 @@ float pid_controller_compute(const float setpoint, const float measured_value, c
     const float i_term = pid_params.ki * tentative_integral;
     const float d_term = pid_params.kd * derivative;
     const float unclamped = p_term + i_term + d_term + ff_term;
+
+    if (!isfinite(unclamped))
+    {
+        LOGGER_LOG_ERROR(TAG, "Rejected non-finite PID output; resetting controller");
+        pid_controller_reset();
+        return 0.0f;
+    }
 
     /* Adaptive upper clamp shrinks as we approach setpoint. */
     const float dyn_output_max = compute_dynamic_output_max(abs_error);
@@ -246,6 +258,13 @@ void pid_controller_reset(void)
 
 void pid_controller_reset_for_setpoint(const float setpoint)
 {
+    if (!isfinite(setpoint))
+    {
+        LOGGER_LOG_ERROR(TAG, "Rejected non-finite PID reset setpoint; resetting controller");
+        pid_controller_reset();
+        return;
+    }
+
     /* Always clear the derivative history: a stale previous_measurement across
      * a pause would otherwise produce a large (and bogus) derivative spike on
      * the first tick after resume. */
