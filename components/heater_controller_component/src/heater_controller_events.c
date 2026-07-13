@@ -57,14 +57,31 @@ static esp_err_t heater_command_handler(void* handler_arg, const void* command_d
     case COMMAND_TYPE_HEATER_GET_STATUS:
         return ESP_OK; //TODO Implement get status
     case COMMAND_TYPE_HEATER_TOGGLE:
+        if (data->heater_state && heater_output_is_inhibited(ctx))
+        {
+            LOGGER_LOG_ERROR(TAG, "Rejected heater-on toggle while output is inhibited");
+            return ESP_ERR_INVALID_STATE;
+        }
         return toggle_heater(data->heater_state);
     case COMMAND_TYPE_HEATER_CLEAR:
         /* Drop the SSR pin immediately — the heater task may be mid-cycle
          * with the SSR held high; without this it would finish its current
          * on-window before noticing the new zero power level. */
-        toggle_heater(HEATER_OFF);
+        {
+            const esp_err_t err = toggle_heater(HEATER_OFF);
+            if (err != ESP_OK)
+            {
+                heater_controller_handle_ssr_failure(ctx, err);
+                return err;
+            }
+        }
         return clear_heater_target_power_level(ctx);
     case COMMAND_TYPE_HEATER_START:
+        if (heater_output_is_inhibited(ctx))
+        {
+            LOGGER_LOG_ERROR(TAG, "Rejected heater start while output is inhibited");
+            return ESP_ERR_INVALID_STATE;
+        }
         return start_heater();
     case COMMAND_TYPE_HEATER_STOP:
         return stop_heater();

@@ -3,7 +3,7 @@
 - **Subsystem:** heater controller / physical output safety
 - **Severity:** critical
 - **Confidence:** confirmed
-- **Status:** ready-to-fix
+- **Status:** fixed; regression infrastructure and powered validation pending
 - **Affected files and symbols:** `components/heater_controller_component/src/heater_controller_task.c:check_error_and_post_event`, `heater_controller_task`, `heater_controller_events.c:heater_command_handler`, `heater_controller.c:toggle_heater/stop_heater`, `heater_controller_internal.h`
 - **Prerequisite or linked IDs:** F-002, F-003, F-016, F-017, F-053
 - **Ready to fix:** yes, for the defined heater-component boundary; powered validation remains a release requirement.
@@ -47,7 +47,7 @@ The PWM task can have read a positive demand before a fault. The latch must be c
 
 Without a latch and direct contactor-off attempt, a failed SSR-low operation may leave heating energized until another event changes it. The physical outcome depends on GPIO/SSR/contactor hardware, so software source review proves the missing action but not whether deployed hardware stays on.
 
-## Proposed minimal fix
+## Implemented minimal fix
 
 1. Add a heater-component-owned `output_inhibited`/fault-latched state protected by the existing power-state synchronization mechanism.
 2. On any failed SSR GPIO operation, set the latch and target demand to zero first; then directly attempt SSR-low and `stop_heater()` in the heater task/component, without dispatcher or event-loop dependence.
@@ -56,7 +56,7 @@ Without a latch and direct contactor-off attempt, a failed SSR-low operation may
 5. Only after direct physical-off attempts, emit detailed error telemetry through the existing `FURNACE_ERROR_EVENT`; if contactor-off also fails, preserve that distinct failure in logs/event data.
 6. Keep HMI handling, a central fault manager, and fault acknowledgement/recovery workflow out of this change; document the event payload and semantics so they can be wired when the HMI is ready.
 
-This does not solve F-002/F-003 globally, but it establishes a local actuator-boundary fail-off response for the SSR-write failure that triggers this bug.
+Implemented in `heater_controller_task.c` and `heater_controller_events.c`: the latch and target-demand update occur under `power_mutex`; a failed SSR write retries SSR-off and directly calls `stop_heater()` before posting `FURNACE_ERROR_EVENT`; PWM, `SET_POWER`, `START`, and heater-on `TOGGLE` refuse to reauthorize output while latched. This does not solve F-002/F-003 globally, but it establishes a local actuator-boundary fail-off response for the SSR-write failure that triggers this bug.
 
 ## Allowed scope and correction authority
 
@@ -68,7 +68,7 @@ No ADR is required for the local latch/direct-contact-off correction. Future HMI
 
 ## Regression test
 
-Host/mocked component test with injectable GPIO calls:
+Planned target-unit or mocked-component test with injectable GPIO calls:
 
 1. Set positive demand and make SSR-low fail.
 2. Assert latch set, target demand zero, direct contactor-off attempted, and no queue/event result is needed before those calls.
@@ -78,11 +78,11 @@ Host/mocked component test with injectable GPIO calls:
 
 ### Failure-before oracle and result
 
-Before the correction, the same injected SSR-low failure reaches only `post_heater_controller_error`; no `stop_heater()` call occurs and a subsequent loop can continue output handling. No existing automated test executes this oracle.
+Before the correction, the same injected SSR-low failure reaches only `post_heater_controller_error`; no `stop_heater()` call occurs and a subsequent loop can continue output handling. The repository has no test harness or GPIO fault-injection seam, so this deterministic oracle is not yet executable; adding it is required before release but is intentionally not hidden by a source-only test.
 
 ## Hardware validation
 
-Validate on an approved powered-controller bench before release: force or simulate SSR GPIO failure; measure SSR and contactor outputs, verify contactor-off latency and polarity, confirm no re-energization while latched, and verify restart/brownout behavior. Do not test on a powered furnace until the controller-bench result and external interlocks are approved.
+Follow [F17-HARDWARE-VALIDATION.md](F17-HARDWARE-VALIDATION.md) before release. Do not test on a powered furnace until the controller-bench result and external interlocks are approved.
 
 ### Permission and required test level
 

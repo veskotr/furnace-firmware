@@ -9,7 +9,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | Rank | ID | Category | Risk | Summary |
 | ---: | --- | --- | --- | --- |
 | 1 | F-016 | confirmed defect | critical safety/configuration | Run indicator and contactor both drive GPIO22 in current/default config |
-| 2 | F-017 | confirmed defect | critical conditional safety | SSR-off failure reports an unconsumed event but does not drop contactor |
+| 2 | F-017 | source fix pending validation | critical conditional safety | SSR GPIO failure now latches local inhibit and requests contactor-off; electrical behavior is unverified |
 | 3 | F-001 | confirmed defect | critical control safety | Boot-zero or indefinitely stale temperature is accepted for control |
 | 4 | F-002 | confirmed defect | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
 | 5 | F-003 | confirmed defect | critical safety/concurrency | In-flight PID output can restore power after pause |
@@ -36,11 +36,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-017 — SSR-off GPIO failure does not force independent isolation
 
-- **Category/confidence:** confirmed defect / high; physical persistence is hardware-dependent.
-- **Evidence:** `heater_controller_task.c:heater_controller_task` checks `toggle_heater(HEATER_OFF)` only by calling `check_error_and_post_event`; that helper posts `FURNACE_ERROR_EVENT`. No production subscriber to that event was found, and the PWM loop continues.
-- **Trigger/impact:** an SSR-low GPIO operation returns failure while output remains asserted. The contactor is not synchronously dropped, so heat can remain continuously demanded.
-- **Direction:** latch a direct actuator inhibit and synchronously attempt independent contactor-off on any output-write failure; require explicit recovery.
-- **Investigation/proposal:** [BUG-017-ssr-off-failure.md](BUG-017-ssr-off-failure.md) defines the bounded heater-component correction and required regression/bench validation.
+- **Category/confidence:** source fix implemented; regression and powered-controller validation pending.
+- **Evidence:** `heater_controller_task.c:heater_controller_handle_ssr_failure` now latches `output_inhibited`, clears demand, retries SSR-low, directly calls `stop_heater()`, then posts `FURNACE_ERROR_EVENT`. PWM and heater-on command paths reject reauthorization while the latch is set.
+- **Residual risk:** physical persistence, contactor polarity/independence, GPIO-mutex latency, and F-002/F-003 remain hardware/architecture-dependent.
+- **Validation:** [BUG-017-ssr-off-failure.md](BUG-017-ssr-off-failure.md), [CHANGE-VALIDATION-F17.md](CHANGE-VALIDATION-F17.md), and [F17-HARDWARE-VALIDATION.md](F17-HARDWARE-VALIDATION.md).
 
 ### F-001 — Control accepts nonexistent or stale temperature
 

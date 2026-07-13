@@ -92,3 +92,4 @@ known_architecture_debt:
   - fault pauses still use queued output commands rather than an independent inhibit
   - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
   - profile soft-landing is cubic while HMI graph projection remains linear
+  - heater local inhibit handles SSR GPIO failure; central fault state and HMI handling are deferred by ADR-0001
