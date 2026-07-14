@@ -469,14 +469,15 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
 
     LOGGER_LOG_INFO(TAG, "Program file read: %u bytes from %s", (unsigned)file_len, path);
 
-    program_draft_clear();
+    program_draft_t parsed = {0};
 
     char* line = strtok(file_data, "\n");
     while (line)
     {
         if (strncmp(line, "name=", 5) == 0)
         {
-            program_draft_set_name(line + 5);
+            strncpy(parsed.name, line + 5, sizeof(parsed.name) - 1);
+            parsed.name[sizeof(parsed.name) - 1] = '\0';
         }
         else if (strncmp(line, "stage=", 6) == 0)
         {
@@ -489,15 +490,19 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
             if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta,
                        &delta_x10) == 5)
             {
-                program_draft_set_stage((uint8_t)stage,
-                                        t_min,
-                                        target,
-                                        t_delta,
-                                        delta_x10,
-                                        true,
-                                        true,
-                                        true,
-                                        true);
+                if (stage >= 1 && stage <= PROGRAMS_TOTAL_STAGE_COUNT)
+                {
+                    program_stage_t *stage_data = &parsed.stages[stage - 1];
+                    stage_data->t_min = t_min;
+                    stage_data->target_t_c = target;
+                    stage_data->t_delta_min = t_delta;
+                    stage_data->delta_t_per_min_x10 = delta_x10;
+                    stage_data->t_set = true;
+                    stage_data->target_set = true;
+                    stage_data->t_delta_set = true;
+                    stage_data->delta_t_set = true;
+                    stage_data->is_set = true;
+                }
             }
             else
             {
@@ -505,27 +510,32 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
                 if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta,
                            &delta) == 5)
                 {
-                    // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
-                    program_draft_set_stage((uint8_t)stage,
-                                            t_min,
-                                            target,
-                                            t_delta,
-                                            delta * 10,
-                                            true,
-                                            true,
-                                            true,
-                                            true);
+                    if (stage >= 1 && stage <= PROGRAMS_TOTAL_STAGE_COUNT)
+                    {
+                        // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
+                        program_stage_t *stage_data = &parsed.stages[stage - 1];
+                        stage_data->t_min = t_min;
+                        stage_data->target_t_c = target;
+                        stage_data->t_delta_min = t_delta;
+                        stage_data->delta_t_per_min_x10 = delta * 10;
+                        stage_data->t_set = true;
+                        stage_data->target_set = true;
+                        stage_data->t_delta_set = true;
+                        stage_data->delta_t_set = true;
+                        stage_data->is_set = true;
+                    }
                 }
             }
         }
         line = strtok(NULL, "\n");
     }
 
+    program_draft_replace(&parsed);
+
     /* Register parsed program so factory reset can find it */
-    const char* parsed_name = program_draft_get_name();
-    if (parsed_name && parsed_name[0] != '\0')
+    if (parsed.name[0] != '\0')
     {
-        registry_add(parsed_name);
+        registry_add(parsed.name);
     }
 
     return true;

@@ -96,6 +96,16 @@ void program_draft_clear(void)
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 
+void program_draft_replace(const program_draft_t *draft)
+{
+    if (!draft) {
+        return;
+    }
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(&s_program_draft, draft, sizeof(s_program_draft));
+    xSemaphoreGiveRecursive(s_program_mutex);
+}
+
 void program_draft_set_name(const char *name)
 {
     if (!name) {

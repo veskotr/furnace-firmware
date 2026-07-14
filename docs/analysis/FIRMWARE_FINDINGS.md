@@ -20,7 +20,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
 | 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
-| 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
+| 13 | F-022 | source fix implemented; validation pending | high persistence/control | Incomplete Nextion file reads are rejected before draft replacement |
 | 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
 | 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
 
@@ -186,10 +186,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-022 — Partial program read is accepted as complete
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and panel validation pending / high.
 - **Evidence:** `nextion_file_reader.c:nextion_read_file` returns success when `total_received > 0` after later-chunk timeout; `nextion_storage.c:nextion_storage_parse_file_to_draft` replaces the draft and parses the partial prefix.
-- **Impact:** a multi-stage schedule can silently become a shorter valid schedule.
-- **Direction:** require exact file length/completion and parse into a temporary model before atomic replacement; add version/checksum if protocol permits.
+- **Source correction:** file reads now succeed only when the received count exactly matches the Nextion-reported size; storage parsing builds a temporary draft and atomically replaces the active draft only after the complete transfer is available. No Nextion-side change is required.
+- **Residual risk:** UART fault-injection/read regression coverage and panel storage validation remain open; checksum/version protection is deferred because the existing file protocol is unchanged.
 
 ### F-023 — Persistent Nextion NAK blocks sole HMI worker
 
@@ -330,9 +330,9 @@ Deferred test, build-profile, production-logging, and per-board configuration wo
 
 These five are independent, source-confirmed, testable with low architectural risk. They reduce incorrect control/data behavior while the larger actuator-inhibit and fresh-sample architecture is decided:
 
-1. **F-048:** replace or explicitly characterize the soft-landing trajectory; add trajectory and graph-parity coverage.
+1. **F-048:** characterize the corrected soft-landing trajectory and graph parity.
 2. **F-005:** compact successful temperature samples; add sparse-success batch tests.
-3. **F-022:** reject partial file reads and parse atomically into a temporary draft.
+3. **F-022:** validate complete-read rejection and atomic draft replacement.
 4. **F-025:** verify full register width for MS9024 writes.
 5. **F-050:** bound service operational-time override and propagate NVS write failures.
 
