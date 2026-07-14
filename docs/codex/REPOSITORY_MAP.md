@@ -33,7 +33,7 @@ Platform: ESP-IDF C, FreeRTOS, ESP32, private `esp_event` loop. Root build entry
 7. `init_coordinator()` — failure returns.
 8. Health monitor initialization is commented out.
 9. `modbus_master_init()` — failure logged; startup continues.
-10. Run indicator, fan, and Nextion HMI initialization — void/unverified.
+10. Fan and Nextion HMI initialization — void/unverified; run indicator is test-only and excluded from production.
 11. `device_manager_init()` — failure logged; startup continues.
 12. Fixed two-second delay, then `init_temp_processor(5)` — failure logged; startup continues.
 13. `app_main` remains in a ten-second delay loop.
@@ -55,7 +55,7 @@ This mixed fail-fast/log-and-continue policy is safety-relevant because control 
 | Temperature processor task | `temperature_processor_task.c:init_temp_processor_task` | Device-update notification | Sensor array, sample buffer, context lifetime |
 | HMI coordinator task | `hmi_coordinator.c:hmi_coordinator_init` | Queue receive every 50 ms | Sole display command/deferred-state owner |
 | Nextion RX task | `nextion_rx_task.c:nextion_rx_task_start` | UART polling/read | UART mutex and transfer-active flags |
-| Run-indicator task | `run_indicator.c:run_indicator_init` when enabled with a valid non-colliding pin | 200 ms polling/blink | Unsynchronized `s_mode` when enabled |
+| Run-indicator task | `run_indicator.c:run_indicator_init` in explicit test builds only | 200 ms polling/blink | Excluded from production; unsynchronized `s_mode` remains a re-enablement prerequisite |
 | Fan callbacks | `fan_controller.c:fan_controller_init` | Serialized event-loop callbacks | Static fan mode/state |
 | Optional/inactive | health monitor, legacy SPI temperature monitor, transmitter diagnostics | Not started by current `app_main` | Compiled code is not active behavior |
 
@@ -97,7 +97,7 @@ No application counting/binary semaphore or explicit spinlock was found.
 | `temperature_monitor_component` | Legacy MAX31865/SPI path | Global context, task, ring/event group | SPI/MAX31865 | Not initialized; duplicate temperature architecture increases drift risk |
 | `nextion_hmi` | UART protocol, UI events, program model, panel storage | RX and coordinator tasks, queues, UART/program mutexes; complete-read/atomic-draft load path; bounded packet-NAK and temporary-file replacement save paths | UART1 TX32/RX33, panel SD/FileStream, NVS | Many submodules/global flags; bounded critical-event loss and final rename/power-loss storage risk remain |
 | `fan_controller_component` | Auto/program fan policy | Event-loop-owned static state | Fan GPIO19 | No airflow feedback/interlock; program fan intent split from coordinator fields |
-| `run_indicator` | Program state indication; disabled when unset or pin collides with contactor | Task and event-written mode | No GPIO by default; configured indicator GPIO only after collision guard | Indicator is intentionally unavailable until a schematic-approved pin is configured; mode remains unsynchronized when enabled |
+| `run_indicator` | Test-only program state indication; excluded from production | Task and event-written mode when explicitly enabled | No production link or GPIO; configured indicator GPIO only after collision guard | Re-enablement requires mailbox synchronization, schematic-approved pin, and hardware validation |
 | `logger_component` | Async ESP logging, LittleFS/RTC crash records, CLI | Queue/task, ring/files/mutex | Core 1, LittleFS `/crash_dumps`, RTC memory | Drops under pressure; furnace-error events not integrated |
 | `error_manager` | Error descriptor lookup | Static descriptor table | Common errors | No descriptor registrations found; not an active mitigation path |
 | `health_monitor` | Heartbeat table and task watchdog | Event table, health task | ESP task WDT | Disabled; if enabled it does not directly inhibit heater |
@@ -126,7 +126,7 @@ Sensor invalidity now calls the heater component's direct recoverable inhibit, w
 - Contactor: heater commands → `start_heater`/`stop_heater` → GPIO 22 default.
 - SSR: target power → heater PWM task → `toggle_heater` → GPIO 21 default.
 - Fan: temperature/coordinator event callbacks → GPIO 19 default.
-- Run indicator: coordinator event → shared mode → indicator task → GPIO 22 default, colliding with contactor defaults.
+- Run indicator: disabled in production; future test re-enablement would route coordinator event → synchronized mode → indicator task → approved GPIO.
 
 ### HMI and persistence
 

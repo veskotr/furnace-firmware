@@ -5,7 +5,8 @@ Scope: source changes currently present on the working branch; no powered hardwa
 
 | Finding | Current source status | Evidence / validation | Still open |
 | --- | --- | --- | --- |
-| F-016 | Collision source fix implemented | Run indicator defaults off and refuses invalid/contactor-colliding GPIOs; current retained `GPIO22` configuration therefore claims no indicator GPIO | Build/repository verification; schematic-approved indicator pin and powered validation |
+| F-016 | Production component disabled | The production build no longer links or initializes the run-indicator component, so it cannot claim the contactor GPIO; the source collision guard remains for explicit test builds | Future schematic-approved indicator configuration if the test component returns |
+| F-015 | Resolved by disabling test component | Natural-completion indicator behavior is no longer reachable because the run-indicator component is excluded from the production build | Re-enable decision and HMI indication design are deferred |
 | F-003 | Narrow source fix implemented | Temporary heater-side control inhibit is asserted for pause/stop/completion/emergency paths and rejects stale power/start commands; released only on profile start/resume | Regression harness, queue-order characterization, and physical output-off validation; later generation protocol remains deferred |
 | F-018 | Reset inhibit source fix implemented | Restart and confirmed factory-reset fail closed unless direct heater control inhibit succeeds before delays/storage/reset | GPIO polarity, electrical isolation, reset timing, and powered-controller validation |
 | F-019 | Start-order source fix implemented | Coordinator task is created before heater inhibit release and HEATER_CLEAR/HEATER_START submission | Regression/fault-injection coverage; timer startup unwind is tracked under F-011 |
@@ -19,6 +20,7 @@ Scope: source changes currently present on the working branch; no powered hardwa
 | F-011 | Timer-start unwind source fix implemented | Coordinator creates and starts the PID timer before heater authorization; timer failure stops the profile and leaves the heater inhibited | Timer fault-injection and startup/stop regression coverage |
 | F-013 | Manual-target mailbox synchronization source fix implemented | Target and rate updates are copied and consumed under one coordinator mutex | Concurrent-update regression coverage; runtime HMI/profile validation |
 | F-014 | HMI bridge delivery hardening source fix implemented | Lifecycle/error commands use front-of-queue delivery with a bounded wait and report loss; telemetry remains best-effort | Queue-saturation and transfer-time HMI validation |
+| F-028 | Dormant by production build | Run-indicator task and event callback are not linked into the production firmware | Synchronization fix required before the test component is re-enabled |
 | F-021 | Source synchronization fix present | Temperature event writer and coordinator control reads use the mutex-protected snapshot/getter | Executable regression characterization; freshness and lifecycle risks remain separate |
 | F-006 | Worker-ack source fix implemented | Temperature processor worker acknowledges exit before owner frees context; stop flag is atomic | Stop/restart regression coverage; broader producer/lifecycle validation |
 | F-007 | Worker-ack source fix implemented | Dispatcher worker acknowledges exit before queue/handler/context cleanup; shutdown aborts cleanup if acknowledgement fails | Stop/restart regression coverage; blocked external producers remain open |

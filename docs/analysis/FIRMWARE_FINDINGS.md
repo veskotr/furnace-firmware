@@ -29,11 +29,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-016 — Indicator/contact-or GPIO collision
 
-- **Category/confidence:** source fix implemented; validation pending / high.
+- **Category/confidence:** production configuration disabled; source defense in depth retained / high.
 - **Evidence:** `components/heater_controller_component/Kconfig` and current config select `CONFIG_HEATER_CONTACTOR_GPIO_PIN=22`; `components/run_indicator/Kconfig` and current config select `CONFIG_RUN_INDICATOR_GPIO=22`; `run_indicator.c:run_indicator_task` writes the pin every 200 ms; `heater_controller.c:start_heater/stop_heater` writes the same pin.
 - **Trigger/impact:** any indicator ON/OFF/BLINK write also drives the contactor. After natural completion, F-015 leaves indicator ON, so it can reassert the contactor after coordinator STOP. The pulled `6741c72` fault-pause path emits `PROFILE_PAUSED`, which selects BLINK, so a stall or hold-deviation fault can now periodically drive the contactor pin. SSR state limits immediate heat in the nominal case, but independent contactor isolation is defeated.
-- **Source correction:** fresh configurations default the run indicator off with GPIO `-1`; initialization also refuses to claim an invalid, disabled, or contactor-colliding pin, including retained configurations that still resolve both pins to `22`.
-- **Residual risk:** the indicator is intentionally unavailable until a schematic-approved pin is configured; pin ownership, active polarity, and external interlocks remain hardware assumptions.
+- **Source correction:** the production `main` component no longer links or initializes the test run-indicator component. The source initialization guard still refuses invalid, disabled, or contactor-colliding pins if the component is later enabled in an explicit test build.
+- **Residual risk:** the indicator is intentionally unavailable; any future re-enablement requires a synchronization fix, schematic-approved pin, active-polarity review, and powered validation.
 - **Uncertainty:** deployed wiring, active polarity, and external interlocks.
 
 ### F-017 — SSR-off GPIO failure does not force independent isolation
@@ -150,8 +150,9 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-028 — Run-indicator mode is a cross-task data race
 
-- **Category/confidence:** confirmed defect / medium.
+- **Category/confidence:** confirmed defect, dormant by production build / medium.
 - **Evidence:** event-loop callback writes static `s_mode`; indicator task reads it in `run_indicator.c` without synchronization.
+- **Status:** the production build excludes the component, so the task and callback are not part of the firmware image. A synchronization correction is required before re-enablement.
 
 ## Temperature, Modbus, and device findings
 
@@ -261,8 +262,9 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-015 — Natural completion leaves run indicator ON
 
-- **Category/confidence:** confirmed defect / high when combined with F-016.
+- **Category/confidence:** resolved by production configuration; source behavior retained for the disabled test component / high when combined with F-016.
 - **Evidence:** `run_indicator.c:run_indicator_event_handler` handles STOPPED but not COMPLETED.
+- **Status:** the run-indicator component is excluded from the production build, so natural completion cannot drive a GPIO. Re-enabling the test component requires an explicit indication design and regression coverage.
 
 ### F-035 — Furnace errors have no mitigation subscriber
 
