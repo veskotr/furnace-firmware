@@ -156,10 +156,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-005 — Successful sensor samples are not compacted
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and sensor validation pending / high.
 - **Evidence:** `temperature_processor_task.c:read_temp_sensors` writes by physical sensor index, while `temperature_processor.c:process_temperature_samples` consumes `[0, samples_count)`.
-- **Trigger/impact:** earlier read fails and later succeeds; stale failed slot is included and fresh later value excluded.
-- **Direction:** append each successful sample at `buffer[count]`.
+- **Source correction:** accepted fresh samples are now appended at `temperatures_buffer[*number_of_samples]`, with the sample count incremented only after a successful read and freshness check.
+- **Residual risk:** sparse-success regression coverage and sensor validation remain open.
 
 ### F-010 — Failed sensor initialization can create tight high-priority loop
 
@@ -334,7 +334,7 @@ Deferred test, build-profile, production-logging, and per-board configuration wo
 These five are independent, source-confirmed, testable with low architectural risk. They reduce incorrect control/data behavior while the larger actuator-inhibit and fresh-sample architecture is decided:
 
 1. **F-048:** characterize the corrected soft-landing trajectory and graph parity.
-2. **F-005:** compact successful temperature samples; add sparse-success batch tests.
+2. **F-005:** validate compact successful temperature samples with sparse-success batch tests.
 3. **F-022:** validate complete-read rejection and atomic draft replacement.
 4. **F-025:** verify full register width for MS9024 writes.
 5. **F-050:** bound service operational-time override and propagate NVS write failures.
