@@ -34,6 +34,15 @@ esp_err_t init_coordinator(void)
         g_coordinator_ctx = NULL;
         return ESP_ERR_NO_MEM;
     }
+
+    g_coordinator_ctx->exit_semaphore = xSemaphoreCreateBinary();
+    if (g_coordinator_ctx->exit_semaphore == NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     atomic_init(&g_coordinator_ctx->sensor_data_inhibited, true);
     CHECK_ERR_LOG_RET(heater_controller_set_sensor_data_inhibit(true),
                       "Failed to establish startup sensor-data inhibit");
@@ -61,7 +70,7 @@ esp_err_t coordinator_list_heating_profiles(void)
 
 esp_err_t stop_coordinator(void)
 {
-    if (g_coordinator_ctx == NULL || !g_coordinator_ctx->running)
+    if (g_coordinator_ctx == NULL)
     {
         return ESP_OK;
     }
@@ -76,6 +85,11 @@ esp_err_t stop_coordinator(void)
     {
         vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
         g_coordinator_ctx->temperature_mutex = NULL;
+    }
+    if (g_coordinator_ctx->exit_semaphore != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->exit_semaphore);
+        g_coordinator_ctx->exit_semaphore = NULL;
     }
     free(g_coordinator_ctx);
     g_coordinator_ctx = NULL;

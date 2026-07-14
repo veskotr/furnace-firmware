@@ -29,6 +29,7 @@ typedef struct
 typedef struct
 {
     TaskHandle_t task_handle;
+    SemaphoreHandle_t exit_semaphore;
     esp_timer_handle_t pid_tick_timer; // Periodic timer driving the PID control loop
 
     program_draft_t run_program; // Copy of the program being executed

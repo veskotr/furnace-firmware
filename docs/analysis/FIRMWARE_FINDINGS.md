@@ -121,8 +121,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-008 — Coordinator teardown leaves task/callbacks on freed state
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression validation pending / high.
 - **Evidence:** `coordinator_core.c:shutdown_coordinator`; `coordinator_component_events.c`; `coordinator_component_heater_controller.c`; `temperature_profile_core.c`. Temperature subscription and awakened control/profile work can outlive freed context.
+- **Source correction:** coordinator shutdown now handles inactive/completed contexts, waits for the control worker's exit acknowledgement before destroying the temperature mutex/context, and makes the worker self-exit path acknowledge before deletion.
+- **Residual risk:** event-manager callback quiescence and profile/timer cleanup need executable stop/restart coverage; broader producer ownership remains open.
 
 ### F-009 — Heater teardown deletes mutex/context before worker exit
 

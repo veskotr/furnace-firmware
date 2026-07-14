@@ -521,7 +521,6 @@ static void heater_controller_task(void* args)
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task exiting");
     stop_heating_profile(ctx);
-    ctx->task_handle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -813,6 +812,9 @@ esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx)
 
 esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 {
+    const TaskHandle_t task_handle = ctx->task_handle;
+    const bool called_from_control_task = task_handle == xTaskGetCurrentTaskHandle();
+
     /* Always clean up timer and profile — the task may have self-exited
      * (profile complete / emergency stop) with ctx->running already false. */
     if (ctx->pid_tick_timer != NULL)
@@ -842,6 +844,21 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 
     send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
     send_heater_command(COMMAND_TYPE_HEATER_STOP, 0.0f);
+
+    if (task_handle != NULL)
+    {
+        if (called_from_control_task)
+        {
+            /* The worker must acknowledge before self-deleting, but cannot
+             * wait on its own exit semaphore. */
+            xSemaphoreGive(ctx->exit_semaphore);
+        }
+        else if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        ctx->task_handle = NULL;
+    }
 
     LOGGER_LOG_INFO(TAG, "Coordinator task shutdown complete");
 
