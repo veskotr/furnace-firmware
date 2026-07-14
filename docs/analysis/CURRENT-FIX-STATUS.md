@@ -1,6 +1,6 @@
 # Current firmware fix status
 
-Date: 2026-07-13  
+Date: 2026-07-14
 Scope: source changes currently present on the working branch; no powered hardware validation claimed.
 
 | Finding | Current source status | Evidence / validation | Still open |
@@ -13,6 +13,7 @@ Scope: source changes currently present on the working branch; no powered hardwa
 | F-006 | Worker-ack source fix implemented | Temperature processor worker acknowledges exit before owner frees context; stop flag is atomic | Stop/restart regression coverage; broader producer/lifecycle validation |
 | F-007 | Worker-ack source fix implemented | Dispatcher worker acknowledges exit before queue/handler/context cleanup; shutdown aborts cleanup if acknowledgement fails | Stop/restart regression coverage; blocked external producers remain open |
 | F-008 | Coordinator worker-ack source fix implemented | Coordinator control worker acknowledges exit before owner destroys mutex/context; inactive/completed contexts are also cleaned up | Stop/restart regression coverage; event callback quiescence and broader producer lifecycle |
+| F-009 | Heater worker-ack source fix implemented | Heater PWM worker turns the output off and acknowledges exit before the owner deletes its mutex/semaphore/context | Stop/restart regression coverage; physical output-off validation |
 | F-001 | Phase B source fix implemented | Fresh-read ticks, fresh-sample quorum, direct recoverable heater inhibit, pause, and three-valid-aggregate recovery; see [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md) | Regression/hardware validation; future per-board quorum/mapping |
 | F-002 | Minimal source fix implemented | Dispatcher-task re-entrant submissions execute handlers inline; build and repository verification passed in [CHANGE-VALIDATION-F002.md](CHANGE-VALIDATION-F002.md) | Regression harness, nested stack characterization, teardown F-007, physical off-path validation |
 | F-017 | Local source fix implemented | SSR failure latches heater-local inhibit, retries SSR-off, and directly requests contactor-off; see [CHANGE-VALIDATION-F17.md](CHANGE-VALIDATION-F17.md) | GPIO polarity/isolation and powered-controller validation; global fault model intentionally deferred |

@@ -38,7 +38,7 @@ void heater_controller_task(void* args)
 
     static const uint32_t heater_window_ms = CONFIG_HEATER_WINDOW_SIZE_MS;
 
-    while (ctx->task_running)
+    while (atomic_load(&ctx->task_running))
     {
         const uint32_t on_time = (uint32_t)(get_heater_target_power_level(ctx) * heater_window_ms);
         const uint32_t off_time = heater_window_ms - on_time;
@@ -63,18 +63,18 @@ void heater_controller_task(void* args)
     check_error_and_post_event(ctx, toggle_heater(HEATER_OFF)); // Ensure heater is turned off on exit
 
     LOGGER_LOG_INFO(TAG, "Heater Controller Task exiting");
-    ctx->task_handle = NULL;
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
 }
 
 esp_err_t init_heater_controller_task(heater_controller_context_t* ctx)
 {
-    if (ctx->task_running)
+    if (atomic_load(&ctx->task_running))
     {
         return ESP_OK;
     }
 
-    ctx->task_running = true;
+    atomic_store(&ctx->task_running, true);
 
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                heater_controller_task,
@@ -97,17 +97,22 @@ esp_err_t init_heater_controller_task(heater_controller_context_t* ctx)
 
 esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx)
 {
-    if (!ctx->task_running)
+    if (!atomic_load(&ctx->task_running))
     {
         return ESP_OK;
     }
 
-    ctx->task_running = false;
-    if (ctx->task_handle != NULL)
+    const TaskHandle_t task_handle = ctx->task_handle;
+    atomic_store(&ctx->task_running, false);
+    if (task_handle != NULL)
     {
-        xTaskNotifyGive(ctx->task_handle);
+        xTaskNotifyGive(task_handle);
+        if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        ctx->task_handle = NULL;
     }
-    ctx->task_handle = NULL;
 
     shutdown_heater_controller();
 

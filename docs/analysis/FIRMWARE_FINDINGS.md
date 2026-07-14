@@ -1,6 +1,6 @@
 # Firmware findings register
 
-Date: 2026-07-13. Scope: read-only static architecture, safety, concurrency, lifecycle, integration, control, persistence, and configuration analysis. No hardware was operated. Line numbers are navigation hints; symbols/current source are authoritative.
+Date: 2026-07-14. Scope: read-only static architecture, safety, concurrency, lifecycle, integration, control, persistence, and configuration analysis. No hardware was operated. Line numbers are navigation hints; symbols/current source are authoritative.
 
 Categories: **confirmed defect** has a reachable source-level failure; **highly likely defect** has strong evidence with one runtime/config dependency; **possible defect** needs more evidence; **design weakness**, **maintainability issue**, **missing test**, and **unresolved question** are not claimed defects.
 
@@ -19,7 +19,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
-| 12 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
+| 12 | F-009, F-012 | confirmed defects | high lifecycle | Heater and device-manager shutdown paths still require worker joining before state cleanup |
 | 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
 | 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
 | 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
@@ -128,8 +128,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-009 — Heater teardown deletes mutex/context before worker exit
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending / high.
 - **Evidence:** `heater_controller_core.c:shutdown_heater_controller`; `heater_controller_task.c`. PWM task can still wake and use deleted state/mutex.
+- **Source correction:** heater shutdown now signals the worker, waits for its context-owned exit acknowledgement, and only then clears the task handle, destroys the mutex/semaphore, and frees the context. The running flag uses atomic access.
+- **Residual risk:** stop/restart regression coverage is still missing; GPIO off polarity, electrical isolation, and de-energization timing require hardware validation.
 
 ### F-012 — Device manager stop/reinit permits overlapping workers
 

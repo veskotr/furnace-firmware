@@ -56,6 +56,14 @@ esp_err_t init_heater_controller_component(void)
         return ESP_ERR_NO_MEM;
     }
 
+    g_heater_controller_context->exit_semaphore = xSemaphoreCreateBinary();
+    if (g_heater_controller_context->exit_semaphore == NULL)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to create heater controller exit semaphore");
+        shutdown_heater_controller_component();
+        return ESP_ERR_NO_MEM;
+    }
+
     CHECK_ERR_LOG_CALL_RET(init_events(g_heater_controller_context),
                            shutdown_heater_controller_component(),
                            "Failed to initialize heater controller events");
@@ -88,6 +96,12 @@ esp_err_t shutdown_heater_controller_component(void)
     {
         vSemaphoreDelete(g_heater_controller_context->power_mutex);
         g_heater_controller_context->power_mutex = NULL;
+    }
+
+    if (g_heater_controller_context->exit_semaphore != NULL)
+    {
+        vSemaphoreDelete(g_heater_controller_context->exit_semaphore);
+        g_heater_controller_context->exit_semaphore = NULL;
     }
 
     free(g_heater_controller_context);

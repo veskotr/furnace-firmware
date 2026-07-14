@@ -7,6 +7,7 @@
 #include "furnace_error_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <stdatomic.h>
 
 static const bool HEATER_ON = true;
 static const bool HEATER_OFF = false;
@@ -35,11 +36,12 @@ typedef struct
     bool control_inhibited;
 
     // Task running flag
-    volatile bool task_running;
+    atomic_bool task_running;
 
     bool initialized;
 
     SemaphoreHandle_t power_mutex;
+    SemaphoreHandle_t exit_semaphore;
 
 } heater_controller_context_t;
 
