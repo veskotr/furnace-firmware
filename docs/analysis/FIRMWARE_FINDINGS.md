@@ -16,7 +16,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 6 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
 | 7 | F-018 | source fix implemented; validation pending | high reset safety | Restart/factory-reset paths now fail closed unless direct heater inhibit succeeds |
 | 8 | F-019 | source fix implemented; validation pending | high startup/control | Profile start now creates the control task before queuing contactor START |
-| 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
+| 9 | F-048 | source fix implemented; validation pending | high control | Ramp-to-hold easing now decelerates without leading the configured ramp rate |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
 | 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
@@ -276,10 +276,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-048 — Cubic soft-landing accelerates before it decelerates
 
-- **Category/confidence:** confirmed defect / medium-high control quality.
-- **Evidence:** `temperature_profile_core.c:ramp_ease_position` uses `q=f0+w*(u+u²-u³)` in the final ease band. Relative to linear interpolation, `q-linear = w*u²*(1-u)`, which is positive for all interior points; its rate multiplier is `1+2u-3u²`, peaking at 4/3.
-- **Trigger/impact:** every heating ramp using a nonzero ease band commands up to 33% faster setpoint movement before tapering, leading the former linear profile by up to `4*ease_band/27` (0.89 C at the 6 C default). This contradicts the stated soft-landing/taper intent and can increase pre-handover control demand. The physical overshoot consequence requires bench validation.
-- **Direction:** select and document the intended trajectory, then test seam continuity, monotonicity, rate bounds, endpoint, short-span behavior, and HMI graph parity.
+- **Category/confidence:** source fix implemented; regression and powered validation pending / high control quality.
+- **Evidence:** the former `temperature_profile_core.c:ramp_ease_position` curve used `q=f0+w*(u+u²-u³)` in the final ease band. Relative to linear interpolation, `q-linear = w*u²*(1-u)` was positive for all interior points; its rate multiplier `1+2u-3u²` peaked at 4/3. This matched the observed ramp-to-hold overshoot behavior.
+- **Source correction:** the final band now uses a monotonic quadratic ease-out whose physical rate starts at the configured ramp rate and decreases to zero. The band takes twice its linear time, so the runtime planned duration is extended by one linear band duration instead of silently exceeding the configured rate.
+- **Residual risk:** the controller/PID and chamber thermal response still require real-world validation; graph rendering remains linear and may not match the runtime trajectory.
 
 ### F-049 — Control defaults, resolved build, and field-tuning documentation disagree
 
