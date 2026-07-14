@@ -14,7 +14,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 4 | F-002 | source fix implemented; validation pending | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
 | 5 | F-003 | source fix implemented; validation pending | critical safety/concurrency | Heater-side control inhibit rejects stale PID output after pause/stop |
 | 6 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
-| 7 | F-018 | highly likely defect | high reset safety | Restart/factory-reset path does not first synchronously inhibit outputs |
+| 7 | F-018 | source fix implemented; validation pending | high reset safety | Restart/factory-reset paths now fail closed unless direct heater inhibit succeeds |
 | 8 | F-019 | confirmed defect | high startup/control | Profile start queues contactor START before control task creation is proven |
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
@@ -74,10 +74,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-018 — Reset paths do not explicitly inhibit outputs
 
-- **Category/confidence:** highly likely defect / medium-high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending / medium-high.
 - **Evidence:** `nextion_settings_handlers.c` restart/factory-reset paths perform UI/storage delays then call `esp_restart()` without a synchronous heater inhibit.
 - **Impact:** reset-time output depends on GPIO reset behavior, external pulls, contactor polarity, and SSR hardware rather than an application invariant.
-- **Direction:** validate hardware and add a bounded direct inhibit before any restart path.
+- **Source correction:** both actual reset paths call the heater's direct temporary control inhibit before UI delays, storage changes, display reset, or `esp_restart()`. If inhibition fails, the reset is refused.
+- **Residual risk:** GPIO polarity, pull-down behavior, contactor/SSR electrical independence, and measured de-energization latency still require hardware validation.
 
 ### F-019 — Profile-start partial failure can leave contactor start queued
 
