@@ -214,18 +214,27 @@ static esp_err_t coordinator_command_handler(void* handler_arg, const void* comm
     case COMMAND_TYPE_COORDINATOR_GET_STATUS_REPORT:
         {
             LOGGER_LOG_INFO(TAG, "Coordinator Event: Get Status Report");
-            heating_task_state_t state;
-            get_heating_task_state(ctx);
+            const heating_task_state_t *state = &ctx->heating_task_state;
+            coordinator_status_data_t status = {
+                .current_temperature = state->current_temperature,
+                .target_temperature = state->target_temperature,
+                .power_output = 0.0f,
+                .elapsed_ms = state->current_time_elapsed_ms,
+                .total_ms = state->estimated_total_duration_ms,
+                .stage_index = -1,
+                .total_active_stages = 0,
+                .phase = state->is_completed ? COORD_STAGE_PHASE_COMPLETE : COORD_STAGE_PHASE_HEATING,
+                .stage_remaining_ms = 0,
+            };
             CHECK_ERR_LOG(
-                post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE, &state, sizeof(heating_task_state_t)),
+                post_coordinator_event(COORDINATOR_EVENT_STATUS_UPDATE, &status, sizeof(status)),
                 "Failed to send coordinator status report event");
             break;
         }
     case COMMAND_TYPE_COORDINATOR_GET_CURRENT_PROFILE:
         {
             LOGGER_LOG_INFO(TAG, "Coordinator Event: Get Current Profile");
-            size_t profile_index;
-            get_current_heating_profile(ctx);
+            size_t profile_index = ctx->has_program ? 0 : INVALID_PROFILE_INDEX;
             CHECK_ERR_LOG(post_coordinator_event(COORDINATOR_EVENT_CURRENT_PROFILE, &profile_index, sizeof(size_t)),
                           "Failed to send coordinator current profile event");
             break;

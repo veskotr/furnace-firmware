@@ -233,8 +233,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-031 — Coordinator query commands publish uninitialized/wrong payload
 
-- **Category/confidence:** confirmed latent defect / medium.
+- **Category/confidence:** source fix implemented; regression validation pending / medium.
 - **Evidence:** `coordinator_component_events.c` GET_STATUS/GET_CURRENT_PROFILE cases declare uninitialized stack objects and post them; status payload conflicts with the declared event type. No current in-tree producer was found.
+- **Source correction:** status queries now construct and post an initialized `coordinator_status_data_t`; current-profile queries return index `0` when a program is loaded and `INVALID_PROFILE_INDEX` otherwise.
+- **Residual risk:** query-event regression coverage and HMI consumer validation remain open; status queries intentionally report zero power/stage detail because the query command has no tick result context.
 
 ### F-032 — Destructive command routing uses substring matching
 
