@@ -15,6 +15,10 @@
 
 static const char* TAG = "nextion_storage";
 
+/* Bound repeated packet NAKs so a faulty or incompatible panel cannot hold the
+ * sole HMI worker in the storage transfer indefinitely. */
+#define NEXTION_MAX_PACKET_NAK_RETRIES 3U
+
 static volatile bool s_storage_active = false;
 
 /* ── Program name registry (volatile, populated during session) ───── */
@@ -315,6 +319,7 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
     uint16_t pkt_id = 0;
     size_t offset = 0;
+    unsigned packet_nak_retries = 0;
 
     while (offset < payload_len)
     {
@@ -346,7 +351,15 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
         if (resp[0] == 0x04)
         {
-            LOGGER_LOG_WARN(TAG, "NAK for packet %u, retrying", pkt_id);
+            packet_nak_retries++;
+            LOGGER_LOG_WARN(TAG, "NAK for packet %u, retry %u/%u", pkt_id,
+                            packet_nak_retries, NEXTION_MAX_PACKET_NAK_RETRIES);
+            if (packet_nak_retries > NEXTION_MAX_PACKET_NAK_RETRIES)
+            {
+                set_error(error_msg, error_len, "twfile packet rejected repeatedly");
+                success = false;
+                goto cleanup;
+            }
             continue;
         }
 
@@ -367,6 +380,7 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
         offset += chunk;
         pkt_id++;
+        packet_nak_retries = 0;
 
         LOGGER_LOG_INFO(TAG, "Packet %u sent, %u/%u bytes", pkt_id - 1, (unsigned)offset, (unsigned)payload_len);
     }

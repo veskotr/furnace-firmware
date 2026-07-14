@@ -21,7 +21,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
 | 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
 | 13 | F-022 | source fix implemented; validation pending | high persistence/control | Incomplete Nextion file reads are rejected before draft replacement |
-| 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
+| 14 | F-023 | source fix implemented; validation pending | high operational/safety access | Repeated NAKs now abort storage transfer instead of blocking the sole HMI worker |
 | 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
 
 ## Safety and control findings
@@ -193,10 +193,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-023 — Persistent Nextion NAK blocks sole HMI worker
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and panel validation pending / high.
 - **Evidence:** `nextion_storage.c` transfer loop `continue`s indefinitely on `0x04` NAK without retry/progress limit; save executes on sole HMI coordinator.
-- **Impact:** HMI pause/stop input cannot be processed while heating continues.
-- **Direction:** bound retries/time, release UART/storage ownership, and preserve an independent stop path.
+- **Source correction:** packet transfer now allows three retries for a NAK, then fails the save and exits through the existing cleanup path, releasing the UART mutex and clearing storage-active state. No Nextion-side change is required.
+- **Residual risk:** UART fault-injection and independent HMI stop-path validation remain open; destructive replacement ordering remains tracked separately as F-024.
 
 ### F-024 — Program save is destructive before replacement succeeds
 
