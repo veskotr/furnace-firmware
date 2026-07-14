@@ -163,8 +163,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-010 — Failed sensor initialization can create tight high-priority loop
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and sensor validation pending / high.
 - **Evidence:** `temperature_processor_core.c:init_temp_processor` ignores `init_devices` result; zero-sample branch in `temperature_processor_task.c` continues before blocking/wait.
+- **Source correction:** the current worker already blocks on its notification after a zero-sample cycle; initialization now also checks `init_devices`, destroys any partially created sensors, and refuses to start the worker when setup fails.
+- **Residual risk:** initialization fault-injection and sensor/device lifecycle validation remain open.
 
 ### F-025 — MS9024 write verification compares only low byte
 

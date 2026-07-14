@@ -12,6 +12,7 @@ volatile bool processor_running = false;
 static temp_processor_context_t *g_temp_processor_ctx = NULL;
 
 static esp_err_t init_devices(void);
+static void destroy_devices(void);
 
 // ----------------------------
 // Public API
@@ -49,11 +50,20 @@ esp_err_t init_temp_processor(uint8_t number_of_temp_sensors)
     atomic_init(&g_temp_processor_ctx->processor_running, true);
     g_temp_processor_ctx->number_of_temp_sensors = number_of_temp_sensors;
 
-    init_devices();
+    const esp_err_t devices_err = init_devices();
+    if (devices_err != ESP_OK)
+    {
+        destroy_devices();
+        vSemaphoreDelete(g_temp_processor_ctx->exit_semaphore);
+        free(g_temp_processor_ctx);
+        g_temp_processor_ctx = NULL;
+        return devices_err;
+    }
 
     const esp_err_t task_err = start_temp_processor_task(g_temp_processor_ctx);
     if (task_err != ESP_OK)
     {
+        destroy_devices();
         vSemaphoreDelete(g_temp_processor_ctx->exit_semaphore);
         free(g_temp_processor_ctx);
         g_temp_processor_ctx = NULL;
@@ -115,4 +125,22 @@ static esp_err_t init_devices(void)
     LOGGER_LOG_INFO(TAG, "Initialized temp sensor devices");
 
     return ESP_OK;
+}
+
+static void destroy_devices(void)
+{
+    if (g_temp_processor_ctx == NULL)
+    {
+        return;
+    }
+
+    for (uint8_t i = 0; i < g_temp_processor_ctx->number_of_temp_sensors; i++)
+    {
+        if (g_temp_processor_ctx->temp_sensor_devices[i] != NULL)
+        {
+            CHECK_ERR_LOG(temp_sensor_destroy(g_temp_processor_ctx->temp_sensor_devices[i]),
+                          "Failed to destroy partially initialized temperature sensor");
+            g_temp_processor_ctx->temp_sensor_devices[i] = NULL;
+        }
+    }
 }
