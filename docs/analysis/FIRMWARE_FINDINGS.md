@@ -180,8 +180,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-029 — Failed sensor creation leaks static pool slot
 
-- **Category/confidence:** confirmed defect / medium.
+- **Category/confidence:** source fix implemented; regression and sensor lifecycle validation pending / medium.
 - **Evidence:** `temp_sensor_device_core.c:temp_sensor_create` sets `allocated=true` before `device_manager_create_device`; error macro returns without clearing the slot.
+- **Source correction:** sensor creation now clears `allocated`, `valid`, and `device_handle` when device-manager creation fails before returning the original error.
+- **Residual risk:** fault-injection and repeated create/destroy validation remain open.
 
 ### F-030 — Modbus shutdown retains deleted handle
 

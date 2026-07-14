@@ -44,11 +44,18 @@ esp_err_t temp_sensor_create(temp_sensor_device_t** device)
             ctx_pool[i].has_successful_sample = false;
             ctx_pool[i].modbus_address = CONFIG_TEMP_SENSOR_MODBUS_START_ADDRESS + i;
             ctx_pool[i].modbus_register = MS9024_REG_PV;
-            CHECK_ERR_LOG_RET(
-                device_manager_create_device(&ctx_pool[i], &device_ops, "temp_sensor", DEVICE_TYPE_TEMP_SENSOR, &
-                    ctx_pool
-                    [i].device_handle),
-                "Failed to create temp sensor device");
+            const esp_err_t create_err = device_manager_create_device(
+                &ctx_pool[i], &device_ops, "temp_sensor", DEVICE_TYPE_TEMP_SENSOR,
+                &ctx_pool[i].device_handle);
+            if (create_err != ESP_OK)
+            {
+                LOGGER_LOG_ERROR(TAG, "Failed to create temp sensor device: %s",
+                                 esp_err_to_name(create_err));
+                ctx_pool[i].allocated = false;
+                ctx_pool[i].valid = false;
+                ctx_pool[i].device_handle = NULL;
+                return create_err;
+            }
             LOGGER_LOG_INFO(TAG, "Temp sensor device created with ID %d", ctx_pool[i].id);
             *device = &ctx_pool[i];
             return ESP_OK;
