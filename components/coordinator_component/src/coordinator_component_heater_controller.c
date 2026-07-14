@@ -687,18 +687,6 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         return ESP_FAIL;
     }
 
-    /* Release the temporary gate only after the new profile is loaded. Any
-     * queued stale demand from the previous run was rejected while the gate
-     * remained active. */
-    if (heater_controller_set_control_inhibit(false) != ESP_OK)
-    {
-        LOGGER_LOG_ERROR(TAG, "Refusing profile start: heater control inhibit could not be released");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
-    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
-
     /* Set running BEFORE task creation — the new task checks ctx->running
      * in its while-loop condition and may be scheduled before we return. */
     ctx->running = true;
@@ -714,6 +702,22 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
                            : ESP_FAIL,
                            ctx->task_handle = NULL; ctx->running = false,
                            "Failed to create coordinator task");
+
+    /* Do not authorize the heater until the control task exists. If task
+     * creation failed, no heater-start command has been submitted. */
+    if (heater_controller_set_control_inhibit(false) != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: heater control inhibit could not be released");
+        ctx->running = false;
+        if (ctx->task_handle != NULL)
+        {
+            xTaskNotifyGive(ctx->task_handle);
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
+    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
 
     /* Start periodic PID tick timer */
     const esp_timer_create_args_t timer_args = {

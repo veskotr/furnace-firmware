@@ -15,7 +15,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 5 | F-003 | source fix implemented; validation pending | critical safety/concurrency | Heater-side control inhibit rejects stale PID output after pause/stop |
 | 6 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
 | 7 | F-018 | source fix implemented; validation pending | high reset safety | Restart/factory-reset paths now fail closed unless direct heater inhibit succeeds |
-| 8 | F-019 | confirmed defect | high startup/control | Profile start queues contactor START before control task creation is proven |
+| 8 | F-019 | source fix implemented; validation pending | high startup/control | Profile start now creates the control task before queuing contactor START |
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
@@ -82,9 +82,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-019 — Profile-start partial failure can leave contactor start queued
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending / high.
 - **Evidence:** `coordinator_component_heater_controller.c:start_heating_profile` queues HEATER_CLEAR/HEATER_START before `xTaskCreate`; task-creation failure returns without queued STOP or complete profile unwind.
 - **Impact:** profile start reports failure but output authorization may already execute.
+- **Source correction:** coordinator task creation now completes before the temporary heater inhibit is released and before HEATER_CLEAR/HEATER_START are submitted. A task-creation failure therefore submits no new heater-start command.
+- **Residual risk:** timer-create/start failure remains F-011; command submission failures and physical output behavior still require validation.
 - **Direction:** establish all control resources first or synchronously unwind/inhibit on every later failure.
 
 ### F-020 — PID history persists across runs
