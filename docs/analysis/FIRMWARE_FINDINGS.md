@@ -214,9 +214,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-026 — Factory reset does not enumerate stored programs
 
-- **Category/confidence:** confirmed defect / medium.
+- **Category/confidence:** source fix implemented; panel-storage validation pending / medium.
 - **Evidence:** `nextion_storage.c` delete-all walks a volatile session registry capped by coordinator max profiles (five) while storage advertises 200; registry is populated only by current-session saves/loads.
 - **Impact:** after reboot, existing panel SD programs can survive a claimed factory reset.
+- **Source correction:** the program registry now uses the configured `CONFIG_NEXTION_MAX_PROGRAMS` capacity, persists names in a dedicated NVS namespace, and restores them during HMI startup. Factory reset deletes the restored names before erasing NVS.
+- **Residual risk:** the panel still has no serial directory enumeration in this implementation; files created or renamed outside the firmware registry remain outside the deletion set, and panel response/power-loss behavior requires validation.
 
 ### F-027 — Program deletion reports success without response validation
 

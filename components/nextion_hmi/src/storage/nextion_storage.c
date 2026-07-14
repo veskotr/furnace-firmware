@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
+#include "nvs.h"
 #include "logger_component.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -21,10 +22,71 @@ static const char* TAG = "nextion_storage";
 
 static volatile bool s_storage_active = false;
 
-/* ── Program name registry (volatile, populated during session) ───── */
+/* ── Program name registry ────────────────────────────────────────── */
 #define REGISTRY_NAME_LEN 64
-static char s_registry[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+#define REGISTRY_NVS_NAMESPACE "prog_registry"
+#define REGISTRY_NVS_COUNT_KEY "count"
+static char s_registry[CONFIG_NEXTION_MAX_PROGRAMS][REGISTRY_NAME_LEN];
 static int s_registry_count = 0;
+
+static void registry_persist(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(REGISTRY_NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK)
+    {
+        LOGGER_LOG_WARN(TAG, "Failed to open persistent program registry");
+        return;
+    }
+
+    bool ok = nvs_set_u32(nvs, REGISTRY_NVS_COUNT_KEY, (uint32_t)s_registry_count) == ESP_OK;
+    for (int i = 0; ok && i < s_registry_count; ++i)
+    {
+        char key[16];
+        snprintf(key, sizeof(key), "p%03u", (unsigned)i);
+        ok = nvs_set_str(nvs, key, s_registry[i]) == ESP_OK;
+    }
+    if (ok)
+    {
+        ok = nvs_commit(nvs) == ESP_OK;
+    }
+    nvs_close(nvs);
+    if (!ok)
+    {
+        LOGGER_LOG_WARN(TAG, "Failed to persist program registry");
+    }
+}
+
+void nextion_storage_init(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(REGISTRY_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK)
+    {
+        return;
+    }
+
+    uint32_t stored_count = 0;
+    if (nvs_get_u32(nvs, REGISTRY_NVS_COUNT_KEY, &stored_count) != ESP_OK)
+    {
+        nvs_close(nvs);
+        return;
+    }
+
+    s_registry_count = stored_count > CONFIG_NEXTION_MAX_PROGRAMS
+        ? CONFIG_NEXTION_MAX_PROGRAMS
+        : (int)stored_count;
+    for (int i = 0; i < s_registry_count; ++i)
+    {
+        char key[16];
+        snprintf(key, sizeof(key), "p%03u", (unsigned)i);
+        size_t len = sizeof(s_registry[i]);
+        if (nvs_get_str(nvs, key, s_registry[i], &len) != ESP_OK)
+        {
+            s_registry[i][0] = '\0';
+        }
+    }
+    nvs_close(nvs);
+    LOGGER_LOG_INFO(TAG, "Loaded %d program names from persistent registry", s_registry_count);
+}
 
 static void registry_add(const char* display_name)
 {
@@ -33,7 +95,7 @@ static void registry_add(const char* display_name)
     {
         if (strcmp(s_registry[i], display_name) == 0) return;
     }
-    if (s_registry_count >= CONFIG_COORDINATOR_MAX_PROFILES_STORED)
+    if (s_registry_count >= CONFIG_NEXTION_MAX_PROGRAMS)
     {
         LOGGER_LOG_WARN(TAG, "Program registry full, cannot track '%s'", display_name);
         return;
@@ -41,6 +103,7 @@ static void registry_add(const char* display_name)
     strncpy(s_registry[s_registry_count], display_name, REGISTRY_NAME_LEN - 1);
     s_registry[s_registry_count][REGISTRY_NAME_LEN - 1] = '\0';
     s_registry_count++;
+    registry_persist();
     LOGGER_LOG_INFO(TAG, "Registry add '%s' (count=%d)", display_name, s_registry_count);
 }
 
@@ -55,6 +118,7 @@ static void registry_remove(const char* display_name)
                 memcpy(s_registry[j], s_registry[j + 1], REGISTRY_NAME_LEN);
             }
             s_registry_count--;
+            registry_persist();
             return;
         }
     }
@@ -68,7 +132,7 @@ void nextion_storage_register_program(const char* display_name)
 int nextion_storage_delete_all_programs(void)
 {
     /* Copy names first — delete_program modifies the registry */
-    char names[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+    char names[CONFIG_NEXTION_MAX_PROGRAMS][REGISTRY_NAME_LEN];
     int count = s_registry_count;
     memcpy(names, s_registry, sizeof(s_registry));
 

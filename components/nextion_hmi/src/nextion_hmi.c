@@ -3,6 +3,7 @@
 #include "sdkconfig.h"
 #include "hmi_coordinator_internal.h"
 #include "nextion_transport_internal.h"
+#include "nextion_storage_internal.h"
 #include "heating_program_models_internal.h"
 
 #include "logger_component.h"
@@ -13,6 +14,7 @@ void nextion_hmi_init(void)
 {
     // Initialize program model mutex before anything else
     program_models_init();
+    nextion_storage_init();
 
     nextion_uart_init();
 
