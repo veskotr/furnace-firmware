@@ -168,9 +168,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-025 — MS9024 write verification compares only low byte
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and device validation pending / high.
 - **Evidence:** `temp_sensor_device/src/ms9024.c:ms9024_write_and_verify` masks/compares low byte; repair writes 16-bit value 282 to register 129.
-- **Impact:** mismatched high byte can be accepted as successful configuration repair.
+- **Source correction:** write verification and the adjacent auto-correct comparison now require the complete 16-bit readback to equal the desired value; diagnostics log both bytes.
+- **Residual risk:** Modbus fault-injection and powered MS9024 validation remain open.
 
 ### F-029 — Failed sensor creation leaks static pool slot
 

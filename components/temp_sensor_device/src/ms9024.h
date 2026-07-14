@@ -47,8 +47,8 @@ esp_err_t ms9024_write_and_verify(uint8_t slave_address, uint16_t reg, uint16_t 
 /**
  * @brief Auto-correct a register if it doesn't match the desired value.
  *
- * Reads the register, and if the LSByte doesn't match @p desired, writes
- * the correct value and verifies. Skips the write if already correct.
+ * Reads the register, and if the full 16-bit value doesn't match @p desired,
+ * writes the correct value and verifies. Skips the write if already correct.
  */
 esp_err_t ms9024_auto_correct_register(uint8_t slave_address, uint16_t reg, uint16_t desired);
 

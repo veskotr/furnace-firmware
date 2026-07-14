@@ -112,14 +112,13 @@ esp_err_t ms9024_write_and_verify(const uint8_t slave_address, const uint16_t re
     CHECK_ERR_LOG_RET_FMT(ms9024_read_uint16(slave_address, reg, &readback),
                            "Failed to read back %s for verification", reg_name);
 
-    const uint16_t rb_lsb = readback & 0xFF;
-    if (rb_lsb == (value & 0xFF)) {
-        LOGGER_LOG_INFO(TAG, "✓ %s verified: %d", reg_name, rb_lsb);
+    if (readback == value) {
+        LOGGER_LOG_INFO(TAG, "✓ %s verified: 0x%04X", reg_name, readback);
         return ESP_OK;
     }
 
-    LOGGER_LOG_ERROR(TAG, "✗ %s mismatch: wrote %d, read back %d",
-                      reg_name, value & 0xFF, rb_lsb);
+    LOGGER_LOG_ERROR(TAG, "✗ %s mismatch: wrote 0x%04X, read back 0x%04X",
+                      reg_name, value, readback);
     return ESP_FAIL;
 }
 
@@ -132,16 +131,15 @@ esp_err_t ms9024_auto_correct_register(const uint8_t slave_address, const uint16
     CHECK_ERR_LOG_RET(ms9024_read_uint16(slave_address, reg, &current),
                       "Failed to read for auto-correct");
 
-    const uint8_t cv = current & 0xFF;
-    if (cv != (desired & 0xFF))
+    if (current != desired)
     {
-        LOGGER_LOG_WARN(TAG, """Mismatch: MS9024 has %d, desired %d — correcting", cv, desired & 0xFF);
+        LOGGER_LOG_WARN(TAG, "Mismatch: MS9024 has 0x%04X, desired 0x%04X — correcting", current, desired);
         CHECK_ERR_LOG_CALL_RET_FMT(ms9024_write_and_verify(slave_address, reg, desired, "auto-correct"),
                                    vTaskDelay(pdMS_TO_TICKS(500)),
                                    "Auto-correct failed for reg %d", reg);
     }
 
-    LOGGER_LOG_INFO(TAG, "OK: %d (matches config)", cv);
+    LOGGER_LOG_INFO(TAG, "OK: 0x%04X (matches config)", current);
     return ESP_OK;
 }
 
