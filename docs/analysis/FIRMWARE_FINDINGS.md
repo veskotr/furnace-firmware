@@ -240,8 +240,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-032 — Destructive command routing uses substring matching
 
-- **Category/confidence:** possible defect / medium.
+- **Category/confidence:** source fix implemented; regression and panel validation pending / medium.
 - **Evidence:** `nextion_events.c` routes restart/factory-reset by `strstr`; malformed frames containing tokens could invoke destructive handlers. Reachability depends on panel protocol framing/caller guards.
+- **Source correction:** restart, factory-reset request, and factory-reset confirmation now require an exact cleaned command string before invoking their destructive handlers.
+- **Residual risk:** malformed-frame injection and the deployed panel's command framing still require validation; other non-destructive routes retain their existing substring-compatible protocol.
 
 ### F-033 — HMI numeric parsing lacks range/overflow checks
 
