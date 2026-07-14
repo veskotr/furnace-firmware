@@ -245,8 +245,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-011 — Coordinator timer failure can report/start inconsistent profile
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending / high.
 - **Evidence:** timer create/start errors in `start_heating_profile` do not fully unwind already loaded/profile/output state.
+- **Source correction:** the coordinator now creates and starts the PID timer before releasing heater control inhibit or submitting `HEATER_CLEAR`/`HEATER_START`. Any timer create/start failure invokes the existing profile stop/unwind path and returns the timer error; heater authorization failure uses the same fail-closed cleanup.
+- **Residual risk:** timer fault-injection and startup/stop regression coverage remain open; command submission and physical output behavior still require separate validation.
 
 ### F-014 — HMI bridge silently drops lifecycle/error telemetry
 

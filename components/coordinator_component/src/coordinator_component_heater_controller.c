@@ -702,22 +702,6 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
                            ctx->task_handle = NULL; ctx->running = false,
                            "Failed to create coordinator task");
 
-    /* Do not authorize the heater until the control task exists. If task
-     * creation failed, no heater-start command has been submitted. */
-    if (heater_controller_set_control_inhibit(false) != ESP_OK)
-    {
-        LOGGER_LOG_ERROR(TAG, "Refusing profile start: heater control inhibit could not be released");
-        ctx->running = false;
-        if (ctx->task_handle != NULL)
-        {
-            xTaskNotifyGive(ctx->task_handle);
-        }
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
-    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
-
     /* Start periodic PID tick timer */
     const esp_timer_create_args_t timer_args = {
         .callback = pid_tick_timer_cb,
@@ -726,13 +710,35 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         .name = "pid_tick"
     };
     esp_err_t timer_err = esp_timer_create(&timer_args, &ctx->pid_tick_timer);
-    if (timer_err == ESP_OK) {
-        esp_timer_start_periodic(ctx->pid_tick_timer,
-                                 (uint64_t)CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS * 1000ULL);
-        LOGGER_LOG_INFO(TAG, "PID tick timer started (%d ms)", CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS);
-    } else {
+    if (timer_err != ESP_OK)
+    {
         LOGGER_LOG_ERROR(TAG, "Failed to create PID tick timer: %s", esp_err_to_name(timer_err));
+        stop_heating_profile(ctx);
+        return timer_err;
     }
+
+    timer_err = esp_timer_start_periodic(ctx->pid_tick_timer,
+                                         (uint64_t)CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS * 1000ULL);
+    if (timer_err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to start PID tick timer: %s", esp_err_to_name(timer_err));
+        stop_heating_profile(ctx);
+        return timer_err;
+    }
+
+    LOGGER_LOG_INFO(TAG, "PID tick timer started (%d ms)", CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS);
+
+    /* Do not authorize the heater until the control task and its timer exist.
+     * If either resource failed, no heater-start command has been submitted. */
+    if (heater_controller_set_control_inhibit(false) != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: heater control inhibit could not be released");
+        stop_heating_profile(ctx);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
+    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
 
     LOGGER_LOG_INFO(TAG, "Coordinator task initialized");
 
