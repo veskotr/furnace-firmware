@@ -247,8 +247,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-033 — HMI numeric parsing lacks range/overflow checks
 
-- **Category/confidence:** highly likely defect / medium.
+- **Category/confidence:** source fix implemented; regression validation pending / medium.
 - **Evidence:** `nextion_parse_utils.c` uses `strtol` without `errno`/range validation; decimal accumulation can overflow signed integers.
+- **Source correction:** `parse_int` now rejects conversion errors and values outside `int`; `parse_decimal_x10` bounds its accumulation and handles the signed `INT_MIN` endpoint without narrowing overflow.
+- **Residual risk:** no parser test harness exists in the repository; accepted values still require downstream heating/profile range validation.
 
 ### F-034 — Enable Kconfig booleans are not honored by build/startup
 
