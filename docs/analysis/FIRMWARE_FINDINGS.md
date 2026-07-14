@@ -19,7 +19,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
-| 12 | F-009, F-012 | confirmed defects | high lifecycle | Heater and device-manager shutdown paths still require worker joining before state cleanup |
+| 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
 | 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
 | 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
 | 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
@@ -135,8 +135,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-012 — Device manager stop/reinit permits overlapping workers
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression validation pending / high.
 - **Evidence:** `device_manager_task.c:stop_device_manager_task/init_device_manager_task`. Stop does not join before `running` can become true again.
+- **Source correction:** device-manager stop now atomically clears the running flag, wakes the worker, and waits for its context-owned exit acknowledgement before clearing the task handle. A subsequent init therefore cannot reuse the context while the previous worker is still alive.
+- **Residual risk:** device-update callbacks and event consumers still lack a broader producer/lifecycle contract; stop/restart regression and Modbus/device validation remain open.
 
 ### F-013 — Manual-target mailbox mixes atomic/plain access
 
