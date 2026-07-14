@@ -6,6 +6,8 @@
 #include "temp_sensor_device.h"
 #include "sdkconfig.h"
 #include "temperature_processor_component.h"
+#include "freertos/semphr.h"
+#include <stdatomic.h>
 
 typedef enum
 {
@@ -31,10 +33,11 @@ typedef struct
     temp_sensor_device_t *temp_sensor_devices[CONFIG_TEMP_SENSORS_MAX_SENSORS];
 
     TaskHandle_t task_handle;
+    SemaphoreHandle_t exit_semaphore;
 
     volatile uint8_t number_of_temp_sensors;
 
-    volatile bool processor_running;
+    atomic_bool processor_running;
 
 } temp_processor_context_t;
 

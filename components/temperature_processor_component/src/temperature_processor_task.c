@@ -44,7 +44,7 @@ static void temp_process_task(void* args)
 
     temp_processor_context_t* ctx = (temp_processor_context_t*)args;
 
-    while (ctx->processor_running)
+    while (atomic_load_explicit(&ctx->processor_running, memory_order_acquire))
     {
         uint8_t samples_count = 0;
 
@@ -97,8 +97,8 @@ static void temp_process_task(void* args)
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature processor task exiting");
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
-    ctx->task_handle = NULL;
 }
 
 esp_err_t start_temp_processor_task(temp_processor_context_t* ctx)
@@ -132,7 +132,7 @@ esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx)
         return ESP_OK;
     }
 
-    ctx->processor_running = false;
+    atomic_store_explicit(&ctx->processor_running, false, memory_order_release);
     if (ctx->task_handle != NULL)
     {
         xTaskNotifyGive(ctx->task_handle);

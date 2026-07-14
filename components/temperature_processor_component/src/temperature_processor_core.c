@@ -34,14 +34,31 @@ esp_err_t init_temp_processor(uint8_t number_of_temp_sensors)
         }
     }
 
-    g_temp_processor_ctx->processor_running = true;
+    if (g_temp_processor_ctx->exit_semaphore == NULL)
+    {
+        g_temp_processor_ctx->exit_semaphore = xSemaphoreCreateBinary();
+        if (g_temp_processor_ctx->exit_semaphore == NULL)
+        {
+            LOGGER_LOG_ERROR(TAG, "Failed to create temperature processor exit semaphore");
+            free(g_temp_processor_ctx);
+            g_temp_processor_ctx = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    atomic_init(&g_temp_processor_ctx->processor_running, true);
     g_temp_processor_ctx->number_of_temp_sensors = number_of_temp_sensors;
 
     init_devices();
 
-    CHECK_ERR_LOG_CALL_RET(start_temp_processor_task(g_temp_processor_ctx),
-                           free(g_temp_processor_ctx),
-                           "Failed to start temperature processor task");
+    const esp_err_t task_err = start_temp_processor_task(g_temp_processor_ctx);
+    if (task_err != ESP_OK)
+    {
+        vSemaphoreDelete(g_temp_processor_ctx->exit_semaphore);
+        free(g_temp_processor_ctx);
+        g_temp_processor_ctx = NULL;
+        return task_err;
+    }
 
     CHECK_ERR_LOG_CALL_RET(init_temp_processor_events(g_temp_processor_ctx),
                            stop_temp_processor_task(g_temp_processor_ctx),
@@ -52,7 +69,8 @@ esp_err_t init_temp_processor(uint8_t number_of_temp_sensors)
 
 esp_err_t shutdown_temp_processor(void)
 {
-    if (g_temp_processor_ctx == NULL || !g_temp_processor_ctx->processor_running)
+    if (g_temp_processor_ctx == NULL ||
+        !atomic_load_explicit(&g_temp_processor_ctx->processor_running, memory_order_acquire))
     {
         return ESP_OK;
     }
@@ -62,9 +80,15 @@ esp_err_t shutdown_temp_processor(void)
 
     CHECK_ERR_LOG_RET(stop_temp_processor_task(g_temp_processor_ctx), "Failed to stop temperature processor task");
 
-    g_temp_processor_ctx->processor_running = false;
+    if (xSemaphoreTake(g_temp_processor_ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
 
-    // Free context
+    g_temp_processor_ctx->task_handle = NULL;
+    atomic_store_explicit(&g_temp_processor_ctx->processor_running, false, memory_order_release);
+
+    vSemaphoreDelete(g_temp_processor_ctx->exit_semaphore);
     free(g_temp_processor_ctx);
     g_temp_processor_ctx = NULL;
 

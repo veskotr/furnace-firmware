@@ -107,9 +107,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-006 — Temperature processor frees live task context
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression validation pending / high.
 - **Evidence:** `temperature_processor_core.c:shutdown_temp_processor`; `temperature_processor_task.c:temp_process_task`. Stop clears/notifies, owner frees immediately, and handle clearing is placed after unreachable `vTaskDelete(NULL)`.
-- **Direction:** worker acknowledges before self-delete; owner joins, unsubscribes, then frees.
+- **Source correction:** the worker signals a context-owned exit semaphore before self-deletion; the owner waits for that acknowledgement before clearing the handle, deleting the semaphore, and freeing the context.
+- **Residual risk:** event-manager unsubscribe and device-manager producer shutdown remain broader lifecycle concerns tracked separately; executable stop/restart coverage is still missing.
 
 ### F-007 — Dispatcher deletes queue/context under live task
 
