@@ -187,9 +187,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-030 — Modbus shutdown retains deleted handle
 
-- **Category/confidence:** confirmed latent defect / medium.
+- **Category/confidence:** source fix implemented; regression and Modbus validation pending / medium.
 - **Evidence:** `modbus_master_core.c:modbus_master_shutdown` deletes master but does not clear handle; request path lacks initialization-state validation.
 - **Trigger:** shutdown/reinit or request after shutdown; current startup is boot-only.
+- **Source correction:** successful shutdown now clears `master_handle`; initialization rejects a second active instance, and the raw request path returns `ESP_ERR_INVALID_STATE` when no master exists.
+- **Residual risk:** shutdown/reinit and request-after-shutdown validation remain open; physical RS-485 behavior is not claimed.
 
 ## HMI, persistence, and configuration findings
 
