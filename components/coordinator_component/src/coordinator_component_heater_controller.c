@@ -857,6 +857,7 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 
     set_control_inhibit(true);
     kill_heater();
+    pid_controller_reset();
     shutdown_profile_controller();
 
     send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);

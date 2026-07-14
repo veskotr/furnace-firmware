@@ -30,7 +30,7 @@ Scope: source changes currently present on the working branch; no powered hardwa
 | F-001 | Phase B source fix implemented | Fresh-read ticks, fresh-sample quorum, direct recoverable heater inhibit, pause, and three-valid-aggregate recovery; see [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md) | Regression/hardware validation; future per-board quorum/mapping |
 | F-002 | Minimal source fix implemented | Dispatcher-task re-entrant submissions execute handlers inline; build and repository verification passed in [CHANGE-VALIDATION-F002.md](CHANGE-VALIDATION-F002.md) | Regression harness, nested stack characterization, teardown F-007, physical off-path validation |
 | F-017 | Local source fix implemented | SSR failure latches heater-local inhibit, retries SSR-off, and directly requests contactor-off; see [CHANGE-VALIDATION-F17.md](CHANGE-VALIDATION-F17.md) | GPIO polarity/isolation and powered-controller validation; global fault model intentionally deferred |
-| F-020 | Source mitigation present | PID state reset is performed on profile start, stage handover, and resume | Characterization and regression coverage |
+| F-020 | Stop-boundary source fix implemented | PID state is reset on profile stop as well as profile start, stage handover, and resume | Characterization and regression coverage |
 | F-053 | Source fix implemented | Non-finite PID inputs/state/output and heater demand are rejected or forced to zero; see [CHANGE-VALIDATION-F53.md](CHANGE-VALIDATION-F53.md) | Executable regression coverage |
 
 ## Important clarification: F-001 Phase B

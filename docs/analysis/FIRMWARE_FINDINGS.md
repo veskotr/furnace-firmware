@@ -92,9 +92,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-020 — PID history persists across runs
 
-- **Category/confidence:** source-level mitigation added; regression and hardware characterization still missing.
-- **Evidence:** `6741c72` calls `pid_controller_reset()` before profile load in `start_heating_profile`; it also adds `pid_controller_reset_for_setpoint()` at heating-to-hold and resume. `pid_component.c` remains a file-static singleton.
-- **Current status:** the previously confirmed fresh-run carryover path is addressed in source, but the exact first-tick/hold/resume behavior and all reset paths are not regression-tested. Retain this ID until the behavior is characterized rather than silently treating it as release-verified.
+- **Category/confidence:** source fix implemented; regression and hardware characterization still missing / high control.
+- **Evidence:** `pid_component.c` remains a file-static singleton. The coordinator reset points include profile start, stop, heating-to-hold handover, and resume.
+- **Source correction:** `stop_heating_profile()` now calls `pid_controller_reset()` after asserting the heater inhibit and killing the heater, so completion, emergency stop, and explicit stop clear controller history immediately rather than waiting for the next run.
+- **Residual risk:** exact first-tick/hold/resume behavior and all reset paths are not regression-tested; no hardware validation is claimed.
 
 ### F-021 — Current temperature is a cross-task data race
 
