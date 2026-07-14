@@ -179,11 +179,19 @@ static esp_err_t coordinator_command_handler(void* handler_arg, const void* comm
             LOGGER_LOG_INFO(TAG, "Coordinator Event: Update Manual Target t=%d delta_x10=%d",
                             data->target_t_c, data->delta_t_per_min_x10);
 
-            /* Write to mailbox — the profile task picks it up on the
-             * next PID tick so s_tick is only mutated from one thread. */
+            /* Write the complete mailbox under one lock so the profile task
+             * cannot observe a target from one update with the rate from
+             * another. */
+            if (ctx->target_update_mutex == NULL ||
+                xSemaphoreTake(ctx->target_update_mutex, portMAX_DELAY) != pdTRUE)
+            {
+                LOGGER_LOG_ERROR(TAG, "Failed to lock manual-target mailbox");
+                return ESP_ERR_INVALID_STATE;
+            }
             ctx->target_update.target_t_c          = data->target_t_c;
             ctx->target_update.delta_t_per_min_x10 = data->delta_t_per_min_x10;
             ctx->target_update.pending = true;
+            xSemaphoreGive(ctx->target_update_mutex);
             break;
         }
     case COMMAND_TYPE_COORDINATOR_RESUME_PROFILE:

@@ -249,12 +249,23 @@ static void enter_fault_pause(coordinator_ctx_t *ctx,
 
 static void apply_pending_target_update(coordinator_ctx_t *ctx)
 {
-    if (!atomic_exchange(&ctx->target_update.pending, false)) {
+    if (ctx->target_update_mutex == NULL ||
+        xSemaphoreTake(ctx->target_update_mutex, portMAX_DELAY) != pdTRUE)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to lock manual-target mailbox");
         return;
     }
 
-    int new_target    = ctx->target_update.target_t_c;
-    int new_delta_x10 = ctx->target_update.delta_t_per_min_x10;
+    const bool has_update = ctx->target_update.pending;
+    const int new_target = ctx->target_update.target_t_c;
+    const int new_delta_x10 = ctx->target_update.delta_t_per_min_x10;
+    ctx->target_update.pending = false;
+    xSemaphoreGive(ctx->target_update_mutex);
+
+    if (!has_update) {
+        return;
+    }
+
     float cur_temp    = coordinator_get_current_temperature(ctx);
 
     int abs_diff = new_target > (int)cur_temp

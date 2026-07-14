@@ -17,7 +17,8 @@
  * @brief Pending live-update mailbox for manual-mode target changes.
  *
  * Written by the event-handler task, read+cleared by the profile task
- * on every PID tick.  The atomic flag guarantees visibility across cores.
+ * on every PID tick.  target_update_mutex serializes the complete mailbox
+ * transaction so target and rate cannot be observed from different updates.
  */
 typedef struct
 {
@@ -49,6 +50,7 @@ typedef struct
 
     bool events_initialized;
 
+    SemaphoreHandle_t target_update_mutex;
     pending_target_update_t target_update; ///< Live manual-mode mailbox
 
     /* Tracking for dynamic remaining-time recompute.

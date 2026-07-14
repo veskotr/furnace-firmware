@@ -35,9 +35,19 @@ esp_err_t init_coordinator(void)
         return ESP_ERR_NO_MEM;
     }
 
+    g_coordinator_ctx->target_update_mutex = xSemaphoreCreateMutex();
+    if (g_coordinator_ctx->target_update_mutex == NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
     g_coordinator_ctx->exit_semaphore = xSemaphoreCreateBinary();
     if (g_coordinator_ctx->exit_semaphore == NULL)
     {
+        vSemaphoreDelete(g_coordinator_ctx->target_update_mutex);
         vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
         free(g_coordinator_ctx);
         g_coordinator_ctx = NULL;
@@ -85,6 +95,11 @@ esp_err_t stop_coordinator(void)
     {
         vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
         g_coordinator_ctx->temperature_mutex = NULL;
+    }
+    if (g_coordinator_ctx->target_update_mutex != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->target_update_mutex);
+        g_coordinator_ctx->target_update_mutex = NULL;
     }
     if (g_coordinator_ctx->exit_semaphore != NULL)
     {

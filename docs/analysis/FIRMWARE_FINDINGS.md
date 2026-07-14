@@ -143,9 +143,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-013 — Manual-target mailbox mixes atomic/plain access
 
-- **Category/confidence:** confirmed defect / medium-high.
+- **Category/confidence:** source fix implemented; regression validation pending / medium-high.
 - **Evidence:** `coordinator_component_internal.h` plain fields; event handler writes `pending` plainly; control task uses `atomic_exchange` on the same object.
-- **Direction:** queue/mutex ownership or a fully declared atomic release/acquire protocol.
+- **Source correction:** the manual-target mailbox now has a coordinator-owned mutex. The event handler copies target, rate, and pending state under the mutex; the profile task copies and clears the complete update under the same mutex before applying it.
+- **Residual risk:** concurrent-update regression coverage and runtime HMI/profile validation remain open; the mailbox remains latest-value-wins by design.
 
 ### F-028 — Run-indicator mode is a cross-task data race
 
