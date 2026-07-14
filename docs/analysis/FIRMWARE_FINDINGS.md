@@ -22,7 +22,8 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
 | 13 | F-022 | source fix implemented; validation pending | high persistence/control | Incomplete Nextion file reads are rejected before draft replacement |
 | 14 | F-023 | source fix implemented; validation pending | high operational/safety access | Repeated NAKs now abort storage transfer instead of blocking the sole HMI worker |
-| 15 | F-024, F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
+| 15 | F-024 | source fix implemented; validation pending | high persistence/control | Program replacement now uses a completed temporary file; final rename power-loss behavior remains unverified |
+| 16 | F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
 
 ## Safety and control findings
 
@@ -200,9 +201,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-024 — Program save is destructive before replacement succeeds
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; panel and power-loss validation pending / high.
 - **Evidence:** `nextion_storage.c:nextion_storage_save_program` deletes existing file before transfer; later timeout/NAK/power loss loses last good copy.
-- **Direction:** write/verify temporary or versioned file, then replace using panel-supported semantics.
+- **Source correction:** saves now transfer to a `.tmp` file, replace the destination with the panel-supported `refile` command only after the complete transfer, and read back the final file to verify exact payload contents. No Nextion-side change is required.
+- **Residual risk:** the old file is still removed immediately before the final rename when overwriting, so power loss during that narrow replacement window remains a panel-storage limitation requiring validation; F-023 bounded NAK handling protects the transfer phase.
 
 ### F-026 — Factory reset does not enumerate stored programs
 

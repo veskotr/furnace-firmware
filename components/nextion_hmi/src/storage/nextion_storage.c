@@ -243,6 +243,7 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
     bool locked = false;
     bool success = true;
+    bool target_exists = false;
 
     static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE] = {0}; // Zero-fill to pad file
 
@@ -262,7 +263,8 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         return false;
     }
 
-    if (nextion_file_exists(path))
+    target_exists = nextion_file_exists(path);
+    if (target_exists)
     {
         bool same_file = (original_name && original_name[0] != '\0' &&
             strcmp(draft->name, original_name) == 0);
@@ -273,19 +275,26 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         }
     }
 
+    char temp_path[112];
+    if (snprintf(temp_path, sizeof(temp_path), "%s.tmp", path) >= (int)sizeof(temp_path))
+    {
+        set_error(error_msg, error_len, "Temporary program path too long");
+        return false;
+    }
+
     s_storage_active = true;
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_uart_lock();
     locked = true;
 
-    char cmd[192];
-    snprintf(cmd, sizeof(cmd), "delfile \"%s\"", path);
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "delfile \"%s\"", temp_path);
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(50));
 
     uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
-    snprintf(cmd, sizeof(cmd), "twfile \"%s\",%u", path, (unsigned)payload_len);
+    snprintf(cmd, sizeof(cmd), "twfile \"%s\",%u", temp_path, (unsigned)payload_len);
     nextion_send_cmd(cmd);
 
     uint8_t resp[8];
@@ -320,6 +329,7 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
     uint16_t pkt_id = 0;
     size_t offset = 0;
     unsigned packet_nak_retries = 0;
+    bool completion_received = false;
 
     while (offset < payload_len)
     {
@@ -367,7 +377,8 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         {
             LOGGER_LOG_INFO(TAG, "Packet %u sent, transfer complete", pkt_id);
             offset = payload_len;
-            goto cleanup; /* 0xFD already received — skip second wait */
+            completion_received = true;
+            break; /* 0xFD already received — skip second wait */
         }
 
         if (resp[0] != 0x05)
@@ -385,17 +396,49 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         LOGGER_LOG_INFO(TAG, "Packet %u sent, %u/%u bytes", pkt_id - 1, (unsigned)offset, (unsigned)payload_len);
     }
 
-    resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
+    if (!completion_received)
+    {
+        resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
+    }
 
-    if (!(resp_len >= 1 && resp[0] == 0xFD))
+    if (!completion_received && !(resp_len >= 1 && resp[0] == 0xFD))
     {
         LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len,
                         resp_len > 0 ? resp[0] : 0);
         set_error(error_msg, error_len, "twfile completion failed");
         success = false;
+        goto cleanup;
+    }
+
+    /* The complete payload is now safely stored in the temporary file. Only
+     * replace the user-visible file after the transfer has succeeded. */
+    if (target_exists)
+    {
+        snprintf(cmd, sizeof(cmd), "delfile \"%s\"", path);
+        nextion_send_cmd(cmd);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    snprintf(cmd, sizeof(cmd), "refile \"%s\",\"%s\"", temp_path, path);
+    nextion_send_cmd(cmd);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    static char verify_payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1];
+    size_t verify_len = 0;
+    if (!nextion_read_file(path, verify_payload, sizeof(verify_payload), &verify_len) ||
+        verify_len != payload_len || memcmp(verify_payload, payload, payload_len) != 0)
+    {
+        set_error(error_msg, error_len, "Saved program verification failed");
+        success = false;
     }
 
 cleanup:
+    if (!success && locked)
+    {
+        snprintf(cmd, sizeof(cmd), "delfile \"%s\"", temp_path);
+        nextion_send_cmd(cmd);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
     if (locked)
     {
         nextion_uart_unlock();
