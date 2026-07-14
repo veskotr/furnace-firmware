@@ -48,14 +48,14 @@ This mixed fail-fast/log-and-continue policy is safety-relevant because control 
 | Debug console task | `debug_console.c:debug_console_init` | Console polling/blocking | Global running flag/handle; no join |
 | Logger task, core 1 | `logger_core.c:logger_init` | Blocks on logger queue | Static queue/storage state |
 | Private event-loop task | `event_manager.c:event_manager_init` | Serialized event callbacks | Event payload contracts/subscription lifetime |
-| Command dispatcher | `commands_dispatcher_task.c:init_commands_dispatcher_task` | Queue receive, two-second timeout | Sole consumer also invokes handlers that submit commands |
-| Heater PWM task | `heater_controller_task.c:init_heater_controller_task` | Five-second default SSR window; task notification interrupts wait | Mutex-protected target; lifecycle flags/handle |
-| Coordinator control task | `coordinator_component_heater_controller.c:start_heating_profile` | Notified by one-second default ESP timer | Profile, PID, temperature, state, manual mailbox |
+| Command dispatcher | `commands_dispatcher_task.c:commands_dispatcher_task` | Queue receive, two-second timeout; re-entrant submissions execute inline | Sole consumer; inline path prevents self-deadlock, nested handler depth remains a risk |
+| Heater PWM task | `heater_controller_task.c:init_heater_controller_task` | Five-second default SSR window; task notification interrupts wait | Mutex-protected target; separate permanent SSR-failure and recoverable sensor-data inhibits |
+| Coordinator control task | `coordinator_component_heater_controller.c:start_heating_profile` | Notified by one-second default ESP timer; pauses on invalid aggregate | Profile, PID, mutex-protected temperature, recovery counter, inhibit policy |
 | Device manager task | `device_manager_task.c:init_device_manager_task` | Periodic Modbus updates and notification-shortened wait | Device table/state/lifecycle |
 | Temperature processor task | `temperature_processor_task.c:init_temp_processor_task` | Device-update notification | Sensor array, sample buffer, context lifetime |
 | HMI coordinator task | `hmi_coordinator.c:hmi_coordinator_init` | Queue receive every 50 ms | Sole display command/deferred-state owner |
 | Nextion RX task | `nextion_rx_task.c:nextion_rx_task_start` | UART polling/read | UART mutex and transfer-active flags |
-| Run-indicator task | `run_indicator.c:run_indicator_init` | 200 ms polling/blink | Unsynchronized `s_mode` |
+| Run-indicator task | `run_indicator.c:run_indicator_init` when enabled with a valid non-colliding pin | 200 ms polling/blink | Unsynchronized `s_mode` when enabled |
 | Fan callbacks | `fan_controller.c:fan_controller_init` | Serialized event-loop callbacks | Static fan mode/state |
 | Optional/inactive | health monitor, legacy SPI temperature monitor, transmitter diagnostics | Not started by current `app_main` | Compiled code is not active behavior |
 
@@ -66,7 +66,7 @@ No application hardware ISR registration was found. The PID timer callback uses 
 | Primitive | Owner | Producers / readers | Consumer / writer | Failure/lifetime notes |
 | --- | --- | --- | --- | --- |
 | Private ESP event queue | `event_manager` | All event publishers | Private loop callbacks | Blocking wrapper can wait forever; unsubscribe before context destruction |
-| Dispatcher `command_queue` | `commands_dispatcher` | HMI, coordinator, other callers | Sole dispatcher task | Every submission uses `portMAX_DELAY`; self-enqueue deadlock is possible |
+| Dispatcher `command_queue` | `commands_dispatcher` | HMI, coordinator, other callers | Sole dispatcher task | External submissions use `portMAX_DELAY`; dispatcher-task self-submissions execute inline |
 | Logger queue | `logger_component` | Logging macros/callers | Logger task | 100 ms producer timeout then drop; no shutdown path |
 | HMI command queue | `nextion_hmi` coordinator | Event bridges, RX/UI | HMI coordinator task | Event bridges send nonblocking and silently drop when full |
 | Heater `power_mutex` | `heater_controller` | Dispatcher handler/task | Target power/state access | Does not protect all lifecycle fields |
@@ -85,19 +85,19 @@ No application counting/binary semaphore or explicit spinlock was found.
 | Module | Responsibility / public interface | Owned state and execution | Dependencies / hardware | Safety and coupling debt |
 | --- | --- | --- | --- | --- |
 | `event_manager` + `event_registry` | Private event loop; `event_manager_*`; event bases/IDs | Global loop handle; event task callbacks | ESP event | Global singleton; payload/lifetime contracts are distributed |
-| `commands_dispatcher` | Queued `command_t` routing; register/dispatch APIs | Queue, handler table, task, running state | FreeRTOS queue | Unbounded submissions; handlers execute on sole consumer; teardown unsafe |
-| `coordinator_component` | Program commands/status, control task, heater command production; stall/hold-deviation fault pause | Global program/profile/current temp/state/timer/task and fault timers | Dispatcher, events, PID/profile | Multi-context unsynchronized state; fault shutdown is still queued |
+| `commands_dispatcher` | Queued `command_t` routing; register/dispatch APIs | Queue, handler table, task, running state | FreeRTOS queue | Re-entrant handler submissions execute inline; teardown remains unsafe (F-007) |
+| `coordinator_component` | Program commands/status, control task, heater command production; sensor-data pause/recovery; boot/recovery temperature gate | Global program/profile/current temp/state/timer/task, temperature mutex, recovery counter | Dispatcher, events, PID/profile, heater inhibit API | Temporary sensor-count-minus-two quorum; HMI fault presentation and teardown remain open |
 | `temperature_profile_controller` | `load_heating_profile`, `profile_tick`, profile state/status and eased heating setpoint/handover | File-static profile context and tick counter | Common profile types | Lifetime/tick ownership coupled to coordinator; cubic “soft landing” differs from legacy/UI linear projection |
 | `pid_component` | `pid_controller_compute/reset/reset_for_setpoint/set_adaptive_enabled` | File-static integral/history/adaptive/feedforward flag | Kconfig, logger | Single implicit instance; rejects non-finite inputs/state/output by reset/zero demand; optional feedforward and adaptive clamp can both be enabled |
-| `heater_controller_component` | Contactor/SSR commands and time-proportional output | Global context; `power_mutex` protects target demand and local SSR-failure inhibit; PWM task | GPIO master; contactor GPIO 22, SSR GPIO 21 defaults | SSR GPIO failure latches local inhibit, retries SSR-off, and directly requests contactor-off before posting event; physical result needs bench validation |
+| `heater_controller_component` | Contactor/SSR commands and time-proportional output | Global context; `power_mutex` protects target demand and permanent, sensor, and temporary control inhibit reasons; PWM task | GPIO master; contactor GPIO 22, SSR GPIO 21 defaults | Inhibits force direct SSR/contactor off and reject reauthorization; SSR GPIO failure remains permanent; physical result needs bench validation |
 | `device_manager` | Device abstraction, state, periodic updates | Global device array/task/running/count | FreeRTOS, events | API mutation can overlap task traversal; stop has no join |
 | `modbus_master` | ESP-Modbus RTU init/read/write helpers | ESP-Modbus master instance | UART2 TX27/RX26/DE25, 9600 defaults | No application serialization contract documented; timeout fixed at 300 ms |
-| `temp_sensor_device` | MS9024 abstraction and cached temperature | Static five-slot context pool; per-device cache | Modbus registers PV 728, ID 127 | Cache lacks timestamp/status snapshot; read/update are cross-task |
-| `temperature_processor_component` | Read sensor caches, average/anomaly check, publish temperature | Global context, sensor array, buffer, task | Device events, furnace events | Publishes bare float; invalid/stale/anomalous data contracts unsafe |
+| `temp_sensor_device` | MS9024 abstraction and cached temperature | Static five-slot context pool; per-device cache and successful-read tick | Modbus registers PV 728, ID 127 | Per-device metadata feeds processor freshness; device lifecycle remains cross-task |
+| `temperature_processor_component` | Read fresh sensor samples, average/warning checks, publish legacy temperature plus validity snapshot | Global context, sensor array/ticks, buffer, task | Device events, furnace events | Temporary quorum derived from sensor count; per-board mapping/quorum remains future work |
 | `temperature_monitor_component` | Legacy MAX31865/SPI path | Global context, task, ring/event group | SPI/MAX31865 | Not initialized; duplicate temperature architecture increases drift risk |
 | `nextion_hmi` | UART protocol, UI events, program model, panel storage | RX and coordinator tasks, queues, UART/program mutexes | UART1 TX32/RX33, panel SD/FileStream, NVS | Many submodules/global flags; telemetry drop and storage lifecycle risks |
 | `fan_controller_component` | Auto/program fan policy | Event-loop-owned static state | Fan GPIO19 | No airflow feedback/interlock; program fan intent split from coordinator fields |
-| `run_indicator` | Program state indication | Task and event-written mode | Default GPIO22 | Default pin collides with contactor; unsynchronized mode |
+| `run_indicator` | Program state indication; disabled when unset or pin collides with contactor | Task and event-written mode | No GPIO by default; configured indicator GPIO only after collision guard | Indicator is intentionally unavailable until a schematic-approved pin is configured; mode remains unsynchronized when enabled |
 | `logger_component` | Async ESP logging, LittleFS/RTC crash records, CLI | Queue/task, ring/files/mutex | Core 1, LittleFS `/crash_dumps`, RTC memory | Drops under pressure; furnace-error events not integrated |
 | `error_manager` | Error descriptor lookup | Static descriptor table | Common errors | No descriptor registrations found; not an active mitigation path |
 | `health_monitor` | Heartbeat table and task watchdog | Event table, health task | ESP task WDT | Disabled; if enabled it does not directly inhibit heater |
@@ -111,7 +111,7 @@ No application counting/binary semaphore or explicit spinlock was found.
 
 ### Temperature acquisition
 
-`device_manager_task` → `temp_sensor_update` → `ms9024_read_float` → cached `last_temperature` → `DEVICE_MANAGER_UPDATED_EVENT` → temperature task notification → `temp_sensor_read_device` → sample averaging/anomaly check → bare-float `TEMP_PROCESSOR_EVENT` → coordinator, fan, and HMI.
+`device_manager_task` → `temp_sensor_update` → successful-read tick/cache → `DEVICE_MANAGER_UPDATED_EVENT` → temperature task notification → fresh-sample filtering/quorum → legacy float plus validity `TEMP_PROCESSOR_EVENT` → coordinator inhibit/pause/recovery and fan/HMI telemetry.
 
 Key debt: physical-read success, cache age, validity, contributing sensor identity, and batch quorum are not carried with the published value.
 
@@ -119,7 +119,7 @@ Key debt: physical-read success, cache age, validity, contributing sensor identi
 
 Nextion run handler → coordinator command in dispatcher queue → `start_heating_profile` resets PID, loads profile, queues heater clear/start, creates control task and periodic timer → timer notifies control task → `profile_tick` calculates phase/eased heating setpoint and handover → PID computes 0..1 demand (optional feedforward) → coordinator queues heater set-power → dispatcher invokes heater handler → PWM task windows SSR output. Sustained hold deviation or a ramp-stall condition posts enriched error data and pauses through the same queued `kill_heater` path.
 
-Pause/stop/completion call a queued `kill_heater`; there is no independent synchronous safety-inhibit path in the current code.
+Sensor invalidity now calls the heater component's direct recoverable inhibit, which forces SSR/contactor off before coordinator pause; normal pause/stop still retain queued `kill_heater` behavior and F-003 remains open.
 
 ### Physical outputs
 

@@ -8,16 +8,16 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 | Rank | ID | Category | Risk | Summary |
 | ---: | --- | --- | --- | --- |
-| 1 | F-016 | confirmed defect | critical safety/configuration | Run indicator and contactor both drive GPIO22 in current/default config |
-| 2 | F-017 | source fix pending validation | critical conditional safety | SSR GPIO failure now latches local inhibit and requests contactor-off; electrical behavior is unverified |
-| 3 | F-001 | confirmed defect | critical control safety | Boot-zero or indefinitely stale temperature is accepted for control |
-| 4 | F-002 | confirmed defect | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
-| 5 | F-003 | confirmed defect | critical safety/concurrency | In-flight PID output can restore power after pause |
-| 6 | F-004 | confirmed defect | critical control safety | An anomalous sensor batch is still published as valid control input |
+| 1 | F-016 | source fix implemented; validation pending | critical safety/configuration | Run indicator is disabled when disabled, invalid, or colliding with the contactor GPIO |
+| 2 | F-017 | source fix implemented; validation pending | critical conditional safety | SSR GPIO failure now latches local inhibit and requests contactor-off; electrical behavior is unverified |
+| 3 | F-001 | Phase B source fix implemented; validation pending | critical control safety | Fresh-sample quorum, direct sensor inhibit, pause, and three-sample recovery are implemented |
+| 4 | F-002 | source fix implemented; validation pending | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
+| 5 | F-003 | source fix implemented; validation pending | critical safety/concurrency | Heater-side control inhibit rejects stale PID output after pause/stop |
+| 6 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
 | 7 | F-018 | highly likely defect | high reset safety | Restart/factory-reset path does not first synchronously inhibit outputs |
 | 8 | F-019 | confirmed defect | high startup/control | Profile start queues contactor START before control task creation is proven |
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
-| 10 | F-053 | source fix pending regression | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
+| 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
 | 11 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
 | 12 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
 | 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
@@ -28,10 +28,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-016 — Indicator/contact-or GPIO collision
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; validation pending / high.
 - **Evidence:** `components/heater_controller_component/Kconfig` and current config select `CONFIG_HEATER_CONTACTOR_GPIO_PIN=22`; `components/run_indicator/Kconfig` and current config select `CONFIG_RUN_INDICATOR_GPIO=22`; `run_indicator.c:run_indicator_task` writes the pin every 200 ms; `heater_controller.c:start_heater/stop_heater` writes the same pin.
 - **Trigger/impact:** any indicator ON/OFF/BLINK write also drives the contactor. After natural completion, F-015 leaves indicator ON, so it can reassert the contactor after coordinator STOP. The pulled `6741c72` fault-pause path emits `PROFILE_PAUSED`, which selects BLINK, so a stall or hold-deviation fault can now periodically drive the contactor pin. SSR state limits immediate heat in the nominal case, but independent contactor isolation is defeated.
-- **Direction:** determine the schematic-approved indicator pin, separate pin ownership, and add compile/startup validation for collisions among actuator, indicator, fan, and UART pins.
+- **Source correction:** fresh configurations default the run indicator off with GPIO `-1`; initialization also refuses to claim an invalid, disabled, or contactor-colliding pin, including retained configurations that still resolve both pins to `22`.
+- **Residual risk:** the indicator is intentionally unavailable until a schematic-approved pin is configured; pin ownership, active polarity, and external interlocks remain hardware assumptions.
 - **Uncertainty:** deployed wiring, active polarity, and external interlocks.
 
 ### F-017 — SSR-off GPIO failure does not force independent isolation
@@ -43,32 +44,33 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-001 — Control accepts nonexistent or stale temperature
 
-- **Category/confidence:** confirmed defect / high.
-- **Evidence:** `temp_sensor_device_core.c:temp_sensor_create/temp_sensor_update/temp_sensor_read`; `temperature_processor_task.c:read_temp_sensors`; `coordinator_component_events.c:temperature_processor_event_handler`; `coordinator_component_heater_controller.c:heater_controller_task`.
-- **Trigger/impact:** profile starts before first physical sample or Modbus fails after a valid sample. Initial `0.0f` or cached value has no timestamp/validity and continues into profile/PID logic.
-- **Direction:** publish one synchronized sample snapshot with validity, age, contributors, and quorum; require freshness before and during heat; independently inhibit on timeout.
-- **Investigation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md) separates a safe boot-start gate from the larger stale-sample/output-inhibit contract.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending.
+- **Evidence:** sensor devices record successful-read ticks; the processor compacts fresh samples and publishes a validity snapshot; coordinator invalid snapshots directly set heater sensor-data inhibit and pause the profile; three consecutive valid aggregates release only that recoverable inhibit and resume the profile.
+- **Residual risk:** quorum is temporarily derived as sensor-count-minus-two; physical output latency, GPIO polarity, and full HMI fault presentation remain unverified/deferred. F-003 remains a separate in-flight PID race.
+- **Validation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md), [CHANGE-VALIDATION-F001-PHASE-A.md](CHANGE-VALIDATION-F001-PHASE-A.md), and [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md).
 
 ### F-002 — Dispatcher self-deadlock can precede heater-off
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending.
 - **Evidence:** `commands_manager_core.c:commands_dispatcher_dispatch_command` uses `portMAX_DELAY`; `commands_dispatcher_task.c:commands_dispatcher_task` is sole consumer; coordinator pause/stop handlers submit multiple heater commands; queue default is ten.
 - **Trigger/impact:** handler runs with insufficient remaining queue slots, fills its own queue, and blocks forever. Later CLEAR/STOP cannot execute while prior output may remain active.
-- **Direction:** never synchronously submit to the consumer's own bounded queue; add direct idempotent inhibit and bounded submissions.
+- **Source correction:** dispatcher-task re-entrant submissions now invoke the registered handler directly instead of self-enqueuing. Calls from other tasks retain the existing queue and blocking behavior, preserving normal command ordering while preventing the sole consumer from waiting on its own full queue.
+- **Residual risk:** nested handler execution increases dispatcher stack depth and handler re-entrancy is not characterized; external queue callers and physical GPIO-off behavior still require validation. F-003 remains a separate in-flight PID race.
+- **Validation:** [CHANGE-VALIDATION-F002.md](CHANGE-VALIDATION-F002.md).
 
 ### F-003 — In-flight PID publication can restore heat after pause
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression and hardware validation pending / high.
 - **Evidence:** `coordinator_component_heater_controller.c:heater_controller_task`, `pause_heating_profile`, and `kill_heater` do not serialize state transition with positive output publication.
 - **Trigger/impact:** PID computes positive power, pause queues zero/clear, then preempted PID work resumes and queues stale positive power. Paused ticks do not necessarily reassert zero.
-- **Direction:** synchronized run generation/inhibit checked again at actuator boundary.
+- **Source correction:** coordinator pause, fault pause, stop, completion, and emergency-stop paths assert a temporary heater control inhibit that directly de-energizes outputs; the heater rejects power/start commands while that inhibit is active. Profile start and resume explicitly release only this temporary gate.
+- **Residual risk:** this is intentionally a narrow hardening gate, not a command-generation protocol; queue ordering, resume behavior, and physical output latency still require regression and powered-controller validation.
 
 ### F-004 — Failed sensor batch is still published
 
-- **Category/confidence:** confirmed defect / high.
-- **Evidence:** `temperature_processor.c:process_temperature_samples` returns anomaly failure; `temperature_processor_task.c:temp_process_task` logs/posts error then still posts the average.
-- **Trigger/impact:** sensors disagree beyond threshold; faulty low data can dilute overshoot detection and increase demand.
-- **Direction:** define quorum/outlier validity and never publish failed batches as control-valid.
+- **Category/confidence:** policy-adjusted; regression and hardware validation pending.
+- **Evidence:** field requirements explicitly treat 3–5°C (or larger) disagreement as a warning because sensors are equally representative chamber probes. The Phase B processor now uses fresh-sample quorum for validity, while disagreement remains logged as a warning and the fresh aggregate is retained.
+- **Residual risk:** no per-board outlier rejection or sensor mapping exists yet; validate whether hottest/coldest rejection is needed after chamber data collection.
 
 ### F-018 — Reset paths do not explicitly inhibit outputs
 
@@ -218,7 +220,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 ### F-034 — Enable Kconfig booleans are not honored by build/startup
 
 - **Category/confidence:** highly likely defect / medium.
-- **Evidence:** `RUN_INDICATOR_ENABLED` and `NEXTION_HMI_ENABLED` guard Kconfig symbols, but component sources and `main` calls are unconditional.
+- **Evidence:** `NEXTION_HMI_ENABLED` still has unconditional component/startup paths. The run-indicator path now honors its enable/valid-pin/collision state at `run_indicator_init`, although `main` retains the harmless unconditional call.
 - **Next evidence:** clean builds with each feature disabled.
 
 ## Operational and maintainability findings

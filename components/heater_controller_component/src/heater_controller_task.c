@@ -131,7 +131,7 @@ esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, const 
         return ESP_ERR_INVALID_ARG;
     }
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
-    if (ctx->output_inhibited)
+    if (ctx->output_inhibited || ctx->sensor_data_inhibited || ctx->control_inhibited)
     {
         xSemaphoreGive(ctx->power_mutex);
         LOGGER_LOG_ERROR(TAG, "Rejected heater power command while output is inhibited");
@@ -155,9 +155,61 @@ esp_err_t clear_heater_target_power_level(heater_controller_context_t* ctx)
 bool heater_output_is_inhibited(heater_controller_context_t* ctx)
 {
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
-    const bool inhibited = ctx->output_inhibited;
+    const bool inhibited = ctx->output_inhibited || ctx->sensor_data_inhibited || ctx->control_inhibited;
     xSemaphoreGive(ctx->power_mutex);
     return inhibited;
+}
+
+esp_err_t heater_controller_set_sensor_data_inhibit_for_context(heater_controller_context_t* ctx, const bool inhibited)
+{
+    if (ctx == NULL || ctx->power_mutex == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
+    ctx->sensor_data_inhibited = inhibited;
+    if (inhibited)
+    {
+        ctx->target_power_level = 0.0f;
+    }
+    xSemaphoreGive(ctx->power_mutex);
+
+    if (inhibited)
+    {
+        /* Enforce physical off independently of the dispatcher queue. */
+        const esp_err_t ssr_err = toggle_heater(HEATER_OFF);
+        const esp_err_t contactor_err = stop_heater();
+        return ssr_err != ESP_OK ? ssr_err : contactor_err;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t heater_controller_set_control_inhibit_for_context(heater_controller_context_t* ctx, const bool inhibited)
+{
+    if (ctx == NULL || ctx->power_mutex == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
+    ctx->control_inhibited = inhibited;
+    if (inhibited)
+    {
+        ctx->target_power_level = 0.0f;
+    }
+    xSemaphoreGive(ctx->power_mutex);
+
+    if (inhibited)
+    {
+        /* Enforce physical off independently of the dispatcher queue. */
+        const esp_err_t ssr_err = toggle_heater(HEATER_OFF);
+        const esp_err_t contactor_err = stop_heater();
+        return ssr_err != ESP_OK ? ssr_err : contactor_err;
+    }
+
+    return ESP_OK;
 }
 
 void heater_controller_handle_ssr_failure(heater_controller_context_t* ctx, const esp_err_t ssr_err)

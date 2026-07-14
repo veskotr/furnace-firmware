@@ -40,6 +40,8 @@ esp_err_t temp_sensor_create(temp_sensor_device_t** device)
             ctx_pool[i].id = i;
             ctx_pool[i].device_id = 0; /* populated from reg 127 during init */
             ctx_pool[i].last_temperature = 0.0f;
+            ctx_pool[i].last_update_tick = 0;
+            ctx_pool[i].has_successful_sample = false;
             ctx_pool[i].modbus_address = CONFIG_TEMP_SENSOR_MODBUS_START_ADDRESS + i;
             ctx_pool[i].modbus_register = MS9024_REG_PV;
             CHECK_ERR_LOG_RET(
@@ -103,6 +105,20 @@ uint16_t temp_sensor_get_id(const temp_sensor_device_t* device)
         return 0;
     }
     return device->device_id;
+}
+
+TickType_t temp_sensor_get_last_update_tick(const temp_sensor_device_t* device)
+{
+    if (device == NULL || !device->allocated || !device->valid)
+    {
+        return 0;
+    }
+    return device->last_update_tick;
+}
+
+bool temp_sensor_has_successful_sample(const temp_sensor_device_t* device)
+{
+    return device != NULL && device->allocated && device->valid && device->has_successful_sample;
 }
 
 esp_err_t temp_sensor_write_device(const temp_sensor_device_t* device, const device_write_cmd_t* cmd)
@@ -183,6 +199,8 @@ static esp_err_t temp_sensor_update(void* ctx)
                           device_ctx->modbus_address, device_ctx->modbus_register);
 
     device_ctx->last_temperature = last_temperature;
+    device_ctx->last_update_tick = xTaskGetTickCount();
+    device_ctx->has_successful_sample = true;
     return ESP_OK;
 }
 

@@ -5,6 +5,7 @@
 #include "furnace_error_types.h"
 #include "temp_sensor_device.h"
 #include "sdkconfig.h"
+#include "temperature_processor_component.h"
 
 typedef enum
 {
@@ -49,5 +50,6 @@ esp_err_t init_temp_processor_events(temp_processor_context_t* ctx);
 esp_err_t shutdown_temp_processor_events(temp_processor_context_t* ctx);
 
 esp_err_t post_temp_processor_event(float average_temperature);
+esp_err_t post_temp_processor_validity_event(const temperature_processor_sample_t* sample);
 
 esp_err_t post_processing_error(furnace_error_t furnace_error);

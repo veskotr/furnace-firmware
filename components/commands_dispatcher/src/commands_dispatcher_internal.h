@@ -29,10 +29,11 @@ extern commands_dispatcher_ctx_t* commands_dispatcher_ctx;
 // ----------------------------
 esp_err_t init_task(commands_dispatcher_ctx_t* ctx);
 esp_err_t shutdown_task(commands_dispatcher_ctx_t* ctx);
+esp_err_t commands_dispatcher_execute_command(const commands_dispatcher_ctx_t* ctx,
+                                              const command_t* command);
 
 // ----------------------------
 // Command Handlers
 // ----------------------------
 esp_err_t init_command_handlers(commands_dispatcher_ctx_t* ctx);
 esp_err_t shutdown_command_handlers(commands_dispatcher_ctx_t* ctx);
-

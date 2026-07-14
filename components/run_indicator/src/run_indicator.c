@@ -9,9 +9,14 @@
 #include "logger_component.h"
 
 #define RUN_INDICATOR_GPIO CONFIG_RUN_INDICATOR_GPIO
+#define RUN_INDICATOR_USABLE \
+    (CONFIG_RUN_INDICATOR_ENABLED && \
+     (RUN_INDICATOR_GPIO >= 0) && \
+     (RUN_INDICATOR_GPIO != CONFIG_HEATER_CONTACTOR_GPIO_PIN))
 
 static const char *TAG = "run_indicator";
 
+#if RUN_INDICATOR_USABLE
 typedef enum
 {
     RUN_INDICATOR_OFF = 0,
@@ -72,9 +77,11 @@ static void run_indicator_event_handler(void *handler_arg, esp_event_base_t base
         break;
     }
 }
+#endif
 
 void run_indicator_init(void)
 {
+#if RUN_INDICATOR_USABLE
     gpio_config_t cfg = {
         .pin_bit_mask = (1ULL << RUN_INDICATOR_GPIO),
         .mode = GPIO_MODE_OUTPUT,
@@ -90,4 +97,7 @@ void run_indicator_init(void)
     }
 
     event_manager_subscribe(COORDINATOR_EVENT, ESP_EVENT_ANY_ID, &run_indicator_event_handler, NULL);
+#else
+    LOGGER_LOG_INFO(TAG, "Run indicator disabled or pin collides with contactor; no GPIO claimed");
+#endif
 }

@@ -3,6 +3,7 @@
 #include "coordinator_component_internal.h"
 #include "utils.h"
 #include "sdkconfig.h"
+#include "heater_controller_component.h"
 
 static const char* TAG = "COORDINATOR_CORE";
 
@@ -26,6 +27,16 @@ esp_err_t init_coordinator(void)
     }
 
     g_coordinator_ctx->has_program = false;
+    g_coordinator_ctx->temperature_mutex = xSemaphoreCreateMutex();
+    if (g_coordinator_ctx->temperature_mutex == NULL)
+    {
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    atomic_init(&g_coordinator_ctx->sensor_data_inhibited, true);
+    CHECK_ERR_LOG_RET(heater_controller_set_sensor_data_inhibit(true),
+                      "Failed to establish startup sensor-data inhibit");
 
     // Initialize Coordinator Events
     CHECK_ERR_LOG_RET(init_coordinator_events(g_coordinator_ctx),
@@ -61,6 +72,11 @@ esp_err_t stop_coordinator(void)
     CHECK_ERR_LOG_RET(stop_heating_profile(g_coordinator_ctx),
                       "Failed to stop heating profile");
 
+    if (g_coordinator_ctx->temperature_mutex != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        g_coordinator_ctx->temperature_mutex = NULL;
+    }
     free(g_coordinator_ctx);
     g_coordinator_ctx = NULL;
 

@@ -29,6 +29,32 @@ menu "Coordinator"
             How often the PID control loop runs (computes target temp,
             runs PID, and sends power to the heater). 1000 ms = 1 Hz.
 
+    config COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS
+        int "Maximum sensor aggregate age (ms)"
+        default 5000
+        range 1000 60000
+        help
+            Maximum age of a successful physical sensor sample accepted into
+            the temperature aggregate. If fewer than the required sensor
+            quorum are fresh, heating is inhibited and the active profile is
+            paused.
+
+    config COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES
+        int "Consecutive valid aggregates before sensor recovery"
+        default 3
+        range 1 20
+        help
+            Number of consecutive valid aggregate updates required before the
+            coordinator may release the recoverable sensor-data inhibit.
+
+    config COORDINATOR_SENSOR_AUTO_RECOVERY
+        bool "Automatically recover from sensor-data inhibit"
+        default y
+        help
+            Permit the coordinator to release the recoverable sensor-data
+            inhibit after the configured valid aggregate count. Permanent
+            hardware inhibits are never cleared by this setting.
+
     config COORDINATOR_PROFILE_COMPLETE_TEMP_C
         int "Temperature threshold for profile completion (C)"
         default 40

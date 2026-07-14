@@ -22,9 +22,6 @@ esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* Always publish the average so downstream consumers (coordinator, HMI)
-     * never see a fabricated 0°C when the delta check fails — a spurious
-     * cold reading makes the PID slam the heater on. */
     *output_temperature = average_float_array(ctx->temperatures_buffer, number_of_samples);
 
     float min = FLT_MAX;
@@ -42,18 +39,19 @@ esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_
     const esp_err_t anomaly_err = check_temperature_anomalies(ctx->temperatures_buffer, number_of_samples);
     if (anomaly_err != ESP_OK)
     {
-        LOGGER_LOG_WARN(TAG, "Temperature anomaly detected (avg %.2f°C still published)", *output_temperature);
-        return anomaly_err;
+        LOGGER_LOG_WARN(TAG, "Temperature ordering anomaly detected (avg %.2f°C retained as warning)", *output_temperature);
     }
 
     if (max - min > CONFIG_TEMP_DELTA_THRESHOLD)
     {
-        LOGGER_LOG_WARN(TAG, "Temperature delta %.2f°C exceeds threshold %.2f°C", max-min, CONFIG_TEMP_DELTA_THRESHOLD);
-        return ESP_ERR_INVALID_STATE;
+        LOGGER_LOG_WARN(TAG, "Temperature delta %.2f°C exceeds warning threshold %.2f°C",
+                        max - min, (float)CONFIG_TEMP_DELTA_THRESHOLD);
     }
 
     LOGGER_LOG_DEBUG(TAG, "Processing %d temperature samples", number_of_samples);
 
+    /* Disagreement is an operational warning for this furnace model, not a
+     * validity failure. Fresh finite samples remain eligible for quorum. */
     return ESP_OK;
 }
 

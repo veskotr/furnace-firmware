@@ -38,7 +38,7 @@ tasks:
     - {name: temperature_processor, owner: temperature_processor_component, source: components/temperature_processor_component/src/temperature_processor_task.c}
     - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c}
     - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c}
-    - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c}
+    - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c, conditional: enabled_with_valid_noncolliding_gpio}
   inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics]
 callbacks:
   event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, run_indicator_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
@@ -58,11 +58,12 @@ hardware_defaults:
   contactor_gpio: 22
   ssr_gpio: 21
   fan_gpio: 19
-  run_indicator_gpio: 22
+  run_indicator_gpio: -1
   modbus: {uart: 2, tx_gpio: 27, rx_gpio: 26, de_gpio: 25, baud: 9600}
   nextion: {uart: 1, tx_gpio: 32, rx_gpio: 33, baud: 115200}
 safety_invariants: docs/codex/ENGINEERING_STANDARDS.md
 findings: docs/analysis/FIRMWARE_FINDINGS.md
+dispatcher_contract: "Dispatcher-task re-entrant submissions execute inline; external submissions use the bounded command queue."
 build:
   standard: idf.py build
   flash_monitor: idf.py -p PORT flash monitor
@@ -83,14 +84,15 @@ build:
       op_time_override_enabled: false
     caveat: "These retained local values differ from new Kconfig defaults; no tracked sdkconfig defaults were found."
 known_architecture_debt:
-  - no independent synchronous heater inhibit
-  - temperature event lacks validity and freshness
+  - sensor-data inhibit is direct at the heater boundary; GPIO latency and polarity still need hardware validation
+  - validity/freshness event is implemented; per-board sensor mapping and quorum remain future work
   - global mutable coordinator state spans tasks and callbacks
   - task stop paths generally lack join acknowledgements
   - furnace error events have no production subscriber
-  - default run-indicator and contactor GPIOs collide
-  - fault pauses still use queued output commands rather than an independent inhibit
+  - run indicator is disabled by default and refuses invalid or contactor-colliding GPIOs
+  - temporary control inhibit now protects pause/stop/completion from stale queued output; later generation-based command validation remains deferred
   - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
   - profile soft-landing is cubic while HMI graph projection remains linear
   - heater local inhibit handles SSR GPIO failure; central fault state and HMI handling are deferred by ADR-0001
-  - PID/heater now reject non-finite values, but finite stale temperature and cross-task ownership remain unresolved
+  - PID/heater now reject non-finite values; F-003 in-flight publication and broader coordinator state ownership remain unresolved
+  - coordinator blocks profile start until configured sensor recovery and pauses on invalid/stale aggregates

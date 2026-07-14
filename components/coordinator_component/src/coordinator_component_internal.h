@@ -5,9 +5,11 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "core_types.h"
 #include "coordinator_component_types.h"
 #include "event_registry.h"
+#include <stdatomic.h>
 
 #define INVALID_PROFILE_INDEX ((size_t) 0xFFFFFFFF)
 
@@ -35,6 +37,12 @@ typedef struct
     bool running;
     bool paused;
     float current_temperature;
+    SemaphoreHandle_t temperature_mutex;
+    /* Set only after a temperature processor event passes its invalid-value
+     * guard. This is an atomic start gate, not a freshness contract. */
+    atomic_bool has_valid_temperature;
+    atomic_bool sensor_data_inhibited;
+    uint8_t sensor_recovery_count;
 
     heating_task_state_t heating_task_state;
 
@@ -55,6 +63,18 @@ typedef struct
                                               ///< deduction matches the duration we actually
                                               ///< budgeted in calculate_program_duration_ms.
 } coordinator_ctx_t;
+
+static inline float coordinator_get_current_temperature(const coordinator_ctx_t* ctx)
+{
+    float temperature = 0.0f;
+    if (ctx != NULL && ctx->temperature_mutex != NULL &&
+        xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+    {
+        temperature = ctx->current_temperature;
+        xSemaphoreGive(ctx->temperature_mutex);
+    }
+    return temperature;
+}
 
 // ============================================
 // Event handling and posting functions

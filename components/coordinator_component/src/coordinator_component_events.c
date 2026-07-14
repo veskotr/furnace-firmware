@@ -7,12 +7,78 @@
 #include "coordinator_component_internal.h"
 #include "event_manager.h"
 #include "event_registry.h"
+#include "heater_controller_component.h"
+#include "temperature_processor_component.h"
 
 static const char* TAG = "COORDINATOR_EVENTS";
 
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
+
+    if (id == PROCESS_TEMPERATURE_VALIDITY_EVENT_DATA)
+    {
+        if (event_data == NULL)
+        {
+            return;
+        }
+
+        const temperature_processor_sample_t* sample = event_data;
+        const bool fresh = sample->valid &&
+                           (xTaskGetTickCount() - sample->sample_tick) <=
+                               pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS);
+        if (!fresh)
+        {
+            ctx->sensor_recovery_count = 0;
+            if (!atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
+            {
+                atomic_store_explicit(&ctx->sensor_data_inhibited, true, memory_order_release);
+                CHECK_ERR_LOG(heater_controller_set_sensor_data_inhibit(true),
+                              "Failed to enforce sensor-data heater inhibit");
+            }
+            if (ctx->running && !ctx->paused)
+            {
+                CHECK_ERR_LOG(pause_heating_profile(ctx),
+                              "Failed to pause profile for invalid temperature aggregate");
+            }
+            LOGGER_LOG_WARN(TAG, "Temperature aggregate invalid/stale (%u/%u fresh sensors)",
+                            sample->valid_sensor_count, sample->total_sensor_count);
+            return;
+        }
+
+        if (atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
+        {
+            if (ctx->sensor_recovery_count < CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES)
+            {
+                ++ctx->sensor_recovery_count;
+            }
+            if (CONFIG_COORDINATOR_SENSOR_AUTO_RECOVERY &&
+                ctx->sensor_recovery_count >= CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES)
+            {
+                const esp_err_t release_err = heater_controller_set_sensor_data_inhibit(false);
+                if (release_err == ESP_OK)
+                {
+                    atomic_store_explicit(&ctx->sensor_data_inhibited, false, memory_order_release);
+                    ctx->sensor_recovery_count = 0;
+                    if (ctx->running && ctx->paused && !heater_controller_output_is_inhibited())
+                    {
+                        CHECK_ERR_LOG(resume_heating_profile(ctx),
+                                      "Failed to resume profile after sensor recovery");
+                    }
+                    else if (ctx->running && ctx->paused)
+                    {
+                        LOGGER_LOG_WARN(TAG, "Sensor data recovered but another heater inhibit remains active");
+                    }
+                }
+                else
+                {
+                    LOGGER_LOG_ERROR(TAG, "Sensor recovery could not release heater inhibit: %s",
+                                     esp_err_to_name(release_err));
+                }
+            }
+        }
+        return;
+    }
 
     if (id != PROCESS_TEMPERATURE_EVENT_DATA)
     {
@@ -33,9 +99,16 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
             LOGGER_LOG_WARN(TAG, "Temperature processor data marked invalid");
             return;
         }
-        ctx->current_temperature = temperature;
-        ctx->heating_task_state.current_temperature = temperature;
-        LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C", ctx->current_temperature);
+        if (ctx->temperature_mutex != NULL &&
+            xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            ctx->current_temperature = temperature;
+            ctx->heating_task_state.current_temperature = temperature;
+            xSemaphoreGive(ctx->temperature_mutex);
+        }
+        atomic_store_explicit(&ctx->has_valid_temperature, true, memory_order_release);
+        LOGGER_LOG_DEBUG(TAG, "Updated current temperature to %.2f C",
+                         coordinator_get_current_temperature(ctx));
     }
 }
 

@@ -76,6 +76,16 @@ esp_err_t commands_dispatcher_dispatch_command(command_t* command)
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* A handler may submit a follow-up command (for example, coordinator
+     * pause/stop issuing heater-off commands).  The dispatcher task is the
+     * only queue consumer, so queuing from that task can self-deadlock when
+     * the bounded queue is full.  Execute re-entrant submissions directly;
+     * external callers continue to use the queue. */
+    if (commands_dispatcher_ctx->dispatcher_task_handle == xTaskGetCurrentTaskHandle())
+    {
+        return commands_dispatcher_execute_command(commands_dispatcher_ctx, command);
+    }
+
     if (xQueueSend(commands_dispatcher_ctx->command_queue, command, portMAX_DELAY) != pdPASS)
     {
         LOGGER_LOG_ERROR(TAG, "Failed to dispatch command to queue");
