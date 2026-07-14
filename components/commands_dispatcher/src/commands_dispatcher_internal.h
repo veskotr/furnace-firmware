@@ -6,6 +6,8 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include <stdatomic.h>
 
 typedef struct {
     command_handler_t handler;
@@ -17,7 +19,8 @@ typedef struct
 {
     QueueHandle_t command_queue;
     TaskHandle_t dispatcher_task_handle;
-    volatile bool dispatcher_running;
+    SemaphoreHandle_t exit_semaphore;
+    atomic_bool dispatcher_running;
 
     handler_entry_t command_handlers[CONFIG_COMMANDS_DISPATCHER_MAX_HANDLERS];
 } commands_dispatcher_ctx_t;

@@ -53,7 +53,7 @@ static void commands_dispatcher_task(void* args)
     const commands_dispatcher_ctx_t* ctx = (commands_dispatcher_ctx_t*)args;
     command_t received_command;
 
-    while (ctx->dispatcher_running)
+    while (atomic_load_explicit(&ctx->dispatcher_running, memory_order_acquire))
     {
         // Wait for a command with a finite timeout so we can send heartbeats
         // Note: if the command handlers can take a long time to execute, we may want to move the heartbeat posting inside the handler execution
@@ -75,6 +75,7 @@ static void commands_dispatcher_task(void* args)
     }
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task stopping");
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
 }
 
@@ -111,20 +112,15 @@ esp_err_t shutdown_task(commands_dispatcher_ctx_t* ctx)
         return ESP_OK;
     }
 
-    ctx->dispatcher_running = false;
+    atomic_store_explicit(&ctx->dispatcher_running, false, memory_order_release);
 
-    // Wait for the task to exit
-    const TickType_t wait_ticks = pdMS_TO_TICKS(1000);
-    const TickType_t start_tick = xTaskGetTickCount();
-    while (ctx->dispatcher_task_handle != NULL)
+    if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
     {
-        if ((xTaskGetTickCount() - start_tick) > wait_ticks)
-        {
-            LOGGER_LOG_ERROR(TAG, "Timeout waiting for Commands Dispatcher task to stop");
-            return ESP_ERR_TIMEOUT;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        LOGGER_LOG_ERROR(TAG, "Failed waiting for Commands Dispatcher task to stop");
+        return ESP_ERR_TIMEOUT;
     }
+
+    ctx->dispatcher_task_handle = NULL;
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task shutdown complete");
     return ESP_OK;

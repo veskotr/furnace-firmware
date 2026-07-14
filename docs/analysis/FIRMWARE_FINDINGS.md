@@ -114,8 +114,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-007 — Dispatcher deletes queue/context under live task
 
-- **Category/confidence:** confirmed defect / high.
+- **Category/confidence:** source fix implemented; regression validation pending / high.
 - **Evidence:** `commands_dispatcher_task.c:stop_commands_dispatcher_task`; `commands_manager_core.c:commands_dispatcher_shutdown`. Worker can remain in two-second wait; one-second poll times out, cleanup still proceeds, and worker never reliably clears its handle.
+- **Source correction:** dispatcher running state is atomic; the worker signals a context-owned exit semaphore before self-deletion; shutdown waits for that acknowledgement and refuses queue/handler/context cleanup if stopping fails.
+- **Residual risk:** external producers blocked in `xQueueSend(..., portMAX_DELAY)` still require a producer-shutdown contract; executable stop/restart coverage is missing.
 
 ### F-008 — Coordinator teardown leaves task/callbacks on freed state
 
