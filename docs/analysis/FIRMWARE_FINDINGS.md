@@ -18,7 +18,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 8 | F-019 | source fix implemented; validation pending | high startup/control | Profile start now creates the control task before queuing contactor START |
 | 9 | F-048 | confirmed defect | high control | Cubic soft-landing accelerates setpoint before decelerating |
 | 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
-| 11 | F-021 | confirmed defect | high concurrency/control | Coordinator temperature is a plain cross-task data race |
+| 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
 | 12 | F-006–F-009, F-012 | confirmed defects | high lifecycle | Multiple shutdown paths destroy state without joining workers/callbacks |
 | 13 | F-022 | confirmed defect | high persistence/control | Partial Nextion file read is returned as complete and can truncate a profile |
 | 14 | F-023 | confirmed defect | high operational/safety access | Persistent NAK blocks the sole HMI worker indefinitely |
@@ -97,10 +97,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-021 — Current temperature is a cross-task data race
 
-- **Category/confidence:** confirmed defect / high under the C memory model.
-- **Evidence:** private event-loop callback writes coordinator temperature in `coordinator_component_events.c`; coordinator control task reads it in profile/PID/stall logic in `coordinator_component_heater_controller.c`; no mutex, queue, or atomic snapshot exists.
+- **Category/confidence:** source fix implemented; regression validation pending / high under the C memory model.
+- **Evidence:** private event-loop callback writes coordinator temperature under `temperature_mutex` in `coordinator_component_events.c`; coordinator control task reads it through `coordinator_get_current_temperature` in `coordinator_component_heater_controller.c`. No remaining direct control-task read of the shared float was found.
 - **Impact:** undefined cross-core visibility/torn/stale behavior can affect setpoint transitions and demand. The new stall and hold-deviation decisions consume this same value, widening the impact to fault detection.
-- **Direction:** transfer an immutable validity/freshness sample to the control task or guard a complete snapshot with one synchronization protocol.
+- **Source correction:** the existing branch hardening adds one mutex-protected temperature snapshot and routes coordinator control reads through its getter.
+- **Residual risk:** freshness/validity remains a separate sensor-data contract; executable race characterization and lifecycle validation remain open.
 
 ## Concurrency and lifecycle findings
 
