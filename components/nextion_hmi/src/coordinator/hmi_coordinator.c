@@ -36,6 +36,7 @@ static const health_monitor_data_t hmi_coordinator_health_data = {
 
 /** Maximum critical events we can buffer during one file transfer. */
 #define DEFERRED_CRITICAL_MAX  8
+#define CRITICAL_QUEUE_WAIT_MS 100
 
 /** True while a file transfer is in progress and we are deferring. */
 static bool s_deferring = false;
@@ -51,6 +52,20 @@ static struct
 /** Small ring of critical commands deferred during a transfer. */
 static hmi_cmd_t s_deferred_critical[DEFERRED_CRITICAL_MAX];
 static int s_deferred_critical_count = 0;
+
+static bool enqueue_hmi_command(const hmi_cmd_t *cmd, bool critical)
+{
+    BaseType_t result = critical
+        ? xQueueSendToFront(s_cmd_queue, cmd, pdMS_TO_TICKS(CRITICAL_QUEUE_WAIT_MS))
+        : xQueueSend(s_cmd_queue, cmd, 0);
+    if (result != pdTRUE)
+    {
+        LOGGER_LOG_WARN(TAG, "HMI command queue full, dropping %s command (%d)",
+                        critical ? "critical" : "telemetry", (int)cmd->type);
+        return false;
+    }
+    return true;
+}
 
 /** Check whether storage or file-reader currently owns the UART. */
 static bool uart_busy(void)
@@ -127,8 +142,8 @@ static void temp_processor_event_bridge(void* handler_arg, esp_event_base_t base
     cmd.temp.average_temperature = temperature;
     cmd.temp.valid = true;
 
-    // Non-blocking: drop event if queue is full (UI updates are best-effort)
-    xQueueSend(s_cmd_queue, &cmd, 0);
+    /* Temperature updates are telemetry; a newer event supersedes them. */
+    enqueue_hmi_command(&cmd, false);
 }
 
 static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
@@ -200,7 +215,9 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
         return;
     }
 
-    xQueueSend(s_cmd_queue, &cmd, 0);
+    /* Keep lifecycle and error events ahead of telemetry and allow the HMI
+     * task a short window to drain a full queue before reporting loss. */
+    enqueue_hmi_command(&cmd, cmd.type != HMI_CMD_STATUS_UPDATE);
 }
 
 /* ── Coordinator task ──────────────────────────────────────────────── */

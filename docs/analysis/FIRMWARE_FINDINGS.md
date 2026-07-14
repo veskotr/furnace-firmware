@@ -253,9 +253,11 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-014 — HMI bridge silently drops lifecycle/error telemetry
 
-- **Category/confidence:** confirmed defect / medium.
+- **Category/confidence:** source fix implemented; regression validation pending / medium.
 - **Evidence:** `hmi_coordinator.c` event bridges send to bounded queue with zero wait and ignore failure. In `6741c72`, a control fault posts separate `ERROR_OCCURRED` and `PROFILE_PAUSED` events; each bridge attempt is independently lossy. The transfer-time critical-event buffer is also bounded (eight entries).
 - **Impact:** an operator can see a pause with no fault context, or an error with no corresponding paused state. A UI-side resume can therefore be based on incomplete information; the queued fault-off path must not rely on HMI delivery.
+- **Source correction:** lifecycle and error commands now use front-of-queue delivery with a bounded 100 ms wait, ahead of telemetry, and every queue failure is logged. Temperature/status updates remain nonblocking best-effort telemetry.
+- **Residual risk:** queue saturation can still lose a critical event after the bounded wait, and the transfer-time critical buffer remains bounded; queue-saturation and panel transfer validation remain open.
 
 ### F-015 — Natural completion leaves run indicator ON
 
