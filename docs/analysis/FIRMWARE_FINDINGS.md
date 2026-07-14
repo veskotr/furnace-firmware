@@ -222,8 +222,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-027 — Program deletion reports success without response validation
 
-- **Category/confidence:** confirmed defect / medium.
+- **Category/confidence:** source fix implemented; panel-storage validation pending / medium.
 - **Evidence:** `nextion_storage.c:nextion_storage_delete_program` sends `delfile`, delays, and returns true without checking panel result.
+- **Source correction:** deletion now releases the transfer lock, verifies the file no longer exists through the panel read path, and only then refreshes the browser, removes the persistent registry entry, and returns success. Failed verification keeps the registry entry for retry.
+- **Residual risk:** panel response timing and physical storage behavior remain unvalidated; a zero-length file is treated as absent by the existing file-existence helper.
 
 ### F-031 — Coordinator query commands publish uninitialized/wrong payload
 

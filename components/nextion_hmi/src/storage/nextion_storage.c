@@ -551,17 +551,30 @@ bool nextion_storage_delete_program(const char* name, char* error_msg, size_t er
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(200));
 
+    /* delfile has no useful success payload in the normal command path.
+     * Verify the postcondition before changing the persistent registry. */
+    if (locked)
+    {
+        nextion_uart_unlock();
+        locked = false;
+    }
+    const bool deleted = !nextion_file_exists(path);
+    if (!deleted)
+    {
+        set_error(error_msg, error_len, "Nextion did not delete program");
+        LOGGER_LOG_WARN(TAG, "Delete verification failed for %s", path);
+    }
+
     nextion_send_cmd("progBwsr.dir=\"sd0/\"");
     nextion_send_cmd("ref progBwsr");
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    if (locked)
-    {
-        nextion_uart_unlock();
-    }
     s_storage_active = false;
-    registry_remove(name);
-    return true;
+    if (deleted)
+    {
+        registry_remove(name);
+    }
+    return deleted;
 }
 
 bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, size_t error_len)
