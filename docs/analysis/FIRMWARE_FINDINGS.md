@@ -284,8 +284,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-035 — Furnace errors have no mitigation subscriber
 
-- **Category/confidence:** design weakness / high.
+- **Category/confidence:** deferred architecture work / high.
 - **Evidence:** multiple publishers of `FURNACE_ERROR_EVENT`; no production subscription found. `error_manager` has no descriptor registration found.
+- **Decision:** leave outside the current hardening pass. Revisit when the planned fault manager is introduced; that architecture must define error severity, authoritative heater inhibition, latching/recovery, duplicate/late-event handling, and ownership of physical mitigation.
+- **Status:** intentionally deferred; no partial subscriber or replacement error-routing path is being added now.
 
 ### F-036 — Health/watchdog supervision is disabled and incomplete
 
