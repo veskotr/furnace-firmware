@@ -10,20 +10,22 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | ---: | --- | --- | --- | --- |
 | 1 | F-016 | source fix implemented; validation pending | critical safety/configuration | Run indicator is disabled when disabled, invalid, or colliding with the contactor GPIO |
 | 2 | F-017 | source fix implemented; validation pending | critical conditional safety | SSR GPIO failure now latches local inhibit and requests contactor-off; electrical behavior is unverified |
-| 3 | F-001 | Phase B source fix implemented; validation pending | critical control safety | Fresh-sample quorum, direct sensor inhibit, pause, and three-sample recovery are implemented |
-| 4 | F-002 | source fix implemented; validation pending | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
-| 5 | F-003 | source fix implemented; validation pending | critical safety/concurrency | Heater-side control inhibit rejects stale PID output after pause/stop |
-| 6 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
-| 7 | F-018 | source fix implemented; validation pending | high reset safety | Restart/factory-reset paths now fail closed unless direct heater inhibit succeeds |
-| 8 | F-019 | source fix implemented; validation pending | high startup/control | Profile start now creates the control task before queuing contactor START |
-| 9 | F-048 | source fix implemented; validation pending | high control | Ramp-to-hold easing now decelerates without leading the configured ramp rate |
-| 10 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
-| 11 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
-| 12 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
-| 13 | F-022 | source fix implemented; validation pending | high persistence/control | Incomplete Nextion file reads are rejected before draft replacement |
-| 14 | F-023 | source fix implemented; validation pending | high operational/safety access | Repeated NAKs now abort storage transfer instead of blocking the sole HMI worker |
-| 15 | F-024 | source fix implemented; validation pending | high persistence/control | Program replacement now uses a completed temporary file; final rename power-loss behavior remains unverified |
-| 16 | F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
+| 3 | F-001/F-054 | source fix implemented; validation pending | critical control safety | A one-shot aggregate expiry timer directly inhibits output when the update stream stops |
+| 5 | F-002 | source fix implemented; validation pending | critical safety/concurrency | Dispatcher can deadlock before queued heater-off commands execute |
+| 6 | F-003 | source fix implemented; validation pending | critical safety/concurrency | Heater-side control inhibit rejects stale PID output after pause/stop |
+| 7 | F-055 | source fix implemented; regression pending | high lifecycle | Coordinator stop is queue-independent; queue-full stop/restart validation remains pending |
+| 8 | F-004 | policy-adjusted; validation pending | high control | Sensor disagreement is intentionally a warning; fresh-sample quorum now gates control input |
+| 9 | F-018 | source fix implemented; validation pending | high reset safety | Restart/factory-reset paths now fail closed unless direct heater inhibit succeeds |
+| 10 | F-019 | source fix implemented; validation pending | high startup/control | Profile start now creates the control task before queuing contactor START |
+| 11 | F-048 | source fix implemented; validation pending | high control | Ramp-to-hold easing now decelerates without leading the configured ramp rate |
+| 12 | F-053 | source fix implemented; regression pending | high conditional control safety | Non-finite PID values are reset/forced to zero before heater PWM conversion |
+| 13 | F-021 | source fix implemented; validation pending | high concurrency/control | Coordinator temperature now uses a mutex-protected snapshot |
+| 14 | F-009 | source fix implemented; validation pending | high lifecycle | Heater teardown now joins its worker; stop/restart validation remains open |
+| 15 | F-056 | source fix implemented; regression pending | medium lifecycle | Temperature-processor shutdown now destroys owned sensor devices after worker exit; device-manager mutation synchronization remains open |
+| 16 | F-022 | source fix implemented; validation pending | high persistence/control | Incomplete Nextion file reads are rejected before draft replacement |
+| 17 | F-023 | source fix implemented; validation pending | high operational/safety access | Repeated NAKs now abort storage transfer instead of blocking the sole HMI worker |
+| 18 | F-024 | source fix implemented; validation pending | high persistence/control | Program replacement now uses a completed temporary file; final rename power-loss behavior remains unverified |
+| 19 | F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
 
 ## Safety and control findings
 
@@ -45,10 +47,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-001 — Control accepts nonexistent or stale temperature
 
-- **Category/confidence:** source fix implemented; regression and hardware validation pending.
-- **Evidence:** sensor devices record successful-read ticks; the processor compacts fresh samples and publishes a validity snapshot; coordinator invalid snapshots directly set heater sensor-data inhibit and pause the profile; three consecutive valid aggregates release only that recoverable inhibit and resume the profile.
-- **Residual risk:** quorum is temporarily derived as sensor-count-minus-two; physical output latency, GPIO polarity, and full HMI fault presentation remain unverified/deferred. F-003 remains a separate in-flight PID race.
-- **Validation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md), [CHANGE-VALIDATION-F001-PHASE-A.md](CHANGE-VALIDATION-F001-PHASE-A.md), and [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md).
+- **Category/confidence:** source fix implemented; deterministic regression and hardware validation pending / critical control safety.
+- **Evidence:** sensor devices record successful-read ticks; the processor compacts fresh samples and publishes a validity snapshot; coordinator invalid snapshots directly set heater sensor-data inhibit and pause the profile; a coordinator-owned one-shot timer now expires each accepted aggregate at the configured age deadline and directly asserts the same heater inhibit before waking the control task; three consecutive valid aggregates release only that recoverable inhibit and resume the profile.
+- **Residual risk:** quorum is temporarily derived as sensor-count-minus-two; expiry timing, GPIO polarity, electrical isolation, and physical output latency remain unverified. F-003 remains a separate in-flight PID race.
+- **Validation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md), [CHANGE-VALIDATION-F001-PHASE-A.md](CHANGE-VALIDATION-F001-PHASE-A.md), [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md), [BUG-054-temperature-update-silence.md](BUG-054-temperature-update-silence.md), and [CHANGE-VALIDATION-F054.md](CHANGE-VALIDATION-F054.md).
 
 ### F-002 — Dispatcher self-deadlock can precede heater-off
 
@@ -112,7 +114,17 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Category/confidence:** source fix implemented; regression validation pending / high.
 - **Evidence:** `temperature_processor_core.c:shutdown_temp_processor`; `temperature_processor_task.c:temp_process_task`. Stop clears/notifies, owner frees immediately, and handle clearing is placed after unreachable `vTaskDelete(NULL)`.
 - **Source correction:** the worker signals a context-owned exit semaphore before self-deletion; the owner waits for that acknowledgement before clearing the handle, deleting the semaphore, and freeing the context.
-- **Residual risk:** event-manager unsubscribe and device-manager producer shutdown remain broader lifecycle concerns tracked separately; executable stop/restart coverage is still missing.
+- **Residual risk:** normal shutdown does not call the existing device-destruction helper, leaving registered sensor devices in the device manager and static pool after the processor context is freed (F-056). Event-manager unsubscribe and device-manager producer shutdown remain broader lifecycle concerns; executable stop/restart coverage is still missing.
+
+### F-055 — Coordinator shutdown can deadlock on a full dispatcher queue
+
+- **Category/confidence:** source fix implemented; regression validation pending / high lifecycle; physical-off path remains independently asserted.
+- **Evidence:** `coordinator_component_heater_controller.c:stop_heating_profile` waits indefinitely for the control-worker exit acknowledgement. The control worker always calls the same function while exiting, which sends `HEATER_CLEAR` and `HEATER_STOP`. From that worker, `commands_dispatcher_dispatch_command` uses `xQueueSend(..., portMAX_DELAY)` because only the dispatcher task takes the inline re-entrant path.
+- **Reachable trigger:** fill the bounded dispatcher queue, then let the dispatcher execute an external STOP command. The dispatcher waits in `stop_heating_profile` for the control worker; the worker's self-exit attempts to enqueue its two heater commands and blocks because the dispatcher, the sole consumer, is waiting for that acknowledgement.
+- **Impact:** the control-worker acknowledgement never arrives, so stop/restart/shutdown hangs. The current path asserts the direct heater control inhibit before waiting, so this interleaving does not by itself re-energize the SSR/contactor; it still defeats the claimed complete lifecycle teardown.
+- **Source correction:** `stop_heating_profile` now submits no dispatcher-backed heater commands for either external STOP handling or worker self-exit. The direct control inhibit clears the target and de-energizes the SSR and contactor before cleanup, and the next profile start reinitializes heater command state.
+- **Residual risk:** executable queue-full stop/restart coverage is still missing, and other external producers can remain blocked in unbounded dispatcher sends during global shutdown.
+- **Validation:** a mocked FreeRTOS queue-full stop test must prove bounded completion and verify SSR/contactor-off requests occur before the wait.
 
 ### F-007 — Dispatcher deletes queue/context under live task
 
@@ -170,6 +182,26 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Evidence:** `temperature_processor_core.c:init_temp_processor` ignores `init_devices` result; zero-sample branch in `temperature_processor_task.c` continues before blocking/wait.
 - **Source correction:** the current worker already blocks on its notification after a zero-sample cycle; initialization now also checks `init_devices`, destroys any partially created sensors, and refuses to start the worker when setup fails.
 - **Residual risk:** initialization fault-injection and sensor/device lifecycle validation remain open.
+
+### F-056 — Temperature-processor shutdown leaves registered sensor devices active
+
+- **Category/confidence:** source fix implemented; regression validation pending / medium lifecycle.
+- **Evidence:** `temperature_processor_core.c:shutdown_temp_processor` unsubscribes, stops and joins the worker, then frees `g_temp_processor_ctx` without calling `destroy_devices`. That helper is used only on initialization/task-start failures and is the only path that calls `temp_sensor_destroy` for the processor's registered sensors.
+- **Reachable trigger:** initialize the temperature processor successfully, then call its normal shutdown and initialize it again. The previous `device_manager` entries and static `temp_sensor_device` pool slots remain allocated/running even though the processor context that referenced them has been freed.
+- **Impact:** restart can exhaust device-manager or sensor-pool capacity, and the device manager can continue updating orphaned sensors. This is a lifecycle/resource correctness defect; it does not alone command heater-on.
+- **Direction:** after the worker acknowledges exit and before freeing the processor context, destroy each owned sensor device and clear its pointer. Establish the intended order with device-manager shutdown/restart so no worker accesses a device during destruction.
+- **Source correction:** normal shutdown now calls `destroy_devices` after the processor worker acknowledgement and before freeing the context.
+- **Residual risk:** device-manager table mutation has no documented lock; executable stop/reinit coverage and a device-manager lifecycle contract remain pending.
+- **Validation:** a stop/reinit regression must verify device-manager count and sensor-pool allocation return to their pre-init values, then prove the same number of sensors can be initialized again.
+
+### F-054 — Valid temperature never expires when updates stop
+
+- **Category/confidence:** source fix implemented; deterministic regression and hardware validation pending / critical control safety.
+- **Evidence:** `temperature_processor_task.c` stamps and posts a validity sample only when notified by `DEVICE_MANAGER_UPDATED_EVENT`, then blocks indefinitely for the next notification. `coordinator_component_events.c` now records accepted aggregate ticks, arms a coordinator-owned one-shot `ESP_TIMER_TASK` timer for the remaining stale-age budget, and directly invokes the heater sensor-data inhibit when it expires.
+- **Source correction:** expiry directly zeros demand and requests SSR/contactor-off through `heater_controller_set_sensor_data_inhibit(true)` before the coordinator task is woken to pause. Profile start also rejects an expired aggregate. A later fresh sample must still satisfy the existing recovery-count contract.
+- **Violated invariant:** temperature is usable for control only while both validity and freshness are explicit. A plausible cached float is not fresh merely because no later failure event arrived.
+- **Residual risk:** no executable valid-then-silent regression exists yet; `esp_timer` callback latency, GPIO polarity/electrical isolation, and physical de-energization timing require powered-controller validation.
+- **Validation:** [BUG-054-temperature-update-silence.md](BUG-054-temperature-update-silence.md), [CHANGE-VALIDATION-F054.md](CHANGE-VALIDATION-F054.md), and [F001-F054-HARDWARE-VALIDATION.md](F001-F054-HARDWARE-VALIDATION.md).
 
 ### F-025 — MS9024 write verification compares only low byte
 
@@ -319,23 +351,27 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-049 — Control defaults, resolved build, and field-tuning documentation disagree
 
-- **Category/confidence:** highly likely defect / high operational uncertainty.
-- **Evidence:** changed Kconfig defaults are overshoot 20 C, stall check 300 s, PID Kd 0.030, and fan 43/40 C. The reviewed resolved `sdkconfig` is 30 C, 180 s, Kd 0, and 35/32 C; it disables feedforward and service-time override. No tracked `sdkconfig.defaults` was found. `components/pid_component/pid_values.md` mixes different gains/feedforward calibration and labels unproven values as field information.
+- **Category/confidence:** configuration baseline recorded; release/effective-configuration validation pending / high operational uncertainty.
+- **Evidence:** the repository now tracks `sdkconfig.defaults`, copied from the reviewed resolved `sdkconfig`, including overshoot 30 C, stall check 180 s, PID Kd 0, fan 35/32 C, feedforward disabled, and service-time override disabled. Component Kconfig defaults and tuning notes still describe alternate values, so the tracked release baseline must remain the authoritative deployment configuration.
 - **Impact:** fresh configurations, upgraded local configurations, and claimed field tuning can run materially different control and guard behavior. The successful build validates only the retained local configuration, not the changed defaults.
-- **Direction:** track an explicit per-furnace/release configuration artifact, record its commit/hash with bench evidence, define upgrade behavior, and add a build-time effective-symbol check.
+- **Source/configuration correction:** added the complete resolved configuration as `sdkconfig.defaults`; new configurations now have a version-controlled baseline for all ESP-IDF and project options.
+- **Residual risk:** Kconfig help/default text and tuning documentation still need reconciliation with the chosen production baseline; effective-symbol/build verification and field/bench evidence remain pending.
 
 ### F-050 — Operational-time service override can wrap and misreport persistence
 
-- **Category/confidence:** confirmed defect / medium.
-- **Evidence:** `components/nextion_hmi/src/program/Kconfig` gives `NEXTION_OP_TIME_OVERRIDE_HOURS` no range. `heating_program_models.c` casts it to `uint32_t` and multiplies by 3600 before writing NVS; negative values or values above 1,193,046 hours wrap. The enabled override executes at every boot and NVS set/commit failures are not surfaced before reporting the value.
+- **Category/confidence:** source fix implemented; regression validation pending / medium.
+- **Evidence:** before correction, `components/nextion_hmi/src/program/Kconfig` gave `NEXTION_OP_TIME_OVERRIDE_HOURS` no range and `heating_program_models.c` cast it to `uint32_t` before multiplying by 3600. The enabled override still executes at every boot by documented service-tool design, but the source now bounds the value and checks NVS errors before replacing the loaded counter.
 - **Impact:** service hours can be corrupted or falsely reported as restored, weakening maintenance records.
-- **Direction:** impose a valid range, check persistence errors, and make the operation a consumed one-shot or rename/document it as a persistent boot override.
+- **Source correction:** Kconfig now bounds the override to the uint32-safe hour range; runtime validation rejects invalid values; NVS open/set/commit errors are surfaced and leave the loaded counter unchanged. The documented enable-once/disable-after-correction workflow remains unchanged.
+- **Residual risk:** no executable persistence regression exists; the override remains intentionally applied on every boot while enabled.
+- **Validation:** [CHANGE-VALIDATION-F050.md](CHANGE-VALIDATION-F050.md).
 
 ### F-051 — New coordinator error payload has an unversioned compatibility contract
 
-- **Category/confidence:** design weakness / medium.
+- **Category/confidence:** deferred design weakness / medium.
 - **Evidence:** `coordinator_error_data_t` in `event_registry.h` grew from the prior code's small payload to temperature/setpoint/stage/elapsed fields, and gained `COORDINATOR_ERROR_HOLD_DEVIATION`. In-tree producers/consumers build, but independently compiled subscribers and fixed-size bridges have no version/size contract.
 - **Direction:** state a payload compatibility policy or version the message, and add a producer/consumer copy-size regression test.
+- **Disposition:** defer to a later interface version; no compatibility-breaking payload redesign is included in the current hardening baseline.
 
 ### F-053 — Non-finite PID input can become non-finite actuator demand
 
@@ -364,15 +400,12 @@ Deferred test, build-profile, production-logging, and per-board configuration wo
 
 ## Recommended first hardening batch (do not fix in this preparation pass)
 
-These five are independent, source-confirmed, testable with low architectural risk. They reduce incorrect control/data behavior while the larger actuator-inhibit and fresh-sample architecture is decided:
+The current closeout work is validation rather than another required source correction. The remaining items below are independent, source-confirmed candidates after validation or explicit disposition:
 
-1. **F-048:** characterize the corrected soft-landing trajectory and graph parity.
-2. **F-005:** validate compact successful temperature samples with sparse-success batch tests.
-3. **F-022:** validate complete-read rejection and atomic draft replacement.
-4. **F-025:** verify full register width for MS9024 writes.
-5. **F-050:** bound service operational-time override and propagate NVS write failures.
+1. **F-001/F-054/F-055/F-056/F-050:** add the identified deterministic regression/fault-injection coverage.
+2. **F-048:** characterize the corrected soft-landing trajectory and graph parity.
 
-Before any powered release, investigate/resolve F-016, then make an ADR for the direct actuator-inhibit/fresh-temperature gate needed by F-017/F-001/F-002/F-003/F-004. Those are higher risk but cross multiple current boundaries and should not be patched piecemeal.
+Before any powered release, complete F-001/F-054 regression and powered-controller validation, complete F-055/F-056/F-050 regression coverage, retain the direct actuator-inhibit/fresh-temperature contract in ADR-0002, investigate/resolve F-016, and complete the required hardware validation. No compilation or mock result establishes physical output behavior.
 
 ## Existing build evidence
 

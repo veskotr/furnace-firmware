@@ -32,6 +32,7 @@ typedef struct
     TaskHandle_t task_handle;
     SemaphoreHandle_t exit_semaphore;
     esp_timer_handle_t pid_tick_timer; // Periodic timer driving the PID control loop
+    esp_timer_handle_t sensor_data_expiry_timer; // One-shot aggregate freshness deadline
 
     program_draft_t run_program; // Copy of the program being executed
     bool has_program; // True after a program has been loaded
@@ -44,6 +45,14 @@ typedef struct
      * guard. This is an atomic start gate, not a freshness contract. */
     atomic_bool has_valid_temperature;
     atomic_bool sensor_data_inhibited;
+    /* Set by the one-shot expiry callback before it directly inhibits the
+     * heater. Cleared only after a later fresh aggregate is accepted. */
+    atomic_bool sensor_data_expired;
+    /* Protected by temperature_mutex; records the accepted aggregate lease
+     * and serializes recovery-count updates between the event and control
+     * tasks. */
+    TickType_t last_valid_aggregate_tick;
+    bool has_valid_aggregate;
     uint8_t sensor_recovery_count;
 
     heating_task_state_t heating_task_state;
@@ -85,6 +94,11 @@ static inline float coordinator_get_current_temperature(const coordinator_ctx_t*
 esp_err_t init_coordinator_events(coordinator_ctx_t* ctx);
 
 esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx);
+esp_err_t init_sensor_data_expiry_timer(coordinator_ctx_t* ctx);
+esp_err_t shutdown_sensor_data_expiry_timer(coordinator_ctx_t* ctx);
+esp_err_t arm_sensor_data_expiry_timer(coordinator_ctx_t* ctx, TickType_t sample_tick);
+bool coordinator_sensor_data_is_fresh(coordinator_ctx_t* ctx);
+void coordinator_inhibit_for_sensor_data_expiry(coordinator_ctx_t* ctx);
 
 esp_err_t post_coordinator_error_event(coordinator_event_id_t event_type, const esp_err_t* event_data,
                                        coordinator_error_code_t coordinator_error_code);

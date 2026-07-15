@@ -325,6 +325,18 @@ static void heater_controller_task(void* args)
     while (ctx->running)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (atomic_load_explicit(&ctx->sensor_data_expired, memory_order_acquire))
+        {
+            /* The expiry timer has already directly de-energized the heater.
+             * Finish the coordinator state transition before any profile/PID
+             * work can publish another demand. */
+            if (!ctx->paused)
+            {
+                CHECK_ERR_LOG(pause_heating_profile(ctx),
+                              "Failed to pause profile after sensor-data expiry");
+            }
+            continue;
+        }
         uint32_t last_update_duration = 0;
         if (!ctx->paused)
         {
@@ -650,8 +662,9 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
 
     /* A zero-initialized coordinator temperature is not a measurement. Do not
      * load a profile or queue heater commands until the processor has supplied
-     * at least one accepted post-boot temperature event. Freshness during an
-     * active run remains a separate F-001 phase. */
+     * at least one accepted post-boot temperature event. The aggregate lease
+     * is checked below and remains enforced during the run by its expiry
+     * timer. */
     if (!atomic_load_explicit(&ctx->has_valid_temperature, memory_order_acquire))
     {
         LOGGER_LOG_ERROR(TAG, "Refusing profile start: no valid temperature sample received");
@@ -661,6 +674,13 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
     if (atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
     {
         LOGGER_LOG_ERROR(TAG, "Refusing profile start: sensor recovery is not complete");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!coordinator_sensor_data_is_fresh(ctx))
+    {
+        coordinator_inhibit_for_sensor_data_expiry(ctx);
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: temperature aggregate has expired");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -856,12 +876,12 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
     ctx->paused = false;
 
     set_control_inhibit(true);
-    kill_heater();
+    /* Stop must remain queue-independent for both the external command
+     * handler and the worker self-exit path.  The dispatcher queue may be
+     * full before the join begins, and the direct control inhibit above
+     * already clears the target and de-energizes the SSR and contactor. */
     pid_controller_reset();
     shutdown_profile_controller();
-
-    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
-    send_heater_command(COMMAND_TYPE_HEATER_STOP, 0.0f);
 
     if (task_handle != NULL)
     {

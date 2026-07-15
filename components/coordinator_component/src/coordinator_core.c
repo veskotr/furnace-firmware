@@ -54,8 +54,13 @@ esp_err_t init_coordinator(void)
         return ESP_ERR_NO_MEM;
     }
     atomic_init(&g_coordinator_ctx->sensor_data_inhibited, true);
+    atomic_init(&g_coordinator_ctx->sensor_data_expired, true);
     CHECK_ERR_LOG_RET(heater_controller_set_sensor_data_inhibit(true),
                       "Failed to establish startup sensor-data inhibit");
+
+    CHECK_ERR_LOG_CALL_RET(init_sensor_data_expiry_timer(g_coordinator_ctx),
+                           stop_coordinator(),
+                           "Failed to create sensor-data expiry timer");
 
     // Initialize Coordinator Events
     CHECK_ERR_LOG_RET(init_coordinator_events(g_coordinator_ctx),
@@ -87,6 +92,9 @@ esp_err_t stop_coordinator(void)
 
     CHECK_ERR_LOG_RET(shutdown_coordinator_events(g_coordinator_ctx),
                       "Failed to shutdown coordinator events");
+
+    CHECK_ERR_LOG_RET(shutdown_sensor_data_expiry_timer(g_coordinator_ctx),
+                      "Failed to shutdown sensor-data expiry timer");
 
     CHECK_ERR_LOG_RET(stop_heating_profile(g_coordinator_ctx),
                       "Failed to stop heating profile");

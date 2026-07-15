@@ -98,6 +98,11 @@ esp_err_t shutdown_temp_processor(void)
     g_temp_processor_ctx->task_handle = NULL;
     atomic_store_explicit(&g_temp_processor_ctx->processor_running, false, memory_order_release);
 
+    /* The processor worker is joined and its event subscription is removed;
+     * release every sensor device owned by this context before freeing it so
+     * device-manager slots and the static sensor pool are reusable. */
+    destroy_devices();
+
     vSemaphoreDelete(g_temp_processor_ctx->exit_semaphore);
     free(g_temp_processor_ctx);
     g_temp_processor_ctx = NULL;

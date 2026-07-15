@@ -12,6 +12,140 @@
 
 static const char* TAG = "COORDINATOR_EVENTS";
 
+static void sensor_data_expiry_timer_cb(void* arg)
+{
+    coordinator_ctx_t* ctx = (coordinator_ctx_t*)arg;
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    /* This callback runs in ESP_TIMER_TASK context. Physical output removal
+     * must not wait for the coordinator, dispatcher, HMI, or another sensor
+     * event; wake the coordinator only for profile-state bookkeeping. */
+    atomic_store_explicit(&ctx->sensor_data_expired, true, memory_order_release);
+    atomic_store_explicit(&ctx->sensor_data_inhibited, true, memory_order_release);
+    const esp_err_t err = heater_controller_set_sensor_data_inhibit(true);
+    if (err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to enforce expired sensor-data inhibit: %s",
+                         esp_err_to_name(err));
+    }
+
+    if (ctx->task_handle != NULL)
+    {
+        xTaskNotifyGive(ctx->task_handle);
+    }
+}
+
+void coordinator_inhibit_for_sensor_data_expiry(coordinator_ctx_t* ctx)
+{
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    if (ctx->temperature_mutex != NULL &&
+        xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+    {
+        ctx->has_valid_aggregate = false;
+        ctx->sensor_recovery_count = 0;
+        xSemaphoreGive(ctx->temperature_mutex);
+    }
+
+    atomic_store_explicit(&ctx->sensor_data_expired, true, memory_order_release);
+    atomic_store_explicit(&ctx->sensor_data_inhibited, true, memory_order_release);
+    CHECK_ERR_LOG(heater_controller_set_sensor_data_inhibit(true),
+                  "Failed to enforce sensor-data heater inhibit");
+}
+
+bool coordinator_sensor_data_is_fresh(coordinator_ctx_t* ctx)
+{
+    if (ctx == NULL || ctx->temperature_mutex == NULL)
+    {
+        return false;
+    }
+
+    bool fresh = false;
+    if (xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+    {
+        fresh = ctx->has_valid_aggregate &&
+                (xTaskGetTickCount() - ctx->last_valid_aggregate_tick) <=
+                    pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS);
+        xSemaphoreGive(ctx->temperature_mutex);
+    }
+    return fresh;
+}
+
+esp_err_t init_sensor_data_expiry_timer(coordinator_ctx_t* ctx)
+{
+    if (ctx == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (ctx->sensor_data_expiry_timer != NULL)
+    {
+        return ESP_OK;
+    }
+
+    const esp_timer_create_args_t timer_args = {
+        .callback = sensor_data_expiry_timer_cb,
+        .arg = ctx,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "sensor_expiry",
+    };
+    return esp_timer_create(&timer_args, &ctx->sensor_data_expiry_timer);
+}
+
+esp_err_t shutdown_sensor_data_expiry_timer(coordinator_ctx_t* ctx)
+{
+    if (ctx == NULL || ctx->sensor_data_expiry_timer == NULL)
+    {
+        return ESP_OK;
+    }
+
+    const esp_err_t stop_err = esp_timer_stop(ctx->sensor_data_expiry_timer);
+    if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE)
+    {
+        return stop_err;
+    }
+    const esp_err_t delete_err = esp_timer_delete(ctx->sensor_data_expiry_timer);
+    if (delete_err == ESP_OK)
+    {
+        ctx->sensor_data_expiry_timer = NULL;
+    }
+    return delete_err;
+}
+
+esp_err_t arm_sensor_data_expiry_timer(coordinator_ctx_t* ctx, const TickType_t sample_tick)
+{
+    if (ctx == NULL || ctx->sensor_data_expiry_timer == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const TickType_t now = xTaskGetTickCount();
+    const TickType_t timeout_ticks =
+        pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS);
+    const TickType_t age_ticks = now - sample_tick;
+    if (age_ticks > timeout_ticks)
+    {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    const uint64_t timeout_us =
+        (uint64_t)CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS * 1000ULL;
+    const uint64_t age_us = (uint64_t)age_ticks * portTICK_PERIOD_MS * 1000ULL;
+    const uint64_t remaining_us = timeout_us > age_us ? timeout_us - age_us : 1ULL;
+
+    esp_err_t err = esp_timer_restart(ctx->sensor_data_expiry_timer, remaining_us);
+    if (err == ESP_ERR_INVALID_STATE)
+    {
+        err = esp_timer_start_once(ctx->sensor_data_expiry_timer, remaining_us);
+    }
+    return err;
+}
+
 static void temperature_processor_event_handler(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
@@ -26,16 +160,11 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
         const temperature_processor_sample_t* sample = event_data;
         const bool fresh = sample->valid &&
                            (xTaskGetTickCount() - sample->sample_tick) <=
-                               pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS);
+                               pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS) &&
+                           arm_sensor_data_expiry_timer(ctx, sample->sample_tick) == ESP_OK;
         if (!fresh)
         {
-            ctx->sensor_recovery_count = 0;
-            if (!atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
-            {
-                atomic_store_explicit(&ctx->sensor_data_inhibited, true, memory_order_release);
-                CHECK_ERR_LOG(heater_controller_set_sensor_data_inhibit(true),
-                              "Failed to enforce sensor-data heater inhibit");
-            }
+            coordinator_inhibit_for_sensor_data_expiry(ctx);
             if (ctx->running && !ctx->paused)
             {
                 CHECK_ERR_LOG(pause_heating_profile(ctx),
@@ -46,20 +175,49 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
             return;
         }
 
+        if (ctx->temperature_mutex != NULL &&
+            xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+        {
+            ctx->last_valid_aggregate_tick = sample->sample_tick;
+            ctx->has_valid_aggregate = true;
+            xSemaphoreGive(ctx->temperature_mutex);
+        }
+
+        const bool expired_before_this_sample =
+            atomic_exchange_explicit(&ctx->sensor_data_expired, false, memory_order_acq_rel);
+        if (expired_before_this_sample && ctx->running && !ctx->paused)
+        {
+            CHECK_ERR_LOG(pause_heating_profile(ctx),
+                          "Failed to pause profile after sensor-data expiry");
+        }
+
         if (atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
         {
-            if (ctx->sensor_recovery_count < CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES)
+            bool recovery_ready = false;
+            if (ctx->temperature_mutex != NULL &&
+                xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
             {
-                ++ctx->sensor_recovery_count;
+                if (ctx->sensor_recovery_count < CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES)
+                {
+                    ++ctx->sensor_recovery_count;
+                }
+                recovery_ready = ctx->sensor_recovery_count >=
+                                 CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES;
+                xSemaphoreGive(ctx->temperature_mutex);
             }
             if (CONFIG_COORDINATOR_SENSOR_AUTO_RECOVERY &&
-                ctx->sensor_recovery_count >= CONFIG_COORDINATOR_SENSOR_RECOVERY_VALID_AGGREGATES)
+                recovery_ready)
             {
                 const esp_err_t release_err = heater_controller_set_sensor_data_inhibit(false);
                 if (release_err == ESP_OK)
                 {
                     atomic_store_explicit(&ctx->sensor_data_inhibited, false, memory_order_release);
-                    ctx->sensor_recovery_count = 0;
+                    if (ctx->temperature_mutex != NULL &&
+                        xSemaphoreTake(ctx->temperature_mutex, portMAX_DELAY) == pdTRUE)
+                    {
+                        ctx->sensor_recovery_count = 0;
+                        xSemaphoreGive(ctx->temperature_mutex);
+                    }
                     if (ctx->running && ctx->paused && !heater_controller_output_is_inhibited())
                     {
                         CHECK_ERR_LOG(resume_heating_profile(ctx),
@@ -306,6 +464,12 @@ esp_err_t shutdown_coordinator_events(coordinator_ctx_t* ctx)
     }
     CHECK_ERR_LOG_RET(unregister_command_handler(COMMAND_TARGET_COORDINATOR),
                       "Failed to unsubscribe from coordinator events");
+
+    CHECK_ERR_LOG_RET(event_manager_unsubscribe(
+                          TEMP_PROCESSOR_EVENT,
+                          ESP_EVENT_ANY_ID,
+                          &temperature_processor_event_handler),
+                      "Failed to unsubscribe from temperature processor events");
 
 
     ctx->events_initialized = false;

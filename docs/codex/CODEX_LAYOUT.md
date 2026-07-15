@@ -1,6 +1,6 @@
 # Codex project-local layout
 
-Verified 2026-07-13 against installed `codex-cli 0.144.3` and official OpenAI Codex documentation.
+Last reviewed 2026-07-15 against the repository's active Codex installation and official OpenAI Codex documentation. The repository intentionally does not pin a Codex CLI version; supported discovery paths and repository verification are the compatibility contract.
 
 | Purpose | Supported repository-local location | Choice here |
 | --- | --- | --- |
@@ -30,4 +30,4 @@ The prior `agents/*.md` briefs and `skills/*` workflows were useful content but 
 
 ## Maintenance
 
-Run `python3 tools/codex/verify_repository_setup.py` after changing agents, skills, links, maps, or templates. Also run `codex doctor --json --summary` and a strict-config smoke test when upgrading Codex. Recheck official conventions before changing canonical paths.
+Run `python3 tools/codex/verify_repository_setup.py` after changing agents, skills, links, maps, or templates. Also run `codex doctor --json --summary` and a strict-config smoke test after a Codex upgrade. Recheck official conventions before changing canonical paths or when an upgrade changes discovery behavior.
