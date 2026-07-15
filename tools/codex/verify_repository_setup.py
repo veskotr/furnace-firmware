@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -176,14 +175,6 @@ def main() -> int:
         if invariant not in standards:
             fail(errors, f"safety invariant missing phrase: {invariant}")
 
-    layout = (ROOT / "docs/codex/CODEX_LAYOUT.md").read_text(encoding="utf-8") if (ROOT / "docs/codex/CODEX_LAYOUT.md").is_file() else ""
-    try:
-        version = subprocess.run(["codex", "--version"], cwd=ROOT, check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        if "0.144.1" not in version or "0.144.1" not in layout:
-            fail(errors, f"Codex layout/version mismatch: installed={version!r}")
-    except (FileNotFoundError, subprocess.SubprocessError) as exc:
-        fail(errors, f"cannot verify installed Codex version: {exc}")
-
     for relative in (
         "main/main.c",
         "components/coordinator_component/src/coordinator_component_heater_controller.c",
@@ -203,7 +194,7 @@ def main() -> int:
         return 1
 
     print(f"repository setup verification: PASS ({len(REQUIRED_AGENTS)} agents, {len(REQUIRED_SKILLS)} skills)")
-    print("Codex layout: 0.144.1-compatible project-local discovery paths")
+    print("Codex layout: version-agnostic project-local discovery paths")
     print("Maps, templates, safety invariants, metadata, links, paths, and commands: valid")
     return 0
 

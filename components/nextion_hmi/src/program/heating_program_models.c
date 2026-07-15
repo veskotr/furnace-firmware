@@ -34,6 +34,7 @@ static SemaphoreHandle_t s_program_mutex = NULL;
  * Bounds worst-case data loss on power cut to ~60 s, while keeping flash
  * wear at ~1440 commits/day even if the furnace ran 24/7. */
 #define OP_TIME_NVS_WRITE_INTERVAL_SEC 60
+#define OP_TIME_OVERRIDE_MAX_HOURS (UINT32_MAX / 3600U)
 
 void program_models_init(void)
 {
@@ -72,18 +73,35 @@ void program_models_init(void)
     
     #ifdef CONFIG_NEXTION_OP_TIME_OVERRIDE_ENABLE
     {
-        uint32_t override_sec = (uint32_t)CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS * 3600U;
-        s_operational_time_sec = override_sec;
-        s_op_time_unsaved_sec  = 0;
-        nvs_handle_t nvs_w;
-        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_w) == ESP_OK) {
-            nvs_set_u32(nvs_w, NVS_KEY_OP_TIME, override_sec);
-            nvs_commit(nvs_w);
-            nvs_close(nvs_w);
+        const int override_hours = CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS;
+        if (override_hours < 0 ||
+            (uint32_t)override_hours > OP_TIME_OVERRIDE_MAX_HOURS) {
+            LOGGER_LOG_ERROR(TAG, "OP-TIME OVERRIDE rejected: hours=%d outside 0..%lu",
+                             override_hours,
+                             (unsigned long)OP_TIME_OVERRIDE_MAX_HOURS);
+        } else {
+            const uint32_t override_sec = (uint32_t)override_hours * 3600U;
+            nvs_handle_t nvs_w;
+            esp_err_t override_err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_w);
+            if (override_err == ESP_OK) {
+                override_err = nvs_set_u32(nvs_w, NVS_KEY_OP_TIME, override_sec);
+                if (override_err == ESP_OK) {
+                    override_err = nvs_commit(nvs_w);
+                }
+                nvs_close(nvs_w);
+            }
+
+            if (override_err == ESP_OK) {
+                s_operational_time_sec = override_sec;
+                s_op_time_unsaved_sec = 0;
+                LOGGER_LOG_WARN(TAG, "OP-TIME OVERRIDE: forced to %d h (%lu sec)",
+                                override_hours,
+                                (unsigned long)override_sec);
+            } else {
+                LOGGER_LOG_ERROR(TAG, "OP-TIME OVERRIDE failed; keeping loaded value: %s",
+                                 esp_err_to_name(override_err));
+            }
         }
-        LOGGER_LOG_WARN(TAG, "OP-TIME OVERRIDE: forced to %d h (%lu sec)",
-                        CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS,
-                        (unsigned long)override_sec);
     }
 #endif
 
@@ -93,6 +111,16 @@ void program_draft_clear(void)
 {
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memset(&s_program_draft, 0, sizeof(s_program_draft));
+    xSemaphoreGiveRecursive(s_program_mutex);
+}
+
+void program_draft_replace(const program_draft_t *draft)
+{
+    if (!draft) {
+        return;
+    }
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(&s_program_draft, draft, sizeof(s_program_draft));
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 

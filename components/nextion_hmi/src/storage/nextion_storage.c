@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
+#include "nvs.h"
 #include "logger_component.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -15,12 +16,77 @@
 
 static const char* TAG = "nextion_storage";
 
+/* Bound repeated packet NAKs so a faulty or incompatible panel cannot hold the
+ * sole HMI worker in the storage transfer indefinitely. */
+#define NEXTION_MAX_PACKET_NAK_RETRIES 3U
+
 static volatile bool s_storage_active = false;
 
-/* ── Program name registry (volatile, populated during session) ───── */
+/* ── Program name registry ────────────────────────────────────────── */
 #define REGISTRY_NAME_LEN 64
-static char s_registry[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+#define REGISTRY_NVS_NAMESPACE "prog_registry"
+#define REGISTRY_NVS_COUNT_KEY "count"
+static char s_registry[CONFIG_NEXTION_MAX_PROGRAMS][REGISTRY_NAME_LEN];
 static int s_registry_count = 0;
+
+static void registry_persist(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(REGISTRY_NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK)
+    {
+        LOGGER_LOG_WARN(TAG, "Failed to open persistent program registry");
+        return;
+    }
+
+    bool ok = nvs_set_u32(nvs, REGISTRY_NVS_COUNT_KEY, (uint32_t)s_registry_count) == ESP_OK;
+    for (int i = 0; ok && i < s_registry_count; ++i)
+    {
+        char key[16];
+        snprintf(key, sizeof(key), "p%03u", (unsigned)i);
+        ok = nvs_set_str(nvs, key, s_registry[i]) == ESP_OK;
+    }
+    if (ok)
+    {
+        ok = nvs_commit(nvs) == ESP_OK;
+    }
+    nvs_close(nvs);
+    if (!ok)
+    {
+        LOGGER_LOG_WARN(TAG, "Failed to persist program registry");
+    }
+}
+
+void nextion_storage_init(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(REGISTRY_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK)
+    {
+        return;
+    }
+
+    uint32_t stored_count = 0;
+    if (nvs_get_u32(nvs, REGISTRY_NVS_COUNT_KEY, &stored_count) != ESP_OK)
+    {
+        nvs_close(nvs);
+        return;
+    }
+
+    s_registry_count = stored_count > CONFIG_NEXTION_MAX_PROGRAMS
+        ? CONFIG_NEXTION_MAX_PROGRAMS
+        : (int)stored_count;
+    for (int i = 0; i < s_registry_count; ++i)
+    {
+        char key[16];
+        snprintf(key, sizeof(key), "p%03u", (unsigned)i);
+        size_t len = sizeof(s_registry[i]);
+        if (nvs_get_str(nvs, key, s_registry[i], &len) != ESP_OK)
+        {
+            s_registry[i][0] = '\0';
+        }
+    }
+    nvs_close(nvs);
+    LOGGER_LOG_INFO(TAG, "Loaded %d program names from persistent registry", s_registry_count);
+}
 
 static void registry_add(const char* display_name)
 {
@@ -29,7 +95,7 @@ static void registry_add(const char* display_name)
     {
         if (strcmp(s_registry[i], display_name) == 0) return;
     }
-    if (s_registry_count >= CONFIG_COORDINATOR_MAX_PROFILES_STORED)
+    if (s_registry_count >= CONFIG_NEXTION_MAX_PROGRAMS)
     {
         LOGGER_LOG_WARN(TAG, "Program registry full, cannot track '%s'", display_name);
         return;
@@ -37,6 +103,7 @@ static void registry_add(const char* display_name)
     strncpy(s_registry[s_registry_count], display_name, REGISTRY_NAME_LEN - 1);
     s_registry[s_registry_count][REGISTRY_NAME_LEN - 1] = '\0';
     s_registry_count++;
+    registry_persist();
     LOGGER_LOG_INFO(TAG, "Registry add '%s' (count=%d)", display_name, s_registry_count);
 }
 
@@ -51,6 +118,7 @@ static void registry_remove(const char* display_name)
                 memcpy(s_registry[j], s_registry[j + 1], REGISTRY_NAME_LEN);
             }
             s_registry_count--;
+            registry_persist();
             return;
         }
     }
@@ -64,7 +132,7 @@ void nextion_storage_register_program(const char* display_name)
 int nextion_storage_delete_all_programs(void)
 {
     /* Copy names first — delete_program modifies the registry */
-    char names[CONFIG_COORDINATOR_MAX_PROFILES_STORED][REGISTRY_NAME_LEN];
+    char names[CONFIG_NEXTION_MAX_PROGRAMS][REGISTRY_NAME_LEN];
     int count = s_registry_count;
     memcpy(names, s_registry, sizeof(s_registry));
 
@@ -239,6 +307,7 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
     bool locked = false;
     bool success = true;
+    bool target_exists = false;
 
     static char payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE] = {0}; // Zero-fill to pad file
 
@@ -258,7 +327,8 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         return false;
     }
 
-    if (nextion_file_exists(path))
+    target_exists = nextion_file_exists(path);
+    if (target_exists)
     {
         bool same_file = (original_name && original_name[0] != '\0' &&
             strcmp(draft->name, original_name) == 0);
@@ -269,19 +339,26 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         }
     }
 
+    char temp_path[112];
+    if (snprintf(temp_path, sizeof(temp_path), "%s.tmp", path) >= (int)sizeof(temp_path))
+    {
+        set_error(error_msg, error_len, "Temporary program path too long");
+        return false;
+    }
+
     s_storage_active = true;
     vTaskDelay(pdMS_TO_TICKS(20));
     nextion_uart_lock();
     locked = true;
 
-    char cmd[192];
-    snprintf(cmd, sizeof(cmd), "delfile \"%s\"", path);
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "delfile \"%s\"", temp_path);
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(50));
 
     uart_flush_input(CONFIG_NEXTION_UART_PORT_NUM);
 
-    snprintf(cmd, sizeof(cmd), "twfile \"%s\",%u", path, (unsigned)payload_len);
+    snprintf(cmd, sizeof(cmd), "twfile \"%s\",%u", temp_path, (unsigned)payload_len);
     nextion_send_cmd(cmd);
 
     uint8_t resp[8];
@@ -315,6 +392,8 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
     uint16_t pkt_id = 0;
     size_t offset = 0;
+    unsigned packet_nak_retries = 0;
+    bool completion_received = false;
 
     while (offset < payload_len)
     {
@@ -346,7 +425,15 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
         if (resp[0] == 0x04)
         {
-            LOGGER_LOG_WARN(TAG, "NAK for packet %u, retrying", pkt_id);
+            packet_nak_retries++;
+            LOGGER_LOG_WARN(TAG, "NAK for packet %u, retry %u/%u", pkt_id,
+                            packet_nak_retries, NEXTION_MAX_PACKET_NAK_RETRIES);
+            if (packet_nak_retries > NEXTION_MAX_PACKET_NAK_RETRIES)
+            {
+                set_error(error_msg, error_len, "twfile packet rejected repeatedly");
+                success = false;
+                goto cleanup;
+            }
             continue;
         }
 
@@ -354,7 +441,8 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
         {
             LOGGER_LOG_INFO(TAG, "Packet %u sent, transfer complete", pkt_id);
             offset = payload_len;
-            goto cleanup; /* 0xFD already received — skip second wait */
+            completion_received = true;
+            break; /* 0xFD already received — skip second wait */
         }
 
         if (resp[0] != 0x05)
@@ -367,21 +455,54 @@ bool nextion_storage_save_program(const program_draft_t* draft, const char* orig
 
         offset += chunk;
         pkt_id++;
+        packet_nak_retries = 0;
 
         LOGGER_LOG_INFO(TAG, "Packet %u sent, %u/%u bytes", pkt_id - 1, (unsigned)offset, (unsigned)payload_len);
     }
 
-    resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
+    if (!completion_received)
+    {
+        resp_len = wait_for_response(resp, sizeof(resp), CONFIG_NEXTION_UART_RESPONSE_TIMEOUT_MS);
+    }
 
-    if (!(resp_len >= 1 && resp[0] == 0xFD))
+    if (!completion_received && !(resp_len >= 1 && resp[0] == 0xFD))
     {
         LOGGER_LOG_WARN(TAG, "twfile completion response: %d bytes, first=0x%02X", resp_len,
                         resp_len > 0 ? resp[0] : 0);
         set_error(error_msg, error_len, "twfile completion failed");
         success = false;
+        goto cleanup;
+    }
+
+    /* The complete payload is now safely stored in the temporary file. Only
+     * replace the user-visible file after the transfer has succeeded. */
+    if (target_exists)
+    {
+        snprintf(cmd, sizeof(cmd), "delfile \"%s\"", path);
+        nextion_send_cmd(cmd);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    snprintf(cmd, sizeof(cmd), "refile \"%s\",\"%s\"", temp_path, path);
+    nextion_send_cmd(cmd);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    static char verify_payload[CONFIG_NEXTION_PROGRAM_FILE_SIZE + 1];
+    size_t verify_len = 0;
+    if (!nextion_read_file(path, verify_payload, sizeof(verify_payload), &verify_len) ||
+        verify_len != payload_len || memcmp(verify_payload, payload, payload_len) != 0)
+    {
+        set_error(error_msg, error_len, "Saved program verification failed");
+        success = false;
     }
 
 cleanup:
+    if (!success && locked)
+    {
+        snprintf(cmd, sizeof(cmd), "delfile \"%s\"", temp_path);
+        nextion_send_cmd(cmd);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
     if (locked)
     {
         nextion_uart_unlock();
@@ -430,17 +551,30 @@ bool nextion_storage_delete_program(const char* name, char* error_msg, size_t er
     nextion_send_cmd(cmd);
     vTaskDelay(pdMS_TO_TICKS(200));
 
+    /* delfile has no useful success payload in the normal command path.
+     * Verify the postcondition before changing the persistent registry. */
+    if (locked)
+    {
+        nextion_uart_unlock();
+        locked = false;
+    }
+    const bool deleted = !nextion_file_exists(path);
+    if (!deleted)
+    {
+        set_error(error_msg, error_len, "Nextion did not delete program");
+        LOGGER_LOG_WARN(TAG, "Delete verification failed for %s", path);
+    }
+
     nextion_send_cmd("progBwsr.dir=\"sd0/\"");
     nextion_send_cmd("ref progBwsr");
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    if (locked)
-    {
-        nextion_uart_unlock();
-    }
     s_storage_active = false;
-    registry_remove(name);
-    return true;
+    if (deleted)
+    {
+        registry_remove(name);
+    }
+    return deleted;
 }
 
 bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, size_t error_len)
@@ -469,14 +603,15 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
 
     LOGGER_LOG_INFO(TAG, "Program file read: %u bytes from %s", (unsigned)file_len, path);
 
-    program_draft_clear();
+    program_draft_t parsed = {0};
 
     char* line = strtok(file_data, "\n");
     while (line)
     {
         if (strncmp(line, "name=", 5) == 0)
         {
-            program_draft_set_name(line + 5);
+            strncpy(parsed.name, line + 5, sizeof(parsed.name) - 1);
+            parsed.name[sizeof(parsed.name) - 1] = '\0';
         }
         else if (strncmp(line, "stage=", 6) == 0)
         {
@@ -489,15 +624,19 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
             if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta_x10=%d", &stage, &t_min, &target, &t_delta,
                        &delta_x10) == 5)
             {
-                program_draft_set_stage((uint8_t)stage,
-                                        t_min,
-                                        target,
-                                        t_delta,
-                                        delta_x10,
-                                        true,
-                                        true,
-                                        true,
-                                        true);
+                if (stage >= 1 && stage <= PROGRAMS_TOTAL_STAGE_COUNT)
+                {
+                    program_stage_t *stage_data = &parsed.stages[stage - 1];
+                    stage_data->t_min = t_min;
+                    stage_data->target_t_c = target;
+                    stage_data->t_delta_min = t_delta;
+                    stage_data->delta_t_per_min_x10 = delta_x10;
+                    stage_data->t_set = true;
+                    stage_data->target_set = true;
+                    stage_data->t_delta_set = true;
+                    stage_data->delta_t_set = true;
+                    stage_data->is_set = true;
+                }
             }
             else
             {
@@ -505,27 +644,32 @@ bool nextion_storage_parse_file_to_draft(const char* filename, char* error_msg, 
                 if (sscanf(line, "stage=%d,t=%d,target=%d,tdelta=%d,delta=%d", &stage, &t_min, &target, &t_delta,
                            &delta) == 5)
                 {
-                    // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
-                    program_draft_set_stage((uint8_t)stage,
-                                            t_min,
-                                            target,
-                                            t_delta,
-                                            delta * 10,
-                                            true,
-                                            true,
-                                            true,
-                                            true);
+                    if (stage >= 1 && stage <= PROGRAMS_TOTAL_STAGE_COUNT)
+                    {
+                        // Old format: convert to x10 (e.g., delta=3 -> delta_x10=30)
+                        program_stage_t *stage_data = &parsed.stages[stage - 1];
+                        stage_data->t_min = t_min;
+                        stage_data->target_t_c = target;
+                        stage_data->t_delta_min = t_delta;
+                        stage_data->delta_t_per_min_x10 = delta * 10;
+                        stage_data->t_set = true;
+                        stage_data->target_set = true;
+                        stage_data->t_delta_set = true;
+                        stage_data->delta_t_set = true;
+                        stage_data->is_set = true;
+                    }
                 }
             }
         }
         line = strtok(NULL, "\n");
     }
 
+    program_draft_replace(&parsed);
+
     /* Register parsed program so factory reset can find it */
-    const char* parsed_name = program_draft_get_name();
-    if (parsed_name && parsed_name[0] != '\0')
+    if (parsed.name[0] != '\0')
     {
-        registry_add(parsed_name);
+        registry_add(parsed.name);
     }
 
     return true;

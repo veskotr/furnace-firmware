@@ -7,7 +7,6 @@
 #include "event_manager.h"
 #include "event_registry.h"
 #include "nextion_hmi.h"
-#include "run_indicator.h"
 #include "fan_controller.h"
 #include "utils.h"
 #include "sdkconfig.h"
@@ -72,11 +71,11 @@ void app_main(void)
     CHECK_ERR_LOG(modbus_master_init(&modbus_config),
                   "Failed to initialize Modbus master");
 
-    run_indicator_init();
-
     fan_controller_init();
 
+#if CONFIG_NEXTION_HMI_ENABLED
     nextion_hmi_init();
+#endif
 
 
     CHECK_ERR_LOG(device_manager_init(),

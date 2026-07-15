@@ -1,5 +1,17 @@
 menu "Temperature Processor"
 
+    # These settings belong to the active Modbus/device/processor path. They
+    # retain their historical names for sdkconfig compatibility; the legacy
+    # SPI/MAX31865 component is excluded from production and no longer owns
+    # active-path configuration.
+    config TEMP_SENSORS_MAX_SENSORS
+        int "Maximum number of active temperature sensors"
+        default 9
+
+    config TEMP_DELTA_THRESHOLD
+        int "Temperature delta warning threshold (°C)"
+        default 2
+
     config TEMP_PROCESSOR_TASK_STACK_SIZE
         int "Temperature processor task stack size"
         default 4096

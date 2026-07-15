@@ -14,7 +14,7 @@ device_manager_context_t* g_device_manager_context;
 
 esp_err_t device_manager_init(void)
 {
-    if (g_device_manager_context != NULL && g_device_manager_context->running)
+    if (g_device_manager_context != NULL && atomic_load(&g_device_manager_context->running))
     {
         return ESP_OK;
     }
@@ -25,6 +25,16 @@ esp_err_t device_manager_init(void)
         g_device_manager_context = calloc(1, sizeof(device_manager_context_t));
         if (g_device_manager_context == NULL)
         {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (g_device_manager_context->exit_semaphore == NULL)
+    {
+        g_device_manager_context->exit_semaphore = xSemaphoreCreateBinary();
+        if (g_device_manager_context->exit_semaphore == NULL)
+        {
+            LOGGER_LOG_ERROR(TAG, "Failed to create device manager exit semaphore");
             return ESP_ERR_NO_MEM;
         }
     }
@@ -71,6 +81,7 @@ esp_err_t device_manager_create_device(const void* device_ctx, const device_ops_
             device->id = i;
             device->state = DEVICE_STATE_IDLE;
             device->ctx = (void*)device_ctx;
+            g_device_manager_context->count++;
 
             *out_device = device;
             CHECK_ERR_LOG_CALL_RET_FMT(device->ops->init(device->ctx),
@@ -130,6 +141,10 @@ esp_err_t device_manager_destroy(device_t* device)
 
     device->state = DEVICE_STATE_UNINITIALIZED;
     device->ops = NULL;
+    if (g_device_manager_context->count > 0)
+    {
+        g_device_manager_context->count--;
+    }
 
     return ESP_OK;
 }
@@ -137,7 +152,7 @@ esp_err_t device_manager_destroy(device_t* device)
 
 esp_err_t device_manager_shutdown(void)
 {
-    if (g_device_manager_context == NULL || !g_device_manager_context->running)
+    if (g_device_manager_context == NULL || !atomic_load(&g_device_manager_context->running))
     {
         return ESP_OK;
     }

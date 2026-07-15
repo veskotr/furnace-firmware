@@ -132,6 +132,7 @@ typedef struct
 ESP_EVENT_DECLARE_BASE(TEMP_PROCESSOR_EVENT);
 
 #define PROCESS_TEMPERATURE_EVENT_DATA 0
+#define PROCESS_TEMPERATURE_VALIDITY_EVENT_DATA 1
 
 // ============================================================================
 // FURNACE ERROR EVENTS
@@ -159,4 +160,3 @@ ESP_EVENT_DECLARE_BASE(DEVICE_MANAGER_EVENT);
  * @return ESP_OK on success
  */
 esp_err_t event_registry_init(void);
-

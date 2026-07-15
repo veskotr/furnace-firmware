@@ -1,0 +1,69 @@
+# Current firmware fix status
+
+Date: 2026-07-15
+Scope: source changes currently present on the working branch; no powered hardware validation claimed.
+
+| Finding | Current source status | Evidence / validation | Still open |
+| --- | --- | --- | --- |
+| F-016 | Production component disabled | The production build no longer links or initializes the run-indicator component, so it cannot claim the contactor GPIO; the source collision guard remains for explicit test builds | Future schematic-approved indicator configuration if the test component returns |
+| F-015 | Resolved by disabling test component | Natural-completion indicator behavior is no longer reachable because the run-indicator component is excluded from the production build | Re-enable decision and HMI indication design are deferred |
+| F-003 | Narrow source fix implemented | Temporary heater-side control inhibit is asserted for pause/stop/completion/emergency paths and rejects stale power/start commands; released only on profile start/resume | Regression harness, queue-order characterization, and physical output-off validation; later generation protocol remains deferred |
+| F-018 | Reset inhibit source fix implemented | Restart and confirmed factory-reset fail closed unless direct heater control inhibit succeeds before delays/storage/reset | GPIO polarity, electrical isolation, reset timing, and powered-controller validation |
+| F-019 | Start-order source fix implemented | Coordinator task is created before heater inhibit release and HEATER_CLEAR/HEATER_START submission | Regression/fault-injection coverage; timer startup unwind is tracked under F-011 |
+| F-048 | Profile easing math fix implemented | Final ramp band now starts at the configured rate, decelerates monotonically, and extends planned ramp time for the slower tail | Profile/PID regression characterization and real-world overshoot validation |
+| F-022 | Complete-read and atomic-parse source fix implemented | Nextion file reads require the reported byte count and parsed programs replace the active draft only after the complete transfer | UART fault-injection/read regression coverage; panel storage validation |
+| F-023 | Bounded-NAK source fix implemented | Repeated packet NAKs abort the transfer after three retries and release the UART/storage path | UART fault-injection and independent HMI stop-path validation |
+| F-024 | Temporary-file replacement source fix implemented | Program saves transfer to a temporary file, replace the destination only after completion, and verify final contents | Panel rename/power-loss validation; atomic replacement is limited by panel storage semantics |
+| F-025 | Full-register MS9024 verification source fix implemented | Write readback and auto-correct now compare the complete 16-bit register value | Modbus fault-injection and powered sensor validation |
+| F-026 | Persistent program-registry source fix implemented | Program names are persisted in NVS, restored at HMI startup, and tracked up to the configured 200-program storage limit for factory-reset deletion | Panel-storage enumeration/deletion validation and power-loss testing |
+| F-027 | Delete postcondition source fix implemented | Program deletion verifies the file is absent before reporting success or removing its registry entry | Panel response and storage validation |
+| F-029 | Sensor-pool rollback source fix implemented | A failed device-manager creation clears the reserved static sensor context and handle before returning | Sensor creation fault-injection and lifecycle validation |
+| F-030 | Modbus handle-lifecycle source fix implemented | Shutdown clears the master handle; initialization rejects duplicate active instances and requests reject an uninitialized transport | Modbus shutdown/reinit and request-after-shutdown validation |
+| F-031 | Coordinator query payload source fix implemented | Status queries publish an initialized `coordinator_status_data_t`; current-profile queries publish a defined index or `INVALID_PROFILE_INDEX` | Query-event regression coverage and HMI consumer validation |
+| F-032 | Exact destructive-command routing implemented | Restart and factory-reset handlers now require an exact cleaned command instead of a substring match | Malformed-frame injection and panel framing validation |
+| F-033 | HMI parser range/overflow fix implemented | Integer parsing checks conversion range; decimal x10 parsing rejects overflowing accumulation before narrowing to `int` | Parser regression coverage; downstream field-range validation remains separate |
+| F-034 | Nextion HMI enable-flag gating implemented | Disabled builds omit HMI implementation sources and `app_main` does not start the HMI; the public init is a logged no-op if called | Alternate-Kconfig disabled-build verification |
+| F-035 | Deferred to future fault-manager architecture | No partial furnace-error subscriber is being added during hardening; future fault manager must own severity and physical mitigation policy | Fault-manager design/ADR and later implementation |
+| F-036 | Deferred to future watchdog/fault-manager architecture | Health monitoring remains disabled; no partial activation is being added during hardening | Startup ordering, ownership, watchdog failure policy, and physical mitigation design |
+| F-037 | Legacy SPI temperature component excluded from production build | `temperature_monitor_component` remains in the repository for historical reference, is excluded from ESP-IDF discovery, and its active-path config symbols were retained under `temperature_processor_component/Kconfig` | Future architecture/PCB decision if the legacy path is ever revived |
+| F-038 | Device-manager count bookkeeping implemented | Successful slot reservation increments `count`; destroy, including failed initialization cleanup, decrements it without allowing underflow | Device lifecycle/fault-injection coverage |
+| F-049 | Configuration baseline recorded, validation pending | Complete tracked `sdkconfig.defaults` now preserves the reviewed resolved ESP-IDF/project configuration | Reconcile Kconfig/tuning prose and verify effective symbols in a clean configuration/build |
+| F-050 | Source fix implemented, regression validation pending | Operational-time override is range-bounded, checked before uint32 conversion, and reports NVS persistence failures without replacing the loaded value | Persistence boundary/error-injection regression; override remains enabled-on-every-boot by documented service-tool design |
+| F-051 | Deferred to a later interface version | Coordinator error payload has no version/size compatibility contract; current in-tree producers/consumers remain compatible | Version/size contract and producer/consumer regression coverage in the next interface revision |
+| F-005 | Source fix already present; documentation reconciled | Temperature processor compacts successful fresh samples into the front of the aggregate buffer | Sparse-success regression coverage and sensor validation |
+| F-010 | Initialization-failure source fix implemented | Temperature processor aborts startup and cleans up partial sensor creation instead of launching an incomplete worker | Initialization fault-injection and sensor lifecycle validation |
+| F-011 | Timer-start unwind source fix implemented | Coordinator creates and starts the PID timer before heater authorization; timer failure stops the profile and leaves the heater inhibited | Timer fault-injection and startup/stop regression coverage |
+| F-013 | Manual-target mailbox synchronization source fix implemented | Target and rate updates are copied and consumed under one coordinator mutex | Concurrent-update regression coverage; runtime HMI/profile validation |
+| F-014 | HMI bridge delivery hardening source fix implemented | Lifecycle/error commands use front-of-queue delivery with a bounded wait and report loss; telemetry remains best-effort | Queue-saturation and transfer-time HMI validation |
+| F-028 | Dormant by production build | Run-indicator task and event callback are not linked into the production firmware | Synchronization fix required before the test component is re-enabled |
+| F-021 | Source synchronization fix present | Temperature event writer and coordinator control reads use the mutex-protected snapshot/getter | Executable regression characterization; freshness and lifecycle risks remain separate |
+| F-006 | Worker-ack source fix implemented | Temperature processor worker acknowledges exit before owner frees context; stop flag is atomic | Stop/restart regression coverage; broader producer/lifecycle validation |
+| F-007 | Worker-ack source fix implemented | Dispatcher worker acknowledges exit before queue/handler/context cleanup; shutdown aborts cleanup if acknowledgement fails | Stop/restart regression coverage; blocked external producers remain open |
+| F-008 | Coordinator worker-ack source fix implemented | Coordinator control worker acknowledges exit before owner destroys mutex/context; inactive/completed contexts are also cleaned up | Stop/restart regression coverage; event callback quiescence and broader producer lifecycle |
+| F-009 | Heater worker-ack source fix implemented | Heater PWM worker turns the output off and acknowledges exit before the owner deletes its mutex/semaphore/context | Stop/restart regression coverage; physical output-off validation |
+| F-012 | Device-manager worker-ack source fix implemented | Device-manager stop waits for the worker exit acknowledgement before a later init can reuse the context | Stop/restart regression coverage; Modbus producer/device lifecycle validation |
+| F-001 | Source fix implemented, including F-054 expiry | Fresh-read ticks, quorum, direct recoverable inhibit, pause/recovery, and a one-shot aggregate-expiry timer are present; see [CHANGE-VALIDATION-F054.md](CHANGE-VALIDATION-F054.md) | Deterministic valid-then-silent regression, powered-controller output-off validation, and future per-board quorum/mapping |
+| F-002 | Minimal source fix implemented | Dispatcher-task re-entrant submissions execute handlers inline; build and repository verification passed in [CHANGE-VALIDATION-F002.md](CHANGE-VALIDATION-F002.md) | Regression harness, nested stack characterization, teardown F-007, physical off-path validation |
+| F-017 | Local source fix implemented | SSR failure latches heater-local inhibit, retries SSR-off, and directly requests contactor-off; see [CHANGE-VALIDATION-F17.md](CHANGE-VALIDATION-F17.md) | GPIO polarity/isolation and powered-controller validation; global fault model intentionally deferred |
+| F-020 | Stop-boundary source fix implemented | PID state is reset on profile stop as well as profile start, stage handover, and resume | Characterization and regression coverage |
+| F-053 | Source fix implemented | Non-finite PID inputs/state/output and heater demand are rejected or forced to zero; see [CHANGE-VALIDATION-F53.md](CHANGE-VALIDATION-F53.md) | Executable regression coverage |
+| F-054 | Source fix implemented | Accepted aggregate ticks arm a one-shot coordinator expiry timer; timer expiry directly asserts sensor-data inhibit before waking coordinator pause handling | Deterministic valid-then-silent regression and powered output-off validation |
+| F-055 | Source fix implemented, regression validation pending | Coordinator stop submits no dispatcher-backed heater commands; direct control inhibit is the output-off path for both external STOP and worker self-exit | Queue-full stop/restart regression; broader producer shutdown contract remains open |
+| F-056 | Source fix implemented, regression validation pending | Normal temperature-processor shutdown now destroys its registered sensor devices after worker acknowledgement and before context free | Stop/reinit count/pool regression; device-manager mutation synchronization remains to be characterized |
+
+## Important clarification: F-001 Phase B
+
+F-001 Phase B and its F-054 closeout are present in source under the current architecture. The approved contract is in [ADR-0002](../decisions/0002-recoverable-sensor-data-inhibit.md). The implementation uses a separate validity event so existing HMI/fan float-event consumers are unchanged; a separate coordinator timer now expires that aggregate when no later event arrives.
+
+## Hardening pass closure and next-session handoff
+
+As of 2026-07-15 on `hardening/field-fixes`, source/configuration fixes are recorded for F-001/F-002/F-003/F-005/F-006/F-007/F-008/F-009/F-010/F-011/F-012/F-013/F-014/F-015/F-016/F-017/F-018/F-019/F-020/F-021/F-022/F-023/F-024/F-025/F-026/F-027/F-029/F-030/F-031/F-032/F-033/F-034/F-037/F-038/F-048/F-049/F-050/F-053/F-054/F-055/F-056. The hardening session is not release-ready or fully closed: F-001/F-054 needs executable and powered validation, F-055/F-056/F-050 need regression validation, F-056 retains a device-manager synchronization risk, and F-035/F-036/F-051 are explicitly deferred architectural/interface work.
+
+Start the next session with deterministic F-001/F-054/F-055/F-056/F-050 coverage and the planned powered-controller validation. F-049 has a tracked baseline but still needs prose reconciliation and a defaults-only build; F-051 is deferred to a later interface version. Do not add partial fault routing or watchdog activation for F-035/F-036. No powered hardware validation has been performed.
+
+## Common validation limits
+
+- The production firmware build has passed with ESP-IDF 5.5.4.
+- Repository-local Codex verification checks repository layout, metadata, links, paths, and safety documentation without pinning a Codex CLI version.
+- There is no automated firmware test harness for these paths yet.
+- No powered-controller or powered-furnace validation has been performed.
