@@ -1,6 +1,6 @@
 # Current firmware fix status
 
-Date: 2026-07-14
+Date: 2026-07-15
 Scope: source changes currently present on the working branch; no powered hardware validation claimed.
 
 | Finding | Current source status | Evidence / validation | Still open |
@@ -27,6 +27,9 @@ Scope: source changes currently present on the working branch; no powered hardwa
 | F-036 | Deferred to future watchdog/fault-manager architecture | Health monitoring remains disabled; no partial activation is being added during hardening | Startup ordering, ownership, watchdog failure policy, and physical mitigation design |
 | F-037 | Legacy SPI temperature component excluded from production build | `temperature_monitor_component` remains in the repository for historical reference, is excluded from ESP-IDF discovery, and its active-path config symbols were retained under `temperature_processor_component/Kconfig` | Future architecture/PCB decision if the legacy path is ever revived |
 | F-038 | Device-manager count bookkeeping implemented | Successful slot reservation increments `count`; destroy, including failed initialization cleanup, decrements it without allowing underflow | Device lifecycle/fault-injection coverage |
+| F-049 | Open configuration consistency finding | Kconfig defaults, resolved local `sdkconfig`, and tuning documentation still disagree | Release configuration decision and effective-configuration verification |
+| F-050 | Open confirmed persistence finding | Operational-time override has no safe range/one-shot/error-propagation contract and can wrap when enabled | Narrow code fix and persistence regression coverage |
+| F-051 | Open interface design finding | Coordinator error payload has no version/size compatibility contract | Payload compatibility decision and producer/consumer regression coverage |
 | F-005 | Source fix already present; documentation reconciled | Temperature processor compacts successful fresh samples into the front of the aggregate buffer | Sparse-success regression coverage and sensor validation |
 | F-010 | Initialization-failure source fix implemented | Temperature processor aborts startup and cleans up partial sensor creation instead of launching an incomplete worker | Initialization fault-injection and sensor lifecycle validation |
 | F-011 | Timer-start unwind source fix implemented | Coordinator creates and starts the PID timer before heater authorization; timer failure stops the profile and leaves the heater inhibited | Timer fault-injection and startup/stop regression coverage |
@@ -49,15 +52,15 @@ Scope: source changes currently present on the working branch; no powered hardwa
 
 F-001 Phase B is now present in source under the current architecture. The approved contract is in [ADR-0002](../decisions/0002-recoverable-sensor-data-inhibit.md). The implementation uses a separate validity event so existing HMI/fan float-event consumers are unchanged.
 
-## Next-session handoff
+## Hardening pass closure and next-session handoff
 
-As of 2026-07-15 on `hardening/field-fixes`, the hardening pass has completed source fixes for F-001/F-002/F-003/F-005/F-006/F-007/F-008/F-009/F-010/F-011/F-012/F-013/F-014/F-015/F-016/F-017/F-018/F-019/F-020/F-021/F-022/F-023/F-024/F-025/F-026/F-027/F-029/F-030/F-031/F-032/F-033/F-034 and recorded each fix in this status table and the findings index.
+As of 2026-07-15 on `hardening/field-fixes`, the hardening pass is considered complete for this session. Source fixes are recorded for F-001/F-002/F-003/F-005/F-006/F-007/F-008/F-009/F-010/F-011/F-012/F-013/F-014/F-015/F-016/F-017/F-018/F-019/F-020/F-021/F-022/F-023/F-024/F-025/F-026/F-027/F-029/F-030/F-031/F-032/F-033/F-034/F-037/F-038. F-035 and F-036 are explicitly deferred architectural work.
 
-Resume with **F-038**, the device-manager count finding. F-035 and F-036 are intentionally deferred until the planned fault-manager/watchdog architecture, and F-037 is resolved by excluding the legacy SPI path from production while retaining its source. Continue the agreed workflow: one narrow bugfix per commit, update the findings/status docs with the source evidence and residual risk, run the ESP-IDF production build, and do not flash or energize hardware without explicit authorization. F-034 still needs an alternate-Kconfig disabled-build check; no powered hardware validation has been performed.
+Start the next session with Terra reviewing the new commit series and this status register. The next optional code candidate is F-050; F-049 and F-051 need configuration/interface decisions before implementation. Do not add partial fault routing or watchdog activation for F-035/F-036. No powered hardware validation has been performed.
 
 ## Common validation limits
 
 - The production firmware build has passed with ESP-IDF 5.5.4.
-- Repository-local Codex verification has passed.
+- Repository-local Codex verification is blocked by the environment reporting `codex-cli 0.144.4` while the repository expects `0.144.3`.
 - There is no automated firmware test harness for these paths yet.
 - No powered-controller or powered-furnace validation has been performed.
