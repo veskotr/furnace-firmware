@@ -298,8 +298,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-037 — Duplicate active/legacy temperature architectures
 
-- **Category/confidence:** maintainability issue / medium.
-- **Evidence:** current Modbus/device/processor path and compiled but inactive SPI/MAX31865 monitor coexist, with separate lifecycle/synchronization/error models.
+- **Category/confidence:** source fix implemented; legacy path retained but excluded from production / medium.
+- **Evidence:** current Modbus/device/processor path is production; the SPI/MAX31865 monitor was only pulled into the build through `main/CMakeLists.txt` and was never started by `app_main`.
+- **Source correction:** the project excludes `temperature_monitor_component` from ESP-IDF discovery and `main/CMakeLists.txt` no longer depends on it; its sources remain in the repository and are marked legacy for historical reference. The two configuration symbols still consumed by the active processor were moved to `temperature_processor_component/Kconfig` without changing their names or defaults.
+- **Residual risk:** the legacy path is not covered by the production build; reviving it requires an explicit architecture/PCB decision and separate validation.
 
 ### F-038 — Device-manager count is not maintained
 
