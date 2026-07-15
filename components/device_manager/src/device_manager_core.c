@@ -81,6 +81,7 @@ esp_err_t device_manager_create_device(const void* device_ctx, const device_ops_
             device->id = i;
             device->state = DEVICE_STATE_IDLE;
             device->ctx = (void*)device_ctx;
+            g_device_manager_context->count++;
 
             *out_device = device;
             CHECK_ERR_LOG_CALL_RET_FMT(device->ops->init(device->ctx),
@@ -140,6 +141,10 @@ esp_err_t device_manager_destroy(device_t* device)
 
     device->state = DEVICE_STATE_UNINITIALIZED;
     device->ops = NULL;
+    if (g_device_manager_context->count > 0)
+    {
+        g_device_manager_context->count--;
+    }
 
     return ESP_OK;
 }

@@ -305,8 +305,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-038 — Device-manager count is not maintained
 
-- **Category/confidence:** confirmed low defect / low.
-- **Evidence:** `device_manager_context_t.count` is checked but no increment/decrement was found; slot scan still enforces the physical array limit, making this currently misleading rather than overflowing.
+- **Category/confidence:** source fix implemented; lifecycle regression validation pending / low.
+- **Evidence:** `device_manager_context_t.count` was checked but no increment/decrement was found; slot scan still enforced the physical array limit, making this misleading rather than overflowing.
+- **Source correction:** successful slot reservation increments `count`; `device_manager_destroy` decrements it, including the cleanup path after failed device initialization, with an underflow guard.
+- **Residual risk:** concurrent device registration/destruction remains outside this narrow bookkeeping fix and needs lifecycle coverage if those APIs become multi-task.
 
 ### F-048 — Cubic soft-landing accelerates before it decelerates
 
