@@ -73,7 +73,9 @@ void app_main(void)
 
     fan_controller_init();
 
+#if CONFIG_NEXTION_HMI_ENABLED
     nextion_hmi_init();
+#endif
 
 
     CHECK_ERR_LOG(device_manager_init(),

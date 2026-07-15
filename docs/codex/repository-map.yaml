@@ -23,7 +23,7 @@ startup:
   - modbus_master_init
   - run_indicator_init
   - fan_controller_init
-  - nextion_hmi_init
+  - {name: nextion_hmi_init, conditional: CONFIG_NEXTION_HMI_ENABLED}
   - device_manager_init
   - init_temp_processor
 tasks:
@@ -36,8 +36,8 @@ tasks:
     - {name: coordinator_control, owner: coordinator_component, source: components/coordinator_component/src/coordinator_component_heater_controller.c, conditional: profile_running}
     - {name: device_manager, owner: device_manager, source: components/device_manager/src/device_manager_task.c}
     - {name: temperature_processor, owner: temperature_processor_component, source: components/temperature_processor_component/src/temperature_processor_task.c}
-    - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c}
-    - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c}
+    - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
+    - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
     - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c, conditional: enabled_with_valid_noncolliding_gpio}
   inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics]
 callbacks:

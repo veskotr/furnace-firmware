@@ -254,9 +254,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-034 — Enable Kconfig booleans are not honored by build/startup
 
-- **Category/confidence:** highly likely defect / medium.
-- **Evidence:** `NEXTION_HMI_ENABLED` still has unconditional component/startup paths. The run-indicator path now honors its enable/valid-pin/collision state at `run_indicator_init`, although `main` retains the harmless unconditional call.
-- **Next evidence:** clean builds with each feature disabled.
+- **Category/confidence:** source fix implemented; alternate-Kconfig validation pending / medium.
+- **Evidence:** `NEXTION_HMI_ENABLED` had an unconditional `nextion_hmi_init()` call in `main.c` and an unconditional HMI source list in `components/nextion_hmi/CMakeLists.txt`; the run-indicator path is already guarded at `run_indicator_init` and is excluded from production.
+- **Source correction:** `main.c` now starts Nextion only when enabled; disabled HMI builds compile only the public no-op init source, while enabled builds retain the complete HMI source set.
+- **Residual risk:** a disabled-Kconfig build still needs to be generated and compiled; no hardware validation is relevant to the compile/startup gate.
 
 ## Operational and maintainability findings
 
