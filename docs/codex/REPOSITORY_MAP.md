@@ -100,7 +100,7 @@ No application counting/binary semaphore or explicit spinlock was found.
 | `run_indicator` | Test-only program state indication; excluded from production | Task and event-written mode when explicitly enabled | No production link or GPIO; configured indicator GPIO only after collision guard | Re-enablement requires mailbox synchronization, schematic-approved pin, and hardware validation |
 | `logger_component` | Async ESP logging, LittleFS/RTC crash records, CLI | Queue/task, ring/files/mutex | Core 1, LittleFS `/crash_dumps`, RTC memory | Drops under pressure; furnace-error events not integrated |
 | `error_manager` | Error descriptor lookup | Static descriptor table | Common errors | No descriptor registrations found; not an active mitigation path; unified furnace-error mitigation is deferred to the future fault manager |
-| `health_monitor` | Heartbeat table and task watchdog | Event table, health task | ESP task WDT | Disabled; if enabled it does not directly inhibit heater |
+| `health_monitor` | Heartbeat table and task watchdog | Event table, health task | ESP task WDT | Disabled; watchdog/startup ordering and direct heater mitigation are deferred to the future fault-manager architecture |
 | `gpio_master_driver` | Serialized GPIO setup/set | Global mutex | ESP GPIO | Pin ownership is not validated across components |
 | `spi_master_component` | Serialized SPI wrapper | Global bus/mutex | ESP SPI | Primarily legacy/inactive |
 | `heating_program_validation` | Program bounds/shape validation | Pure validation | Common profile types | Confirm every entry path invokes it |

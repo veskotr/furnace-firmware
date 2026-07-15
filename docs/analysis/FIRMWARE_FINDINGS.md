@@ -291,8 +291,10 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 
 ### F-036 — Health/watchdog supervision is disabled and incomplete
 
-- **Category/confidence:** design weakness / high.
+- **Category/confidence:** deferred architecture work / high.
 - **Evidence:** `init_health_monitor()` is commented in `main.c`; if enabled after existing producers start, prior registrations may be lost. Health failure stops watchdog reset but does not directly inhibit outputs.
+- **Decision:** leave outside the current hardening pass. Revisit with the planned fault-manager/watchdog redesign after ownership, startup ordering, failure response, and physical-output mitigation decisions are made.
+- **Status:** intentionally deferred; no partial watchdog or health-monitor activation is being added now.
 
 ### F-037 — Duplicate active/legacy temperature architectures
 
