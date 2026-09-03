@@ -34,10 +34,6 @@ static uint32_t s_total_ms          = 0;   // program total duration
 static uint32_t s_pause_extra_ms    = 0;   // accumulated pause time added to remaining
 static uint32_t s_pause_start_tick  = 0;   // tick count when pause began
 
-/* ── Graph: plot one point per minute ───────────────────────────────── */
-
-static uint32_t s_last_graph_min    = UINT32_MAX;  // last elapsed minute plotted
-
 /* ── Live waveform state ───────────────────────────────────────────── */
 
 static bool     s_waveform_active       = false;
@@ -51,6 +47,14 @@ static uint32_t s_waveform_ms_per_pixel = 1;
  */
 #define WAVEFORM_RESERVE_PX  4
 #define WAVEFORM_USABLE_WIDTH  (CONFIG_NEXTION_MAIN_GRAPH_WIDTH - WAVEFORM_RESERVE_PX)
+
+/**
+ * Target sampling interval: place a waveform point every 5 seconds when
+ * the run is short enough that the graph still fits. Long runs stretch
+ * past this — `ms_per_pixel` is clamped to whatever is needed to fit
+ * the whole run inside WAVEFORM_USABLE_WIDTH.
+ */
+#define WAVEFORM_MIN_MS_PER_PIXEL  5000U
 
 /* ── User-initiated commands ───────────────────────────────────────── */
 
@@ -70,16 +74,13 @@ void handle_run_start(void)
         return;
     }
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
-        .program = snapshot,
-        .cooldown_rate_x10 = program_get_cooldown_rate_x10()
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_START_PROFILE,
+            .program = snapshot,
+            .cooldown_rate_x10 = program_get_cooldown_rate_x10()
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
@@ -96,20 +97,19 @@ void handle_run_pause(void)
         return;
     }
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = s_profile_paused
+                  ? COMMAND_TYPE_COORDINATOR_RESUME_PROFILE
+                  : COMMAND_TYPE_COORDINATOR_PAUSE_PROFILE
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
 
     if (err != ESP_OK) {
-        nextion_show_error("Pause failed");
+        nextion_show_error(s_profile_paused ? "Resume failed" : "Pause failed");
     }
 }
 
@@ -138,14 +138,11 @@ void handle_confirm_end(void)
     nextion_send_cmd("vis confirmEnd,0");
     nextion_send_cmd("vis confirmCancel,0");
 
-    coordinator_command_data_t data = {
-        .type = COMMAND_TYPE_COORDINATOR_STOP_PROFILE
-    };
-
     command_t command = {
         .target = COMMAND_TARGET_COORDINATOR,
-        .data = &data,
-        .data_size = sizeof(coordinator_command_data_t),
+        .data.coordinator = {
+            .type = COMMAND_TYPE_COORDINATOR_STOP_PROFILE
+        }
     };
 
     esp_err_t err = commands_dispatcher_dispatch_command(&command);
@@ -187,6 +184,7 @@ void nextion_event_handle_profile_started(void)
     s_profile_active = true;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Running\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     nextion_clear_error();
 
     program_draft_t draft;
@@ -197,29 +195,28 @@ void nextion_event_handle_profile_started(void)
     snprintf(cmd, sizeof(cmd), "progNameDisp.txt=\"%s\"", draft.name);
     nextion_send_cmd(cmd);
 
-    uint32_t total_min = 0;
-    float last_stage_temp = 0.0f;
-    for (int i = 0; i < PROGRAMS_TOTAL_STAGE_COUNT; ++i) {
-        if (draft.stages[i].is_set) {
-            total_min += (uint32_t)draft.stages[i].t_min;
-            last_stage_temp = (float)draft.stages[i].target_t_c;
-        }
-    }
-    s_waveform_total_ms = total_min * 60U * 1000U;
-
-    /* Include implicit cooldown in the graph time span */
+    /* Compute total via the shared rate-based walk so the projected curve
+     * (rendered by program_build_graph below) and the live waveform's
+     * ms-per-pixel agree on the X axis. Same math as the coordinator's
+     * runtime stage duration, so the displayed remaining time also aligns. */
     int cd_rate = program_get_cooldown_rate_x10();
+    float last_stage_temp = 0.0f;
+    uint32_t stages_only_ms = program_calculate_stages_duration_ms(
+        &draft, program_get_current_temp_c(), cd_rate, &last_stage_temp);
+    s_waveform_total_ms = stages_only_ms;
+
+    /* Include implicit cooldown in the graph time span only — the displayed
+     * remaining time tracks the program stages, not the cooldown phase. */
     if (last_stage_temp > 0.0f && cd_rate > 0) {
         float cooldown_min = (last_stage_temp * 10.0f) / (float)cd_rate;
         if (cooldown_min < 1.0f) cooldown_min = 1.0f;
         s_waveform_total_ms += (uint32_t)(cooldown_min * 60.0f * 1000.0f);
     }
 
-    /* Init time tracking */
-    s_total_ms         = s_waveform_total_ms;
+    /* Init time tracking — total for the remaining-time readout is stages only. */
+    s_total_ms         = stages_only_ms;
     s_last_elapsed_ms  = 0;
     s_pause_extra_ms   = 0;
-    s_last_graph_min   = UINT32_MAX;  /* force first graph point */
 
     /* Init waveform */
     s_waveform_x = 0;
@@ -230,9 +227,13 @@ void nextion_event_handle_profile_started(void)
         /* Manual mode: 1 pixel = 1 minute — graph fills over GRAPH_WIDTH minutes */
         s_waveform_ms_per_pixel = 60000;
     } else {
-        s_waveform_ms_per_pixel = (s_waveform_total_ms > 0)
-            ? (s_waveform_total_ms / WAVEFORM_USABLE_WIDTH)
-            : 1;
+        /* Default: 1 pixel per 5s. If the run is too long to fit at that
+         * density, stretch ms/pixel just enough to span the usable width. */
+        uint32_t fit_mpp = (s_waveform_total_ms > 0)
+            ? ((s_waveform_total_ms + WAVEFORM_USABLE_WIDTH - 1) / WAVEFORM_USABLE_WIDTH)
+            : WAVEFORM_MIN_MS_PER_PIXEL;
+        s_waveform_ms_per_pixel = (fit_mpp < WAVEFORM_MIN_MS_PER_PIXEL)
+            ? WAVEFORM_MIN_MS_PER_PIXEL : fit_mpp;
     }
     s_waveform_active = true;
 
@@ -307,29 +308,82 @@ static void plot_graph_point(float current_temp, uint32_t elapsed_ms)
         target_x = (uint32_t)CONFIG_NEXTION_MAIN_GRAPH_WIDTH;
     }
 
-    int temp_c = (int)(current_temp + 0.5f);
-    int y = 0;
-    if (CONFIG_NEXTION_MAX_TEMPERATURE_C > 0) {
-        y = (temp_c * CONFIG_NEXTION_MAIN_GRAPH_HEIGHT)
-            / CONFIG_NEXTION_MAX_TEMPERATURE_C;
-    }
-    if (y < 0) y = 0;
-    if (y > CONFIG_NEXTION_MAIN_GRAPH_HEIGHT) y = CONFIG_NEXTION_MAIN_GRAPH_HEIGHT;
+    /* Use the same encoder as the projected curve so the two traces overlap
+     * exactly. The Nextion graph element scales the 0..255 byte to its own
+     * pixel height internally — encoding against GRAPH_HEIGHT (a pixel value)
+     * was the bug that made the live trace sit a few pixels below the
+     * projected one. */
+    const uint8_t y = program_graph_encode_temp(current_temp,
+                                                CONFIG_NEXTION_MAX_TEMPERATURE_C);
 
     char cmd[64];
     while (s_waveform_x < target_x) {
         snprintf(cmd, sizeof(cmd), "add %d,1,%d",
-                 CONFIG_NEXTION_GRAPH_DISP_ID, y);
+                 CONFIG_NEXTION_GRAPH_DISP_ID, (int)y);
         nextion_send_cmd(cmd);
         s_waveform_x++;
     }
 }
 
+/**
+ * Format machineState for the Nextion (max 26 chars including quotes).
+ *
+ * Layouts we produce, all ≤26 chars of payload (quotes are added by the
+ * `.txt=` assignment and don't count toward the field's text limit):
+ *   Active stage:  "S2/5 RAMP 150C 23>150"  (≤24 ch)
+ *                  "S3/5 HOLD 150C 10m"     (≤22 ch)
+ *                  "S4/5 COOL 80C"          (≤16 ch)
+ *   Cooldown:      "Cooldown"
+ *   Complete:      "Completed"
+ *   Paused:        "Paused S2/5"
+ */
+static void format_machine_state(char *out, size_t out_len,
+                                 int8_t stage_index, int8_t total_stages,
+                                 uint8_t phase, float target_temp,
+                                 uint32_t stage_remaining_ms)
+{
+    const int stage_n = stage_index + 1;       /* 1-based for display */
+    const int target  = (int)(target_temp + 0.5f);
+
+    switch ((coordinator_stage_phase_t)phase) {
+        case COORD_STAGE_PHASE_HEATING:
+            snprintf(out, out_len, "S%d/%d RAMP %dC",
+                     stage_n, total_stages, target);
+            break;
+        case COORD_STAGE_PHASE_HOLDING: {
+            /* Round up to the next whole minute so a 10-min hold shows
+             * "10m" for almost the entire stage instead of dropping to
+             * "9m" on the first tick. */
+            uint32_t mins_left = (stage_remaining_ms + 59999U) / 60000U;
+            snprintf(out, out_len, "S%d/%d HOLD %dC %lum",
+                     stage_n, total_stages, target,
+                     (unsigned long)mins_left);
+            break;
+        }
+        case COORD_STAGE_PHASE_COOLING:
+            snprintf(out, out_len, "S%d/%d COOL %dC",
+                     stage_n, total_stages, target);
+            break;
+        case COORD_STAGE_PHASE_COOLDOWN:
+            snprintf(out, out_len, "Cooldown");
+            break;
+        case COORD_STAGE_PHASE_COMPLETE:
+            snprintf(out, out_len, "Completed");
+            break;
+        default:
+            snprintf(out, out_len, "Running");
+            break;
+    }
+}
+
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                         float current_temp, float target_temp,
-                                        float power_output)
+                                        float power_output,
+                                        int8_t stage_index, int8_t total_stages,
+                                        uint8_t phase,
+                                        uint32_t stage_remaining_ms)
 {
-    char cmd[64];
+    char cmd[96];
 
     /* Cache for pause calculations */
     s_last_elapsed_ms = elapsed_ms;
@@ -348,12 +402,22 @@ void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
     snprintf(cmd, sizeof(cmd), "currentKw.txt=\"%d.%d\"", kw_int, kw_frac);
     nextion_send_cmd(cmd);
 
-    /* ── Live waveform: plot one point per elapsed minute ─────────── */
-    uint32_t elapsed_min = elapsed_ms / 60000;
-    if (elapsed_min != s_last_graph_min) {
-        s_last_graph_min = elapsed_min;
-        plot_graph_point(current_temp, elapsed_ms);
+    /* ── machineState: stage + phase + target ─────────────────────────
+     * Skip while paused — the pause/resume handlers own the field then. */
+    if (!s_profile_paused) {
+        char state_txt[27];   /* 26 chars + NUL — matches Nextion field limit */
+        format_machine_state(state_txt, sizeof(state_txt),
+                             stage_index, total_stages, phase, target_temp,
+                             stage_remaining_ms);
+        snprintf(cmd, sizeof(cmd), "machineState.txt=\"%s\"", state_txt);
+        nextion_send_cmd(cmd);
     }
+
+    /* ── Live waveform: advance one or more pixels if enough time has
+     * elapsed since the last plotted point. plot_graph_point is a no-op
+     * when target_x has not advanced past s_waveform_x, so calling it on
+     * every status update is safe and gives 5s resolution by default. */
+    plot_graph_point(current_temp, elapsed_ms);
 }
 
 void nextion_event_handle_profile_paused(void)
@@ -362,6 +426,7 @@ void nextion_event_handle_profile_paused(void)
     s_profile_paused = true;
     s_pause_start_tick = xTaskGetTickCount();
     nextion_send_cmd("machineState.txt=\"Paused\"");
+    nextion_send_cmd("pauseProgB.txt=\"Resume\"");
 }
 
 void nextion_event_handle_profile_resumed(void)
@@ -373,6 +438,7 @@ void nextion_event_handle_profile_resumed(void)
     s_pause_extra_ms += pause_duration_ms;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Running\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
 }
 
 void nextion_event_handle_profile_stopped(void)
@@ -381,7 +447,12 @@ void nextion_event_handle_profile_stopped(void)
     s_profile_active = false;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Stopped\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     s_waveform_active = false;
+
+    /* Commit the trailing partial minute of op-time before the user
+     * potentially powers the unit off. */
+    program_flush_operational_time();
 
     /* Clean up manual mode: hide controls and clear flag */
     if (program_get_manual_mode_active()) {
@@ -396,11 +467,15 @@ void nextion_event_handle_profile_completed(void)
     s_profile_active = false;
     s_profile_paused = false;
     nextion_send_cmd("machineState.txt=\"Completed\"");
+    nextion_send_cmd("pauseProgB.txt=\"Pause\"");
     s_waveform_active = false;
 
     /* Zero out time remaining and power displays */
     nextion_send_cmd("timeRamaining.txt=\"00:00:00\"");
     nextion_send_cmd("currentKw.txt=\"0.0\"");
+
+    /* Commit the trailing partial minute of op-time. */
+    program_flush_operational_time();
 
     /* Clean up manual mode: hide controls and clear flag */
     if (program_get_manual_mode_active()) {
@@ -427,17 +502,22 @@ void nextion_run_tick(void)
     }
     s_last_tick = now;
 
-    /* ── Operational time: always counting (wall-clock) ────────────── */
-    program_add_operational_time_sec(1);
-    if (nextion_get_current_page() == NEXTION_PAGE_ID_MAIN) {
-        char cmd[64];
-        uint32_t op_sec = program_get_operational_time_sec();
-        uint32_t oh = op_sec / 3600;
-        uint32_t om = (op_sec % 3600) / 60;
-        uint32_t os = op_sec % 60;
-        snprintf(cmd, sizeof(cmd), "opTime.txt=\"%02lu:%02lu:%02lu\"",
-                 (unsigned long)oh, (unsigned long)om, (unsigned long)os);
-        nextion_send_cmd(cmd);
+    /* ── Operational time: count only while a program is running.
+     * Pause time is included (per spec — the run hasn't been ended).
+     * The counter is the unit's service-hours record and is never
+     * incremented during idle wall-clock time. ──────────────────── */
+    if (s_profile_active) {
+        program_add_operational_time_sec(1);
+        if (nextion_get_current_page() == NEXTION_PAGE_ID_MAIN) {
+            char cmd[64];
+            uint32_t op_sec = program_get_operational_time_sec();
+            uint32_t oh = op_sec / 3600;
+            uint32_t om = (op_sec % 3600) / 60;
+            uint32_t os = op_sec % 60;
+            snprintf(cmd, sizeof(cmd), "opTime.txt=\"%02lu:%02lu:%02lu\"",
+                     (unsigned long)oh, (unsigned long)om, (unsigned long)os);
+            nextion_send_cmd(cmd);
+        }
     }
 
     /* ── Pause-time display updates ────────────────────────────────── */
@@ -466,20 +546,46 @@ static const char *coordinator_error_to_str(coordinator_error_code_t code)
         case COORDINATOR_ERROR_PROFILE_NOT_RESUMED: return "Cannot resume";
         case COORDINATOR_ERROR_PROFILE_NOT_STOPPED: return "Cannot stop";
         case COORDINATOR_ERROR_NOT_STARTED:         return "Not started";
-        case COORDINATOR_ERROR_STALL_DETECTED:       return "Heating stall: check heater";
+        case COORDINATOR_ERROR_STALL_DETECTED:      return "Heating stall";
+        case COORDINATOR_ERROR_HOLD_DEVIATION:      return "Hold off-target";
         default:                                    return "System error";
     }
 }
 
 void nextion_event_handle_profile_error(coordinator_error_code_t code,
-                                        esp_err_t esp_err)
+                                        esp_err_t esp_err,
+                                        float temperature_c,
+                                        float setpoint_c,
+                                        int8_t stage_index,
+                                        uint32_t fault_elapsed_ms)
 {
-    LOGGER_LOG_ERROR(TAG, "Profile error: code=%d esp_err=%s",
-                     (int)code, esp_err_to_name(esp_err));
+    LOGGER_LOG_ERROR(TAG,
+                     "Profile error: code=%d esp_err=%s temp=%.1f sp=%.1f stage=%d dur=%lums",
+                     (int)code, esp_err_to_name(esp_err),
+                     temperature_c, setpoint_c, (int)stage_index,
+                     (unsigned long)fault_elapsed_ms);
 
     char msg[96];
-    snprintf(msg, sizeof(msg), "%s (%s)",
-             coordinator_error_to_str(code), esp_err_to_name(esp_err));
+    /* Run-time faults carry diagnostic context (which stage, the chamber vs
+     * target temp, and how long it persisted) so the worker knows where and
+     * when it failed. The control-flow errors have no context — show the
+     * plain label plus the esp_err. */
+    if (code == COORDINATOR_ERROR_STALL_DETECTED ||
+        code == COORDINATOR_ERROR_HOLD_DEVIATION) {
+        unsigned int dur_min = (unsigned int)(fault_elapsed_ms / 60000U);
+        if (stage_index >= 0) {
+            snprintf(msg, sizeof(msg), "%s S%d: %.0f/%.0fC after %umin",
+                     coordinator_error_to_str(code), (int)stage_index + 1,
+                     temperature_c, setpoint_c, dur_min);
+        } else {
+            snprintf(msg, sizeof(msg), "%s: %.0f/%.0fC after %umin",
+                     coordinator_error_to_str(code),
+                     temperature_c, setpoint_c, dur_min);
+        }
+    } else {
+        snprintf(msg, sizeof(msg), "%s (%s)",
+                 coordinator_error_to_str(code), esp_err_to_name(esp_err));
+    }
     nextion_show_error(msg);
 }
 

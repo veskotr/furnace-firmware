@@ -40,22 +40,132 @@ menu "Coordinator"
 
     config COORDINATOR_OVERSHOOT_THRESHOLD_C
         int "Maximum allowed overshoot above setpoint (C)"
-        default 30
+        default 20
         range 5 100
         help
             If the measured temperature exceeds the current setpoint by
             more than this value, the program is emergency-stopped and
             the heater is cut. Protects against runaway temperatures.
 
+            This is a hard RUNAWAY guard, not a quality limit — it must sit
+            ABOVE the worst transient overshoot at the top of a ramp or it
+            will nuisance-trip on normal arrival. 20 C suits a <=200 C
+            composite-curing furnace; quality overshoot (keeping the arrival
+            peak within a few C) is a PID-tuning job (Kd), not this threshold.
+
+    config COORDINATOR_RAMP_EASE_BAND_C
+        int "Ramp soft-landing band before hold (C)"
+        default 6
+        range 0 50
+        help
+            Width of the soft-landing zone at the TOP of a heating ramp. Over
+            the last this-many degrees before the stage target, the commanded
+            setpoint rate is tapered smoothly to zero instead of holding the
+            full ramp rate right up to the hand-over to the HOLDING stage.
+
+            WHY: at a sharp ramp->hold corner the chamber is still rising at the
+            full ramp rate AND the integrator is wound up for "climbing" power,
+            so the chamber coasts past the target (the classic ramp->hold
+            overshoot) and then takes a minute or two to settle as the
+            integrator unwinds. Tapering the final approach lets the controller
+            reach hold power BEFORE the corner, so there is little surplus left
+            to coast on.
+
+            Tuning: 0 disables it (pure linear ramp = original behaviour).
+            Widen it if a stubborn overshoot remains; narrow it if the final
+            approach feels sluggish. Complements PID Kd (which brakes on rise
+            rate) — this reshapes the setpoint so there is less to brake. Keep
+            it at or below COORDINATOR_HOLD_BAND_C so the eased approach stays
+            well inside the hold alarm band.
+
+    config COORDINATOR_HANDOVER_TOLERANCE_X10
+        int "Ramp->hold handover tolerance, tenths C (5 = 0.5 C)"
+        default 5
+        range 0 50
+        help
+            How close to the stage target the chamber must reach before a
+            HEATING stage hands over to its HOLDING phase, in TENTHS of a degree
+            C (5 = 0.5 C). Stored x10 so menuconfig stays integer-only.
+
+            WHY SEPARATE FROM NEXTION_TEMP_TOLERANCE_C: that shared tolerance is
+            whole-degree and also governs cooling-stage advance, stage phase
+            detection and program validation, so it cannot be tightened just for
+            the hand-over. This knob controls ONLY the heating->hold advance.
+
+            EFFECT: the soft-landing ramp (COORDINATOR_RAMP_EASE_BAND_C) tapers
+            the setpoint to the target, but the hand-over fires when the chamber
+            reaches target - this_tolerance. With the old shared 2 C the hand-over
+            happened 2 C early, so the chamber climbed that last 2 C under a hard
+            proportional push and coasted past (overshoot) then dipped. A small
+            value (0.5 C) lets the chamber track the eased ramp almost to the
+            target and arrive gently. 0 = hand over only on reaching target
+            exactly; widen it if a furnace has steady ramp lag and would
+            otherwise never get close enough to advance.
+
     config COORDINATOR_STALL_CHECK_MS
         int "Heating stall detection window (ms)"
-        default 180000
+        default 300000
         range 60000 600000
         help
             During HEATING, if the measured temperature has not risen by
             at least the expected amount (based on the setpoint ramp) within
             this time window, the program is paused and a stall error is
-            reported.  Default is 180000 ms (3 minutes).
+            reported.  Default is 300000 ms (5 minutes). A stalled heater
+            fails OFF (not dangerous), so a longer window trades slower
+            detection for fewer nuisance pauses on transient lag.
+
+    config COORDINATOR_STALL_MIN_LAG_C
+        int "Heating stall minimum lag below setpoint (C)"
+        default 5
+        range 0 100
+        help
+            A stall is only declared when the chamber is at least this many
+            degrees BELOW the moving setpoint (i.e. genuinely behind), in
+            addition to failing the rate check below. This gate prevents a
+            false stall when the chamber has overshot and the PID has
+            correctly cut power: the temperature goes flat while the setpoint
+            keeps climbing, but we are ahead, not stalled.
+
+    config COORDINATOR_STALL_RATE_FRACTION_PCT
+        int "Heating stall rate fraction (% of programmed ramp)"
+        default 50
+        range 0 100
+        help
+            Within the stall window, the chamber must achieve at least this
+            fraction of the programmed ramp rise. Achieving less (while also
+            behind by COORDINATOR_STALL_MIN_LAG_C) declares a stall. Default
+            50 % = "rising at less than half the programmed rate".
+
+    config COORDINATOR_HOLD_BAND_C
+        int "Hold-phase deviation alarm band (C)"
+        default 4
+        range 1 100
+        help
+            During a HOLDING (dwell) phase, if the chamber stays more than
+            this many degrees away from the target (above OR below) for
+            COORDINATOR_HOLD_VIOLATION_MS, the program is paused and a
+            hold-deviation error is reported so a worker can intervene.
+            4 C is a conservative alarm for a prepreg cure dwell; tighten
+            toward 2-3 C once measured dwell ripple confirms the headroom.
+            (The control target is tighter than the alarm band — keep this
+            generous to avoid nuisance pauses on settling. This is an ALARM
+            band, not the control setpoint: it must sit above the steady
+            hold ripple or it will trip on normal dwell.)
+
+    config COORDINATOR_HOLD_VIOLATION_MS
+        int "Hold-phase deviation sustain time before pause (ms)"
+        default 300000
+        range 10000 600000
+        help
+            How long the chamber must remain continuously outside
+            COORDINATOR_HOLD_BAND_C before a hold-deviation pause is raised.
+            The sustain timer resets as soon as the chamber re-enters the
+            band, so brief settling excursions do not trip it. Default
+            300000 ms (5 minutes) — hold stages run for hours, so a longer
+            sustain absorbs load/door disturbances. The over-temperature
+            direction is still caught quickly by the overshoot guard
+            (COORDINATOR_OVERSHOOT_THRESHOLD_C), so this can be generous
+            without risking a runaway during a long hold.
 
     config COORDINATOR_COMPONENT_ID
         int "Coordinator Component ID"

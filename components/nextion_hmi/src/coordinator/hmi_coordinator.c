@@ -84,7 +84,9 @@ static void flush_deferred(void)
             break;
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                c->error.error_code, c->error.esp_error);
+                c->error.error_code, c->error.esp_error,
+                c->error.temperature_c, c->error.setpoint_c,
+                c->error.stage_index, c->error.fault_elapsed_ms);
             break;
         default:
             break;
@@ -115,7 +117,10 @@ static void temp_processor_event_bridge(void* handler_arg, esp_event_base_t base
     {
         return;
     }
-
+    if(id != PROCESS_TEMPERATURE_EVENT_DATA || !event_data)
+    {
+        return;
+    }
     const float temperature = *((const float*)event_data);
     hmi_cmd_t cmd = {0};
     cmd.type = HMI_CMD_TEMP_UPDATE;
@@ -168,6 +173,10 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             cmd.status.power_output = s->power_output;
             cmd.status.elapsed_ms = s->elapsed_ms;
             cmd.status.total_ms = s->total_ms;
+            cmd.status.stage_index = s->stage_index;
+            cmd.status.total_active_stages = s->total_active_stages;
+            cmd.status.phase = s->phase;
+            cmd.status.stage_remaining_ms = s->stage_remaining_ms;
         }
         break;
 
@@ -178,6 +187,10 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             const coordinator_error_data_t* err = event_data;
             cmd.error.error_code = err->error_code;
             cmd.error.esp_error = err->esp_error_code;
+            cmd.error.temperature_c = err->temperature_c;
+            cmd.error.setpoint_c = err->setpoint_c;
+            cmd.error.stage_index = err->stage_index;
+            cmd.error.fault_elapsed_ms = err->fault_elapsed_ms;
         }
         break;
 
@@ -320,7 +333,11 @@ static void hmi_coordinator_task(void* arg)
                 cmd.status.total_ms,
                 cmd.status.current_temperature,
                 cmd.status.target_temperature,
-                cmd.status.power_output);
+                cmd.status.power_output,
+                cmd.status.stage_index,
+                cmd.status.total_active_stages,
+                cmd.status.phase,
+                cmd.status.stage_remaining_ms);
             break;
 
         case HMI_CMD_PROFILE_STARTED:
@@ -345,7 +362,9 @@ static void hmi_coordinator_task(void* arg)
 
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                cmd.error.error_code, cmd.error.esp_error);
+                cmd.error.error_code, cmd.error.esp_error,
+                cmd.error.temperature_c, cmd.error.setpoint_c,
+                cmd.error.stage_index, cmd.error.fault_elapsed_ms);
             break;
 
         default:

@@ -15,6 +15,19 @@ static const char *TAG = "nextion_file_reader";
 
 static volatile bool s_file_read_active = false;
 
+static bool is_nextion_error_frame(const uint8_t *buf, size_t len)
+{
+    if (!buf || len < 4) {
+        return false;
+    }
+
+    if (buf[1] != 0xFF || buf[2] != 0xFF || buf[3] != 0xFF) {
+        return false;
+    }
+
+    return (buf[0] == 0x00 || buf[0] == 0x04 || buf[0] == 0x05 || buf[0] == 0x06 || buf[0] == 0x09);
+}
+
 bool nextion_file_reader_active(void)
 {
     return s_file_read_active;
@@ -50,6 +63,11 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
     
     if (len != 4) {
         LOGGER_LOG_WARN(TAG, "Failed to get file size, got %d bytes", len);
+        goto cleanup;
+    }
+
+    if (is_nextion_error_frame(size_buf, sizeof(size_buf))) {
+        LOGGER_LOG_WARN(TAG, "rdfile size query failed for %s: Nextion error 0x%02X", path, size_buf[0]);
         goto cleanup;
     }
 

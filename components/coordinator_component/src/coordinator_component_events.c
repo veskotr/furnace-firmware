@@ -39,15 +39,15 @@ static void temperature_processor_event_handler(void* handler_arg, esp_event_bas
     }
 }
 
-static esp_err_t coordinator_command_handler(void* handler_arg, void* command_data, const size_t command_data_size)
+static esp_err_t coordinator_command_handler(void* handler_arg, const void* command_data)
 {
     coordinator_ctx_t* ctx = (coordinator_ctx_t*)handler_arg;
-    coordinator_command_data_t* data = (coordinator_command_data_t*)command_data;
-    if (data == NULL || command_data_size != sizeof(coordinator_command_data_t))
+    if (command_data == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid coordinator command data");
         return ESP_ERR_INVALID_ARG;
     }
+    const coordinator_command_data_t* data = (const coordinator_command_data_t*)command_data;
     switch (data->type)
     {
     case COMMAND_TYPE_COORDINATOR_START_PROFILE:

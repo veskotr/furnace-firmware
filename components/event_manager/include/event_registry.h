@@ -40,12 +40,21 @@ typedef enum
     COORDINATOR_ERROR_PROFILE_NOT_STOPPED,
     COORDINATOR_ERROR_NOT_STARTED,
     COORDINATOR_ERROR_STALL_DETECTED,
+    COORDINATOR_ERROR_HOLD_DEVIATION,
 } coordinator_error_code_t;
 
 typedef struct
 {
     coordinator_error_code_t error_code;
     esp_err_t esp_error_code;
+
+    /* Diagnostic context for run-time faults (stall / hold deviation) so the
+     * HMI can tell the worker WHERE and WHEN it failed. Left zero by the
+     * control-flow errors (start/pause/resume/stop), which don't use them. */
+    float    temperature_c;     ///< Chamber temp when the fault tripped
+    float    setpoint_c;        ///< Active setpoint when the fault tripped
+    int8_t   stage_index;       ///< 0-based active-stage ordinal, -1 if N/A
+    uint32_t fault_elapsed_ms;  ///< How long the fault condition persisted
 } coordinator_error_data_t;
 
 /**
@@ -56,6 +65,18 @@ typedef struct
  * next PID tick without stopping the profile.
  */
 
+/**
+ * @brief Stage phase, mirrored from temperature_profile_types.h so HMI
+ *        code can switch on it without pulling that header in.
+ */
+typedef enum {
+    COORD_STAGE_PHASE_HEATING  = 0,
+    COORD_STAGE_PHASE_HOLDING  = 1,
+    COORD_STAGE_PHASE_COOLING  = 2,
+    COORD_STAGE_PHASE_COOLDOWN = 3,
+    COORD_STAGE_PHASE_COMPLETE = 4,
+} coordinator_stage_phase_t;
+
 typedef struct
 {
     float current_temperature;
@@ -63,6 +84,12 @@ typedef struct
     float power_output;         // 0.0 – 1.0  (PID output)
     uint32_t elapsed_ms;
     uint32_t total_ms;
+
+    /* Stage tracking (added so HMI can show e.g. "S2/5 RAMP 150C"). */
+    int8_t  stage_index;                /* 0..N-1 active stage; -1 in cooldown/complete */
+    int8_t  total_active_stages;        /* Count of is_set stages in the program */
+    uint8_t phase;                      /* coordinator_stage_phase_t */
+    uint32_t stage_remaining_ms;        /* Time left in the active stage (HOLDING etc.); 0 if N/A */
 } coordinator_status_data_t;
 
 // ============================================================================

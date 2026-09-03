@@ -8,7 +8,6 @@
 #include "heating_program_models_internal.h"
 #include "logger_component.h"
 #include "esp_system.h"
-#include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -73,6 +72,10 @@ void handle_save_settings(const char *payload)
 
     LOGGER_LOG_INFO(TAG, "save_settings raw payload: [%s]", payload);
     LOGGER_LOG_INFO(TAG, "save_settings payload length: %d", (int)strlen(payload));
+
+    /* Buttonless loading overlay — dismissed automatically by the
+     * show_error/show_success calls on every exit path below. */
+    nextion_show_loading("Saving...");
 
     char buffer[256];
     strncpy(buffer, payload, sizeof(buffer) - 1);
@@ -177,12 +180,19 @@ void handle_save_settings(const char *payload)
         LOGGER_LOG_INFO(TAG, "Cooldown rate set: %d x10", rate_x10);
     }
 
-    nextion_clear_error();
+    nextion_show_success("Saved");
 }
 
 void handle_restart(void)
 {
     LOGGER_LOG_INFO(TAG, "Restart requested");
+
+    /* Buttonless loading overlay so the user gets feedback during the brief
+     * window before the panel resets. Not paired with a hide — the Nextion
+     * reset below clears it as the panel reboots, and esp_restart() never
+     * returns. */
+    nextion_show_loading("Restarting...");
+    vTaskDelay(pdMS_TO_TICKS(300));
 
     /* Reset the Nextion display first (best-effort) */
     nextion_send_cmd("rest");
@@ -223,14 +233,9 @@ void handle_factory_reset_confirm(void)
     int deleted = nextion_storage_delete_all_programs();
     LOGGER_LOG_INFO(TAG, "Factory reset: %d programs deleted", deleted);
 
-    /* Erase all NVS user preferences */
-    esp_err_t nvs_err = nvs_flash_erase();
-    if (nvs_err == ESP_OK) {
-        LOGGER_LOG_INFO(TAG, "Factory reset: NVS erased");
-    } else {
-        LOGGER_LOG_WARN(TAG, "Factory reset: NVS erase failed: %s",
-                        esp_err_to_name(nvs_err));
-    }
+    /* Erase all NVS user preferences, but preserve the operational-time
+     * total — it's service-hours data and must never be reset. */
+    program_nvs_factory_reset_preserve_op_time();
 
     /* Brief pause so the user sees the dialog close */
     vTaskDelay(pdMS_TO_TICKS(300));

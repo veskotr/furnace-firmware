@@ -47,6 +47,10 @@ typedef struct {
             float power_output;
             uint32_t elapsed_ms;
             uint32_t total_ms;
+            int8_t  stage_index;                     /* 0-based, -1 if N/A */
+            int8_t  total_active_stages;
+            uint8_t phase;                           /* coordinator_stage_phase_t */
+            uint32_t stage_remaining_ms;             /* Time left in current stage (HOLD) */
         } status;
         struct {
             float current_temperature;               // HMI_CMD_PROFILE_*
@@ -57,6 +61,10 @@ typedef struct {
         struct {
             coordinator_error_code_t error_code;     // HMI_CMD_PROFILE_ERROR
             esp_err_t esp_error;
+            float    temperature_c;                  // fault context (stall/hold)
+            float    setpoint_c;
+            int8_t   stage_index;                    // 0-based, -1 if N/A
+            uint32_t fault_elapsed_ms;
         } error;
     };
 } hmi_cmd_t;

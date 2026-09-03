@@ -22,11 +22,13 @@ esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_
         return ESP_ERR_INVALID_ARG;
     }
 
-    CHECK_ERR_LOG_RET(check_temperature_anomalies(ctx->temperatures_buffer, number_of_samples),
-                      "Temperature anomaly detected in samples");
+    /* Always publish the average so downstream consumers (coordinator, HMI)
+     * never see a fabricated 0°C when the delta check fails — a spurious
+     * cold reading makes the PID slam the heater on. */
+    *output_temperature = average_float_array(ctx->temperatures_buffer, number_of_samples);
 
     float min = FLT_MAX;
-    float max = FLT_MIN;
+    float max = -FLT_MAX;
     for (size_t i = 0; i < number_of_samples; i++)
     {
         if (ctx->temperatures_buffer[i] < min)
@@ -36,14 +38,21 @@ esp_err_t process_temperature_samples(temp_processor_context_t* ctx, const size_
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature samples range: %.2f°C - %.2f°C", min, max);
+
+    const esp_err_t anomaly_err = check_temperature_anomalies(ctx->temperatures_buffer, number_of_samples);
+    if (anomaly_err != ESP_OK)
+    {
+        LOGGER_LOG_WARN(TAG, "Temperature anomaly detected (avg %.2f°C still published)", *output_temperature);
+        return anomaly_err;
+    }
+
     if (max - min > CONFIG_TEMP_DELTA_THRESHOLD)
     {
         LOGGER_LOG_WARN(TAG, "Temperature delta %.2f°C exceeds threshold %.2f°C", max-min, CONFIG_TEMP_DELTA_THRESHOLD);
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Calculate overall average temperature
-    *output_temperature = average_float_array(ctx->temperatures_buffer, number_of_samples);
+    LOGGER_LOG_DEBUG(TAG, "Processing %d temperature samples", number_of_samples);
 
     return ESP_OK;
 }

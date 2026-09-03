@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyze Firmware Impact"
+  short_description: "Trace change impact across firmware boundaries"
+  default_prompt: "Use $analyze-firmware-impact to map the full impact of this proposed change."

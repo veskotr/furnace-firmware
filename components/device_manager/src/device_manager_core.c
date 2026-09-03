@@ -89,6 +89,7 @@ esp_err_t device_manager_read_device(const device_t* device, void* data_out)
     {
         return ESP_ERR_INVALID_ARG;
     }
+    LOGGER_LOG_DEBUG(TAG, "Reading from device %s (id %d) with state %d", device->name, device->id, device->state);
 
     CHECK_ERR_LOG_RET_FMT(device->ops->read(device->ctx, data_out),
                           "Failed to read from device %s (id %d)", device->name, device->id);

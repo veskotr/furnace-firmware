@@ -23,6 +23,8 @@ esp_err_t temp_sensor_set_device_state(const temp_sensor_device_t* device, devic
 
 esp_err_t temp_sensor_read_device(const temp_sensor_device_t* device, void* data_out);
 
+uint16_t temp_sensor_get_id(const temp_sensor_device_t* device);
+
 esp_err_t temp_sensor_write_device(const temp_sensor_device_t* device, const device_write_cmd_t* cmd);
 
 esp_err_t temp_sensor_destroy(temp_sensor_device_t* device);

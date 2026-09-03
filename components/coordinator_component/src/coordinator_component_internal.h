@@ -41,6 +41,19 @@ typedef struct
     bool events_initialized;
 
     pending_target_update_t target_update; ///< Live manual-mode mailbox
+
+    /* Tracking for dynamic remaining-time recompute.
+     * When a stage advances earlier than its rate-derived planned duration
+     * (e.g. PID overshoots and hits the target ahead of schedule), the
+     * unused portion is deducted from estimated_total_duration_ms so the
+     * displayed remaining time shrinks. */
+    int      last_profile_stage_index;       ///< Last seen tick stage index (-1 if none/cooldown)
+    uint32_t elapsed_at_stage_start_ms;      ///< Wall-clock elapsed when the current stage began
+    uint32_t last_stage_planned_ms;          ///< profile_tick's runtime stage_planned_ms for the
+                                              ///< currently-active stage (rate-derived, not t_min).
+                                              ///< Used by update_estimate_on_stage_change so the
+                                              ///< deduction matches the duration we actually
+                                              ///< budgeted in calculate_program_duration_ms.
 } coordinator_ctx_t;
 
 // ============================================

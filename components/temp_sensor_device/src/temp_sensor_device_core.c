@@ -38,8 +38,9 @@ esp_err_t temp_sensor_create(temp_sensor_device_t** device)
             ctx_pool[i].allocated = true;
             ctx_pool[i].valid = true;
             ctx_pool[i].id = i;
+            ctx_pool[i].device_id = 0; /* populated from reg 127 during init */
             ctx_pool[i].last_temperature = 0.0f;
-            ctx_pool[i].modbus_address = CONFIG_TEMP_SENSOR_MODBUS_START_ADDRESS;
+            ctx_pool[i].modbus_address = CONFIG_TEMP_SENSOR_MODBUS_START_ADDRESS + i;
             ctx_pool[i].modbus_register = MS9024_REG_PV;
             CHECK_ERR_LOG_RET(
                 device_manager_create_device(&ctx_pool[i], &device_ops, "temp_sensor", DEVICE_TYPE_TEMP_SENSOR, &
@@ -95,6 +96,15 @@ esp_err_t temp_sensor_read_device(const temp_sensor_device_t* device, void* data
     return ESP_OK;
 }
 
+uint16_t temp_sensor_get_id(const temp_sensor_device_t* device)
+{
+    if (device == NULL || !device->allocated || !device->valid)
+    {
+        return 0;
+    }
+    return device->device_id;
+}
+
 esp_err_t temp_sensor_write_device(const temp_sensor_device_t* device, const device_write_cmd_t* cmd)
 {
     if (device == NULL || !device->allocated || !device->valid)
@@ -129,7 +139,31 @@ static esp_err_t temp_sensor_init(void* ctx)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ms9024_log_config(device_ctx->modbus_address, MS9024_REG_PV);
+    /* Read the preset device ID from reg 127. Never written by our code.
+     *
+     * NOTE: previously this function ran ms9024_read_float(PV) and on failure
+     * (including transient Modbus timeouts during bus warm-up) called
+     * ms9024_repair_from_good_unit(), which writes hardcoded values to regs
+     * 27, 30, 129. The "good" values were captured from one specific unit
+     * and applying them blindly can corrupt the configuration of a healthy
+     * slave (see ms9024_healthy_registers.txt). Auto-repair is disabled here.
+     * Use temp_sensor_write_device + TEMP_SENSOR_REPAIR_FORM_GOOD_UNIT to
+     * trigger it manually on a sensor you know needs it. */
+    uint16_t device_id = 0;
+    const esp_err_t id_err = ms9024_read_uint16(device_ctx->modbus_address,
+                                                MS9024_REG_DEVICE_ID, &device_id);
+    if (id_err == ESP_OK)
+    {
+        device_ctx->device_id = device_id;
+        LOGGER_LOG_INFO(TAG, "Sensor at addr %d → preset device ID = %u",
+                        device_ctx->modbus_address, device_id);
+    }
+    else
+    {
+        LOGGER_LOG_WARN(TAG, "Failed to read device ID (reg %d) from sensor at addr %d: %s",
+                        MS9024_REG_DEVICE_ID, device_ctx->modbus_address,
+                        esp_err_to_name(id_err));
+    }
 
     return ESP_OK;
 }

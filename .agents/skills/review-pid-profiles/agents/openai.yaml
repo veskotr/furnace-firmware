@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review PID and Profiles"
+  short_description: "Audit control timing, units, stages, and gating"
+  default_prompt: "Use $review-pid-profiles to review PID, profile transitions, and physical-output gating."

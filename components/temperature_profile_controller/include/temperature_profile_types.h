@@ -40,4 +40,6 @@ typedef struct {
     bool         stage_changed;        ///< True on the tick a new stage begins
     bool         profile_complete;     ///< True when cooldown is done + temp below threshold
     bool         threshold_violation;  ///< True if temp exceeded setpoint + overshoot threshold
+    uint32_t     stage_elapsed_ms;     ///< Time spent in the (now-active) stage so far
+    uint32_t     stage_planned_ms;     ///< Planned duration of the (now-active) stage (t_min * 60000)
 } profile_tick_result_t;

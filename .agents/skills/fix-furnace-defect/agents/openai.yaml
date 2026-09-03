@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix Furnace Defect"
+  short_description: "Apply a narrow fix for an investigated bug ID"
+  default_prompt: "Use $fix-furnace-defect to apply and verify the smallest safe fix for this bug ID."

@@ -12,6 +12,7 @@
 #define MS9024_REG_WIRE       32   /* Wiring mode   (LSByte, R/W)          */
 #define MS9024_REG_FIN        26   /* Input filter   (LSByte)              */
 #define MS9024_REG_FIRMWARE   126  /* Firmware version (Int)               */
+#define MS9024_REG_DEVICE_ID  127  /* Device ID (preset, read-only by app) */
 #define MS9024_REG_CF         447  /* Celsius/Fahrenheit (Coil, 0=C 1=F)  */
 #define MS9024_REG_AOUT       726  /* Analog output value (Float, +512)    */
 #define MS9024_REG_PV         728  /* Process value (Float, 2 regs)        */

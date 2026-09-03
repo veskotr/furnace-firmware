@@ -122,18 +122,16 @@ esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, const 
         return ESP_ERR_INVALID_ARG;
     }
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
-    ctx->accumulated_power_level += power_level;
-    ctx->power_level_sample_count++;
+    ctx->target_power_level = power_level;
     xSemaphoreGive(ctx->power_mutex);
 
     return ESP_OK;
 }
 
-esp_err_t reset_heater_power_level_samples(heater_controller_context_t* ctx)
+esp_err_t clear_heater_target_power_level(heater_controller_context_t* ctx)
 {
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
-    ctx->accumulated_power_level = 0.0f;
-    ctx->power_level_sample_count = 0;
+    ctx->target_power_level = 0.0f;
     xSemaphoreGive(ctx->power_mutex);
 
     return ESP_OK;
@@ -142,11 +140,9 @@ esp_err_t reset_heater_power_level_samples(heater_controller_context_t* ctx)
 static float get_heater_target_power_level(const heater_controller_context_t* ctx)
 {
     xSemaphoreTake(ctx->power_mutex, portMAX_DELAY);
-    float average_power_level = ctx->power_level_sample_count > 0
-                                    ? ctx->accumulated_power_level / ((float)ctx->power_level_sample_count)
-                                    : 0.0f;
+    const float power_level = ctx->target_power_level;
     xSemaphoreGive(ctx->power_mutex);
-    return average_power_level;
+    return power_level;
 }
 
 static void check_error_and_post_event(const esp_err_t err)

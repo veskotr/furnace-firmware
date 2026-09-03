@@ -961,6 +961,33 @@ Common
 	- Nextion code: Touch Release Event
 		prints "err:close",0
 		printh 0d 0a
+
+- Success overlay (reuses the error overlay)
+	- Explanation: The same components (errTxtHead / errText / errTxtCloseB) are
+	  reused for success messages — the ESP32 just sets errTxtHead.txt="Success"
+	  instead of "Error" (e.g. "Saved" after a program/settings save). User
+	  dismisses it with the same errTxtCloseB button. No new components.
+	- Nextion code: None (ESP32 sets errTxtHead.txt / errText.txt and toggles vis).
+
+- Loading dialog (reuses the confirm dialog)
+	- Explanation: A buttonless "please wait" overlay shown by the ESP32 during
+	  slow operations (save program, save settings, restart). The ESP32 makes
+	  ONLY confirmBdy + confirmTxt visible (NO confirm/cancel buttons), so the
+	  user has no way to dismiss it from the panel. While it is up the ESP32 also
+	  ignores every incoming Nextion line (nextion_is_loading guard in the line
+	  router), so no other command runs. It auto-dismisses when the operation
+	  finishes: the ESP32 then shows the Success overlay ("Saved") or, for
+	  restart, resets the panel. No new components — reuses the existing confirm
+	  dialog background + text.
+	- Flow: user taps Save → confirmBdy + confirmTxt="Saving..." shown →
+	  ESP saves → loading hidden + "Saved" success overlay shown → user closes
+	  the success overlay (errTxtCloseB).
+	- Nextion code: None (ESP32 sets confirmTxt.txt and toggles
+	  vis confirmBdy / vis confirmTxt). IMPORTANT: every confirm-dialog page
+	  preinit must keep confirmBdy/confirmTxt hidden on entry (already the case),
+	  and the loading overlay must never be shown while a button-confirm dialog
+	  is open on the same page.
+
 - Other
 - fs0 (filestreamer tool)
 	- Explanation: FileStream component used to save program files on Nextion SD. ESP32 calls fs0.open("sd0/<name>.prg"), fs0.val=0, fs0.write(va0.txt,0,<len>), fs0.close().
