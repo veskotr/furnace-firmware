@@ -1,6 +1,12 @@
 schema_version: 1
 mapped_date: 2026-07-15
 reviewed_commit: bc743ab
+baseline_refresh:
+  date: 2026-09-14
+  commit: 1fcb4b1115ce9560fe2c4944ebc868cb454e5ed5
+  report: docs/analysis/ANALYSIS-BASELINE.md
+  coverage: docs/analysis/ANALYSIS-COVERAGE.md
+  scope: "Baseline/navigation only; A-F subsystem revalidation pending. Central ESP32/external HMI preparation precedes later STM32 hardware work."
 platform: {framework: ESP-IDF, language: C, rtos: FreeRTOS, target: ESP32}
 entry_points:
   build: CMakeLists.txt
@@ -21,7 +27,6 @@ startup:
   - init_heater_controller_component
   - init_coordinator
   - modbus_master_init
-  - run_indicator_init
   - fan_controller_init
   - {name: nextion_hmi_init, conditional: CONFIG_NEXTION_HMI_ENABLED}
   - device_manager_init
@@ -38,18 +43,19 @@ tasks:
     - {name: temperature_processor, owner: temperature_processor_component, source: components/temperature_processor_component/src/temperature_processor_task.c}
     - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
     - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
-    - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c, conditional: enabled_with_valid_noncolliding_gpio}
-  inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics]
+  inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics, run_indicator]
 callbacks:
-  event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, run_indicator_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
+  event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
   command_dispatcher: [heater_command_handler, coordinator_command_handler]
-  timers: [{name: pid_tick_timer_cb, dispatch: ESP_TIMER_TASK}]
+  timers: [{name: pid_tick_timer_cb, dispatch: ESP_TIMER_TASK}, {name: sensor_data_expiry_timer_cb, dispatch: ESP_TIMER_TASK}]
   application_hardware_isrs: []
 primitives:
   queues: [event_manager_private_queue, command_dispatcher_queue, logger_queue, hmi_command_queue]
-  mutexes: [heater_power_mutex, gpio_mutex, spi_mutex, logger_storage_mutex, nextion_uart_recursive_mutex, program_model_recursive_mutex, legacy_temperature_ring_mutex]
-  event_groups: [legacy_temperature_processor_event_group]
-  notifications: [heater_pwm, coordinator_control, device_manager, temperature_processor, health_monitor]
+  mutexes: [heater_power_mutex, gpio_mutex, logger_storage_mutex, nextion_uart_recursive_mutex, program_model_recursive_mutex]
+  binary_semaphores: [dispatcher_worker_exit, coordinator_worker_exit, heater_worker_exit, device_manager_worker_exit, temperature_processor_worker_exit]
+  event_groups: []
+  notifications: [heater_pwm, coordinator_control, device_manager, temperature_processor]
+  dormant_or_excluded: [spi_mutex, legacy_temperature_ring_mutex, legacy_temperature_processor_event_group, health_monitor_notification, run_indicator_coordinator_callback]
 pipelines:
   temperature: [MS9024, modbus_master, temp_sensor_device_cache, device_manager, temperature_processor, TEMP_PROCESSOR_EVENT, coordinator_and_fan_and_hmi]
   control: [nextion_hmi, commands_dispatcher, coordinator, temperature_profile_controller_eased_handover, pid_component_optional_feedforward, commands_dispatcher, heater_controller, contactor_and_ssr]
@@ -63,16 +69,38 @@ hardware_defaults:
   nextion: {uart: 1, tx_gpio: 32, rx_gpio: 33, baud: 115200}
 safety_invariants: docs/codex/ENGINEERING_STANDARDS.md
 findings: docs/analysis/FIRMWARE_FINDINGS.md
-dispatcher_contract: "Dispatcher-task re-entrant submissions execute inline; external submissions use the bounded command queue. Coordinator stop is queue-independent and uses direct inhibit, removing the confirmed F-055 queue-full join cycle; broader external-producer shutdown remains open."
+current_behavior: docs/analysis/CURRENT-CONTROLLER-BEHAVIOR.md
+target_architecture_requirements: docs/analysis/TARGET-ARCHITECTURE-REQUIREMENTS.md
+target_architecture_contracts:
+  system: docs/architecture/BOARD-REV2-SYSTEM-ARCHITECTURE.md
+  components: docs/architecture/COMPONENT-CONTRACT-STANDARD.md
+  coordinator: docs/architecture/COORDINATOR-STATE-AND-COMMAND-MODEL.md
+  actuator_protocol: docs/architecture/ESP-STM32-ACTUATOR-PROTOCOL-REQUIREMENTS.md
+accepted_target_decisions:
+  - docs/decisions/0003-stm32-actuator-authority.md
+  - docs/decisions/0004-actuator-session-sequence-and-stop.md
+dispatcher_contract: "Dispatcher-task re-entrant submissions execute inline; external submissions use the bounded command queue. Coordinator stop is queue-independent and uses direct inhibit, but a STOP wake can still let the control worker submit one final command (F-061); external-producer shutdown is also unquiesced (F-062)."
 build:
   standard: idf.py build
   flash_monitor: idf.py -p PORT flash monitor
   tests_found: false
+  configuration_provenance:
+    tracked: [sdkconfig.defaults, dependencies.lock, main/idf_component.yml, partitions.csv]
+    ignored_local: [sdkconfig, sdkconfig.old, build]
+    resolved_equals_tracked_defaults: true
+    sdkconfig_sha256: 4d3b78c464fbc275b40fdbc9a6540f9281f895e6a347ea07ee8f2cc431af151b
+    caveat: "2026-09-14 file/metadata agreement only; no firmware build in the baseline step and no deployed-version proof."
+  component_classification:
+    excluded: [temperature_monitor_component]
+    optional_disabled_without_startup: [run_indicator]
+    dormant_link_inputs: [error_manager, health_monitor, spi_master_component, transmitter_diagnostics]
+    support_only: [common, time_component]
   last_reviewed_build:
-    commit: "bc743ab + working-tree F-054 source correction"
+    commit: "1fcb4b1 + documentation-only audit worktree"
     command: "IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake --build build -j2"
     result: passed
-    app_size: 0x63cc0
+    evidence_status: historical_audit_report_not_rerun_in_baseline
+    app_size: 0x63cb0
     partition_free_percent: 61
     resolved_configuration:
       overshoot_threshold_c: 30
@@ -82,17 +110,24 @@ build:
       fan_auto_off_c: 32
       pid_feedforward_enabled: false
       op_time_override_enabled: false
-    caveat: "These retained local values differ from new Kconfig defaults; no tracked sdkconfig defaults were found."
+    caveat: "sdkconfig.defaults mirrors this generated resolved configuration; it is not a concise reviewed profile, and the selected table lacks logger storage (F-068)."
 known_architecture_debt:
+  - "ADR-0003/ADR-0004 accept future STM32 actuator/interlock authority, local SSR windowing, and a sequenced expiring control session with unconditional STOP; current ESP32 GPIO/window ownership remains implemented until validated migration"
   - sensor-data inhibit is direct at the heater boundary; GPIO latency and polarity still need hardware validation
-  - validity/freshness event is implemented; a coordinator-owned one-shot timer directly asserts sensor-data inhibit when the update stream stops (F-054); regression and powered validation, per-board sensor mapping, and quorum remain future work
+  - coordinator one-shot timer directly inhibits when aggregate updates stop (F-054), but processor can restamp cached acquisitions and failed scans can earn recovery events (F-071); physical-sample freshness, mapping, and quorum need separate evidence
   - global mutable coordinator state spans tasks and callbacks
-  - worker acknowledgements exist on key stop paths; coordinator worker self-exit avoids the confirmed full-queue shutdown cycle (F-055), while temperature-processor shutdown still leaves registered devices active (F-056)
+  - temperature-device cache fields are written by device manager and read by temperature processor without a coherent snapshot protocol (F-060)
+  - worker acknowledgements exist on key stop paths; coordinator worker self-exit avoids the confirmed full-queue shutdown cycle (F-055), and temperature-processor shutdown destroys owned sensor devices after worker exit (F-056); device-manager mutation synchronization remains uncharacterized
+  - dispatcher shutdown does not quiesce external producers (F-062), and device-manager updates can overlap temperature-device destruction/reuse (F-063)
+  - disabled health monitoring and excluded legacy temperature monitoring retain unsafe lifecycle paths (F-065–F-067); they must not be enabled/revived without correction
   - furnace error events have no production subscriber
   - run indicator is disabled by default and refuses invalid or contactor-colliding GPIOs
-  - temporary control inhibit now protects pause/stop/completion from stale queued output; later generation-based command validation remains deferred
-  - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
-  - profile soft-landing is cubic while HMI graph projection remains linear
+  - temporary control inhibit protects checks made after pause/stop, but off-write failure is not latched/reported honestly (F-077), an admitted high GPIO write can follow off (F-074), telemetry can defer contactor-off (F-075), and cooling can retain demand (F-070)
+  - user reports field settings match field-tests, which has no tracked sdkconfig; exact flashed source/configuration remain unverified
+  - selected 2 MiB single-app partitioning lacks the logger's `storage` LittleFS partition (F-068)
+  - profile soft-landing uses quadratic ease-out with extended ramp duration while HMI graph projection remains linear
+  - valid downward cooling target can false-trip generic positive overshoot guard (F-076); permanent heater fault can coexist with coordinator RESUMED status (F-078)
+  - user confirms current operating oven has no independent hardware protection and ESP32 checks are not certified safety functions; planned production hardware mechanisms are future work
   - heater local inhibit handles SSR GPIO failure; central fault state and HMI handling are deferred by ADR-0001
   - PID/heater now reject non-finite values; F-003 in-flight publication and broader coordinator state ownership remain unresolved
-  - coordinator blocks profile start until configured sensor recovery, rejects an expired aggregate at start, and pauses on received invalid/stale or timer-expired aggregates (F-054); regression and powered validation remain pending
+  - coordinator blocks profile start until configured sensor recovery, rejects expired aggregate at start, and pauses on invalid/silent data (F-054); sensor recovery cannot auto-resume its paused run (F-069), and STOP frees profile state before worker exit (F-072)
