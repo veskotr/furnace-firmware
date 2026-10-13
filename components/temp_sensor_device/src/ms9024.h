@@ -12,6 +12,7 @@
 #define MS9024_REG_WIRE       32   /* Wiring mode   (LSByte, R/W)          */
 #define MS9024_REG_FIN        26   /* Input filter   (LSByte)              */
 #define MS9024_REG_FIRMWARE   126  /* Firmware version (Int)               */
+#define MS9024_REG_DEVICE_ID  127  /* Device ID (preset, read-only by app) */
 #define MS9024_REG_CF         447  /* Celsius/Fahrenheit (Coil, 0=C 1=F)  */
 #define MS9024_REG_AOUT       726  /* Analog output value (Float, +512)    */
 #define MS9024_REG_PV         728  /* Process value (Float, 2 regs)        */
@@ -46,8 +47,8 @@ esp_err_t ms9024_write_and_verify(uint8_t slave_address, uint16_t reg, uint16_t 
 /**
  * @brief Auto-correct a register if it doesn't match the desired value.
  *
- * Reads the register, and if the LSByte doesn't match @p desired, writes
- * the correct value and verifies. Skips the write if already correct.
+ * Reads the register, and if the full 16-bit value doesn't match @p desired,
+ * writes the correct value and verifies. Skips the write if already correct.
  */
 esp_err_t ms9024_auto_correct_register(uint8_t slave_address, uint16_t reg, uint16_t desired);
 

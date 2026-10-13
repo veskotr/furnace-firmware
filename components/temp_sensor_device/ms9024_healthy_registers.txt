@@ -1,0 +1,184 @@
+MS9024 — Healthy Register Map (reference)
+=========================================
+
+Source     : Sensor at Modbus address 3 ("healthy" reference)
+Captured   : Boot diagnostic scan (ms9024_diagnostic_scan), field-tests branch
+Sensor cfg : PT100, 4-wire, Celsius output
+
+Use this as the baseline when diffing against a suspect unit. The earlier
+hardcoded repair values in ms9024_repair_from_good_unit (reg 27=0, 30=2,
+129=282) came from a different source — note reg 129's actual healthy value
+is 265 (0x0109), NOT 282 — so the repair function had at least one wrong
+"good" value.
+
+Format: REG <addr> = 0x<hex>  (<decimal>)   [optional note]
+
+────────────────────────────────────────────
+CONFIG block (regs 0 – 50)
+────────────────────────────────────────────
+REG   0 = 0x0000  (    0)
+REG   1 = 0x0000  (    0)
+REG   2 = 0x0000  (    0)
+REG   3 = 0x0000  (    0)
+REG   4 = 0x0000  (    0)
+REG   5 = 0x007F  (  127)
+REG   6 = 0x0000  (    0)
+REG   7 = 0x0000  (    0)
+REG   8 = 0x0000  (    0)
+REG   9 = 0x0000  (    0)
+REG  10 = 0x0000  (    0)
+REG  11 = 0x007F  (  127)
+REG  12 = 0x0000  (    0)
+REG  13 = 0x0000  (    0)
+REG  14 = 0x736A  (29546)
+REG  15 = 0xB87A  (47226)
+REG  16 = 0x2000  ( 8192)
+REG  17 = 0x0083  (  131)
+REG  18 = 0x0000  (    0)
+REG  19 = 0x0000  (    0)
+REG  20 = 0x0000  (    0)
+REG  21 = 0x0000  (    0)
+REG  22 = 0x0000  (    0)
+REG  23 = 0x0000  (    0)
+REG  24 = 0x0064  (  100)
+REG  25 = 0x0001  (    1)
+REG  26 = 0x0032  (   50)   FIN filter
+REG  27 = 0x0000  (    0)   repair function "good_val" = 0  (matches)
+REG  28 = 0x0010  (   16)   SENS — PT100 (alpha 385)
+REG  29 = 0x0000  (    0)
+REG  30 = 0x0002  (    2)   repair function "good_val" = 2  (matches)
+REG  31 = 0x0000  (    0)
+REG  32 = 0x0004  (    4)   WIRE — 4-wire RTD
+REG  33 = 0x0000  (    0)
+REG  34 = 0x0100  (  256)
+REG  35 = 0x0000  (    0)
+REG  36 = 0x0000  (    0)
+REG  37 = 0x0000  (    0)
+REG  38 = 0x0000  (    0)
+REG  39 = 0x0081  (  129)
+REG  40 = 0x2000  ( 8192)
+REG  41 = 0x0083  (  131)
+REG  42 = 0x0000  (    0)
+REG  43 = 0x0080  (  128)
+REG  44 = 0x2000  ( 8192)
+REG  45 = 0x0082  (  130)
+REG  46 = 0x0000  (    0)
+REG  47 = 0x0000  (    0)
+REG  48 = 0x7A00  (31232)
+REG  49 = 0x0088  (  136)
+REG  50 = 0x0000  (    0)
+
+────────────────────────────────────────────
+CAL / INFO block (regs 100 – 130)
+────────────────────────────────────────────
+REG 100 = 0x0000  (    0)
+REG 101 = 0x3B80  (15232)
+REG 102 = 0x008A  (  138)
+REG 103 = 0x00C8  (  200)
+REG 104 = 0x0DAC  ( 3500)
+REG 105 = 0x00C8  (  200)
+REG 106 = 0x0DAC  ( 3500)
+REG 107 = 0x54C3  (21699)   ← calibration table starts
+REG 108 = 0x549E  (21662)
+REG 109 = 0x54A4  (21668)
+REG 110 = 0x549E  (21662)
+REG 111 = 0x54AA  (21674)
+REG 112 = 0x54C0  (21696)
+REG 113 = 0x54A2  (21666)
+REG 114 = 0x54C3  (21699)
+REG 115 = 0x549E  (21662)
+REG 116 = 0x54A3  (21667)
+REG 117 = 0x549E  (21662)
+REG 118 = 0x54AA  (21674)
+REG 119 = 0x54AF  (21679)
+REG 120 = 0x54AF  (21679)
+REG 121 = 0x54A8  (21672)
+REG 122 = 0x0000  (    0)
+REG 123 = 0x0000  (    0)
+REG 124 = 0x0000  (    0)
+REG 125 = 0x0000  (    0)
+REG 126 = 0x0065  (  101)   Firmware version
+REG 127 = 0x0003  (    3)   Device ID (preset, slave's own ID)
+REG 128 = 0x0000  (    0)
+REG 129 = 0x0109  (  265)   *** repair function had 282 — WRONG. Real "good" = 265 ***
+REG 130 = 0x0000  (    0)
+
+────────────────────────────────────────────
+EXTRA CFG block (regs 440 – 460)
+────────────────────────────────────────────
+REG 440 = 0x0000  (    0)
+REG 441 = 0x0000  (    0)
+REG 442 = 0x0000  (    0)
+REG 443 = 0x0000  (    0)
+REG 444 = 0x0000  (    0)
+REG 445 = 0x0000  (    0)
+REG 446 = 0x0000  (    0)
+REG 447 = 0x0000  (    0)   CF — 0 = Celsius
+REG 448 = 0x1000  ( 4096)
+REG 449 = 0x0000  (    0)
+REG 450 = 0x0000  (    0)
+REG 451 = 0x007A  (  122)
+REG 452 = 0x8800  (34816)
+REG 453 = 0xC000  (49152)
+REG 454 = 0x0000  (    0)
+REG 455 = 0x0000  (    0)
+REG 456 = 0x0000  (    0)
+REG 457 = 0x0000  (    0)
+REG 458 =   (read FAILED during capture)
+REG 459 =   (read FAILED during capture)
+REG 460 = 0x0000  (    0)
+
+────────────────────────────────────────────
+FLOAT RAM block (regs 510 – 540)
+────────────────────────────────────────────
+Note: odd-numbered registers in this range consistently return INVALID_RESPONSE
+on the healthy unit too. The block is meant to be read as 2-reg floats; the
+LSB half is at the odd offset and isn't individually readable. Listing only
+the even halves captured.
+
+REG 510 = 0x0000  (    0)
+REG 511 = 0x0000  (    0)
+REG 512 = 0x00F1  (  241)
+REG 514 = 0x00F1  (  241)
+REG 516 = 0x00F1  (  241)
+REG 518 = 0x00F1  (  241)
+REG 520 = 0x00F1  (  241)
+REG 522 = 0x00F1  (  241)
+REG 524 = 0x00F1  (  241)   IN_OFFSET (high half; float pair = 0.0)
+REG 528 = 0x00F1  (  241)   (high half; float pair = 20.0000)
+REG 530 = 0x00F1  (  241)
+REG 532 = 0x00F1  (  241)
+REG 534 = 0x00F1  (  241)
+REG 536 = 0x00F1  (  241)
+REG 538 = 0x00F1  (  241)
+REG 540 = 0x00F1  (  241)
+
+────────────────────────────────────────────
+Decoded floats (CDAB word-swap)
+────────────────────────────────────────────
+IN_OFFSET    (reg 524) =  0.0000
+(reg 526)              =  0.0594
+(reg 528)              = 20.0000
+(reg 530)              =  0.0000
+(reg 532)              =  0.0000
+(reg 534)              =  0.0000
+(reg 536)              =  0.0000
+PV           (reg 728) = 19.8986   (process value during capture)
+T2           (reg 730) =  0.0000
+AOUT         (reg 726) =  4.3179   (4–20 mA scaled)
+
+────────────────────────────────────────────
+Suggested corrected "good_val" table for ms9024_repair_from_good_unit
+────────────────────────────────────────────
+Only the registers that differed between bad and good on the previously
+investigated bad unit. If you re-enable the repair flow, use these values:
+
+    {  26,  50, "FIN  (input filter)"          },   /* was 127 on bad unit */
+    {  27,   0, "REG27 (offset/CJC related)"   },   /* was 200 on bad unit */
+    {  30,   2, "REG30 (config param)"         },   /* was 0   on bad unit */
+    { 129, 265, "REG129 (config/cal param)"    },   /* was 0   on bad unit; previously coded as 282 — WRONG */
+
+Do NOT auto-run repair on a slave that just timed out — timeouts are not
+evidence of register corruption. Trigger repair manually via
+TEMP_SENSOR_REPAIR_FORM_GOOD_UNIT only when a sensor's full diagnostic dump
+visibly diverges from this baseline.

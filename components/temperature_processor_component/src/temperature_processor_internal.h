@@ -5,6 +5,9 @@
 #include "furnace_error_types.h"
 #include "temp_sensor_device.h"
 #include "sdkconfig.h"
+#include "temperature_processor_component.h"
+#include "freertos/semphr.h"
+#include <stdatomic.h>
 
 typedef enum
 {
@@ -30,10 +33,11 @@ typedef struct
     temp_sensor_device_t *temp_sensor_devices[CONFIG_TEMP_SENSORS_MAX_SENSORS];
 
     TaskHandle_t task_handle;
+    SemaphoreHandle_t exit_semaphore;
 
     volatile uint8_t number_of_temp_sensors;
 
-    volatile bool processor_running;
+    atomic_bool processor_running;
 
 } temp_processor_context_t;
 
@@ -49,5 +53,6 @@ esp_err_t init_temp_processor_events(temp_processor_context_t* ctx);
 esp_err_t shutdown_temp_processor_events(temp_processor_context_t* ctx);
 
 esp_err_t post_temp_processor_event(float average_temperature);
+esp_err_t post_temp_processor_validity_event(const temperature_processor_sample_t* sample);
 
 esp_err_t post_processing_error(furnace_error_t furnace_error);

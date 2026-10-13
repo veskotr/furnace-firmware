@@ -1,0 +1,4 @@
+interface:
+  display_name: "Investigate Furnace Bug"
+  short_description: "Establish evidence and root cause without editing"
+  default_prompt: "Use $investigate-furnace-bug to investigate this symptom and produce an evidence-backed bug report."

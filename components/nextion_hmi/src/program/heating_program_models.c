@@ -5,7 +5,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "nvs.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "program_models";
 
@@ -16,6 +16,7 @@ static float s_current_temp_f = 23.0f;
 static int s_ambient_temp_c = 23;    // User-settable ambient temp, persisted to NVS
 static int s_current_kw = 0;
 static uint32_t s_operational_time_sec = 0;  // Total operational time, persisted to NVS
+static uint32_t s_op_time_unsaved_sec = 0;   // Seconds accumulated since last NVS commit
 static bool s_manual_mode_active = false;
 static int  s_manual_target_temp_c = 20;     // Default = MIN_TEMPERATURE_C
 static int  s_manual_delta_t_x10 = 10;       // Default 1.0 C/min (stored as x10)
@@ -28,6 +29,12 @@ static SemaphoreHandle_t s_program_mutex = NULL;
 #define NVS_KEY_OP_TIME "op_time_s"
 #define NVS_KEY_FAN_MODE "fan_mode"
 #define NVS_KEY_COOLDOWN "cool_rate"
+
+/* Op-time NVS write throttle: commit at most once per minute while running.
+ * Bounds worst-case data loss on power cut to ~60 s, while keeping flash
+ * wear at ~1440 commits/day even if the furnace ran 24/7. */
+#define OP_TIME_NVS_WRITE_INTERVAL_SEC 60
+#define OP_TIME_OVERRIDE_MAX_HOURS (UINT32_MAX / 3600U)
 
 void program_models_init(void)
 {
@@ -63,12 +70,57 @@ void program_models_init(void)
         }
         nvs_close(nvs);
     }
+    
+    #ifdef CONFIG_NEXTION_OP_TIME_OVERRIDE_ENABLE
+    {
+        const int override_hours = CONFIG_NEXTION_OP_TIME_OVERRIDE_HOURS;
+        if (override_hours < 0 ||
+            (uint32_t)override_hours > OP_TIME_OVERRIDE_MAX_HOURS) {
+            LOGGER_LOG_ERROR(TAG, "OP-TIME OVERRIDE rejected: hours=%d outside 0..%lu",
+                             override_hours,
+                             (unsigned long)OP_TIME_OVERRIDE_MAX_HOURS);
+        } else {
+            const uint32_t override_sec = (uint32_t)override_hours * 3600U;
+            nvs_handle_t nvs_w;
+            esp_err_t override_err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_w);
+            if (override_err == ESP_OK) {
+                override_err = nvs_set_u32(nvs_w, NVS_KEY_OP_TIME, override_sec);
+                if (override_err == ESP_OK) {
+                    override_err = nvs_commit(nvs_w);
+                }
+                nvs_close(nvs_w);
+            }
+
+            if (override_err == ESP_OK) {
+                s_operational_time_sec = override_sec;
+                s_op_time_unsaved_sec = 0;
+                LOGGER_LOG_WARN(TAG, "OP-TIME OVERRIDE: forced to %d h (%lu sec)",
+                                override_hours,
+                                (unsigned long)override_sec);
+            } else {
+                LOGGER_LOG_ERROR(TAG, "OP-TIME OVERRIDE failed; keeping loaded value: %s",
+                                 esp_err_to_name(override_err));
+            }
+        }
+    }
+#endif
+
 }
 
 void program_draft_clear(void)
 {
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     memset(&s_program_draft, 0, sizeof(s_program_draft));
+    xSemaphoreGiveRecursive(s_program_mutex);
+}
+
+void program_draft_replace(const program_draft_t *draft)
+{
+    if (!draft) {
+        return;
+    }
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    memcpy(&s_program_draft, draft, sizeof(s_program_draft));
     xSemaphoreGiveRecursive(s_program_mutex);
 }
 
@@ -225,15 +277,83 @@ void program_add_operational_time_sec(uint32_t seconds)
 {
     xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
     s_operational_time_sec += seconds;
+    s_op_time_unsaved_sec += seconds;
     uint32_t current = s_operational_time_sec;
+    bool should_flush = (s_op_time_unsaved_sec >= OP_TIME_NVS_WRITE_INTERVAL_SEC);
+    if (should_flush) {
+        s_op_time_unsaved_sec = 0;
+    }
     xSemaphoreGiveRecursive(s_program_mutex);
 
-    /* Persist every time (writes are throttled externally by caller) */
+    if (!should_flush) {
+        return;
+    }
+
     nvs_handle_t nvs;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
         nvs_set_u32(nvs, NVS_KEY_OP_TIME, current);
         nvs_commit(nvs);
         nvs_close(nvs);
+    }
+}
+
+/* Force-persist any unsaved seconds. Call on profile stop/complete so the
+ * final partial minute isn't lost if the user then powers the unit off. */
+void program_flush_operational_time(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    uint32_t current = s_operational_time_sec;
+    bool dirty = (s_op_time_unsaved_sec > 0);
+    s_op_time_unsaved_sec = 0;
+    xSemaphoreGiveRecursive(s_program_mutex);
+
+    if (!dirty) {
+        return;
+    }
+
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u32(nvs, NVS_KEY_OP_TIME, current);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        LOGGER_LOG_INFO(TAG, "Op time flushed to NVS: %lu sec",
+                       (unsigned long)current);
+    }
+}
+
+/* Erase the entire NVS partition (factory reset) while preserving the
+ * operational-time total. The counter is treated as permanent service
+ * data and must survive factory resets. */
+void program_nvs_factory_reset_preserve_op_time(void)
+{
+    xSemaphoreTakeRecursive(s_program_mutex, portMAX_DELAY);
+    uint32_t op_time_snapshot = s_operational_time_sec;
+    s_op_time_unsaved_sec = 0;
+    xSemaphoreGiveRecursive(s_program_mutex);
+
+    esp_err_t err = nvs_flash_erase();
+    if (err != ESP_OK) {
+        LOGGER_LOG_WARN(TAG, "Factory reset: NVS erase failed: %s",
+                        esp_err_to_name(err));
+        return;
+    }
+
+    err = nvs_flash_init();
+    if (err != ESP_OK) {
+        LOGGER_LOG_WARN(TAG, "Factory reset: NVS re-init failed: %s",
+                        esp_err_to_name(err));
+        return;
+    }
+
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u32(nvs, NVS_KEY_OP_TIME, op_time_snapshot);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+        LOGGER_LOG_INFO(TAG, "Factory reset: op time preserved (%lu sec)",
+                       (unsigned long)op_time_snapshot);
+    } else {
+        LOGGER_LOG_WARN(TAG, "Factory reset: failed to restore op time");
     }
 }
 

@@ -6,7 +6,7 @@
 #include "logger_internal.h"
 #include "freertos/semphr.h"
 #include "esp_littlefs.h"
-#include "time_component.h"
+//#include "time_component.h"
 #include "dirent.h"
 
 #define CONFIG_LOG_MAX_TAG_LENGTH 16
@@ -208,8 +208,8 @@ static esp_err_t store_full_crash_log(const uint32_t error_cause, const log_entr
 
         header.times_occurred++;
         header.error_code = error_cause;
-        header.last_timestamp = get_current_time_ms();
-        header.last_total_runtime_sec = get_total_runtime_sec();
+        header.last_timestamp = 0;//get_current_time_ms();
+        header.last_total_runtime_sec = 0;//get_total_runtime_sec();
         header.write_index = index;
         header.wrapped = wrapped;
         // move to beginning for overwrite
@@ -235,8 +235,8 @@ static esp_err_t store_full_crash_log(const uint32_t error_cause, const log_entr
         header.error_code = error_cause;
         header.write_index = index;
         header.wrapped = wrapped;
-        header.last_timestamp = get_current_time_ms();
-        header.last_total_runtime_sec = get_total_runtime_sec();
+        header.last_timestamp = 0;//get_current_time_ms();
+        header.last_total_runtime_sec = 0;//get_total_runtime_sec();
     }
 
     // =========================

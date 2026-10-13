@@ -85,7 +85,17 @@ void nextion_update_main_status(void)
 
 void nextion_event_handle_init(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(500));
+    /* Flush any partial bytes the Nextion may have latched while the ESP's
+     * UART TX pin was in its default state during reset, then reset the
+     * panel so it boots from a known page. */
+    const uint8_t flush[3] = {0xFF, 0xFF, 0xFF};
+    nextion_send_raw(flush, sizeof(flush));
+    /* Reset the Nextion so it boots from a known state regardless of what
+     * page/values were left on the panel from a prior run. The display
+     * needs ~500 ms to come back up before it accepts new commands. */
+    nextion_send_cmd("rest");
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Nextion needs ~1s to come back
+
     s_current_page = NEXTION_PAGE_ID_MAIN;
     nextion_send_cmd("page " CONFIG_NEXTION_PAGE_MAIN);
     vTaskDelay(pdMS_TO_TICKS(30));
@@ -127,6 +137,15 @@ void nextion_event_handle_line(const char *line)
         }
     }
     clean[idx] = '\0';
+
+    /* ── Block all input while a loading dialog is on screen ──────────
+     * The dialog has no buttons, so there is nothing the user may do until
+     * the ESP finishes its work and dismisses it. Handlers run serialized on
+     * the coordinator task, so in practice this guards any stray line that
+     * was queued before the dialog went up. */
+    if (nextion_is_loading()) {
+        return;
+    }
 
     /* ── Profile run commands (always allowed) ─────────────────── */
     const char *p;
@@ -220,9 +239,20 @@ void nextion_event_handle_line(const char *line)
     p = strstr(clean, "save_settings:");
     if (p) { handle_save_settings(p + 14); return; }
 
-    if (strstr(clean, "factory_reset_confirm")) { handle_factory_reset_confirm(); return; }
-    if (strstr(clean, "factory_reset"))         { handle_factory_reset_request(); return; }
-    if (strstr(clean, "restart"))               { handle_restart(); return; }
+    /* Destructive actions must be an exact, framed command.  Substring
+     * matching could turn malformed or concatenated input into a reset. */
+    if (strcmp(clean, "factory_reset_confirm") == 0) {
+        handle_factory_reset_confirm();
+        return;
+    }
+    if (strcmp(clean, "factory_reset") == 0) {
+        handle_factory_reset_request();
+        return;
+    }
+    if (strcmp(clean, "restart") == 0) {
+        handle_restart();
+        return;
+    }
 
     LOGGER_LOG_INFO(TAG, "Unhandled Nextion line: %s", clean);
 }

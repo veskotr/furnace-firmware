@@ -1,0 +1,4 @@
+interface:
+  display_name: "Decide Furnace Architecture"
+  short_description: "Evaluate and record durable firmware decisions"
+  default_prompt: "Use $decide-furnace-architecture to compare options and prepare an ADR for this decision."

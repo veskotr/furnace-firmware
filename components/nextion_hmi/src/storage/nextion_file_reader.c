@@ -15,6 +15,19 @@ static const char *TAG = "nextion_file_reader";
 
 static volatile bool s_file_read_active = false;
 
+static bool is_nextion_error_frame(const uint8_t *buf, size_t len)
+{
+    if (!buf || len < 4) {
+        return false;
+    }
+
+    if (buf[1] != 0xFF || buf[2] != 0xFF || buf[3] != 0xFF) {
+        return false;
+    }
+
+    return (buf[0] == 0x00 || buf[0] == 0x04 || buf[0] == 0x05 || buf[0] == 0x06 || buf[0] == 0x09);
+}
+
 bool nextion_file_reader_active(void)
 {
     return s_file_read_active;
@@ -23,6 +36,8 @@ bool nextion_file_reader_active(void)
 bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_len)
 {
     size_t total_received = 0;
+    uint32_t file_size = 0;
+    bool complete = false;
 
     if (!path || !out || max_len == 0) {
         return false;
@@ -53,10 +68,15 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         goto cleanup;
     }
 
-    uint32_t file_size = (uint32_t)size_buf[0] |
-                         ((uint32_t)size_buf[1] << 8) |
-                         ((uint32_t)size_buf[2] << 16) |
-                         ((uint32_t)size_buf[3] << 24);
+    if (is_nextion_error_frame(size_buf, sizeof(size_buf))) {
+        LOGGER_LOG_WARN(TAG, "rdfile size query failed for %s: Nextion error 0x%02X", path, size_buf[0]);
+        goto cleanup;
+    }
+
+    file_size = (uint32_t)size_buf[0] |
+                ((uint32_t)size_buf[1] << 8) |
+                ((uint32_t)size_buf[2] << 16) |
+                ((uint32_t)size_buf[3] << 24);
 
     LOGGER_LOG_INFO(TAG, "File size: %u bytes", (unsigned)file_size);
 
@@ -117,6 +137,8 @@ bool nextion_read_file(const char *path, char *out, size_t max_len, size_t *out_
         LOGGER_LOG_INFO(TAG, "Read chunk: %u/%u bytes", (unsigned)total_received, (unsigned)file_size);
     }
 
+    complete = total_received == file_size;
+
 cleanup:
     if (locked) {
         nextion_uart_unlock();
@@ -128,7 +150,12 @@ cleanup:
     }
 
     LOGGER_LOG_INFO(TAG, "File read complete: %u bytes", (unsigned)total_received);
-    return (total_received > 0);
+    if (!complete)
+    {
+        LOGGER_LOG_WARN(TAG, "File read incomplete: received %u of %u bytes",
+                        (unsigned)total_received, (unsigned)file_size);
+    }
+    return complete;
 }
 
 bool nextion_file_exists(const char *path)

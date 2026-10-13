@@ -36,6 +36,7 @@ static const health_monitor_data_t hmi_coordinator_health_data = {
 
 /** Maximum critical events we can buffer during one file transfer. */
 #define DEFERRED_CRITICAL_MAX  8
+#define CRITICAL_QUEUE_WAIT_MS 100
 
 /** True while a file transfer is in progress and we are deferring. */
 static bool s_deferring = false;
@@ -51,6 +52,20 @@ static struct
 /** Small ring of critical commands deferred during a transfer. */
 static hmi_cmd_t s_deferred_critical[DEFERRED_CRITICAL_MAX];
 static int s_deferred_critical_count = 0;
+
+static bool enqueue_hmi_command(const hmi_cmd_t *cmd, bool critical)
+{
+    BaseType_t result = critical
+        ? xQueueSendToFront(s_cmd_queue, cmd, pdMS_TO_TICKS(CRITICAL_QUEUE_WAIT_MS))
+        : xQueueSend(s_cmd_queue, cmd, 0);
+    if (result != pdTRUE)
+    {
+        LOGGER_LOG_WARN(TAG, "HMI command queue full, dropping %s command (%d)",
+                        critical ? "critical" : "telemetry", (int)cmd->type);
+        return false;
+    }
+    return true;
+}
 
 /** Check whether storage or file-reader currently owns the UART. */
 static bool uart_busy(void)
@@ -84,7 +99,9 @@ static void flush_deferred(void)
             break;
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                c->error.error_code, c->error.esp_error);
+                c->error.error_code, c->error.esp_error,
+                c->error.temperature_c, c->error.setpoint_c,
+                c->error.stage_index, c->error.fault_elapsed_ms);
             break;
         default:
             break;
@@ -115,15 +132,18 @@ static void temp_processor_event_bridge(void* handler_arg, esp_event_base_t base
     {
         return;
     }
-
+    if(id != PROCESS_TEMPERATURE_EVENT_DATA || !event_data)
+    {
+        return;
+    }
     const float temperature = *((const float*)event_data);
     hmi_cmd_t cmd = {0};
     cmd.type = HMI_CMD_TEMP_UPDATE;
     cmd.temp.average_temperature = temperature;
     cmd.temp.valid = true;
 
-    // Non-blocking: drop event if queue is full (UI updates are best-effort)
-    xQueueSend(s_cmd_queue, &cmd, 0);
+    /* Temperature updates are telemetry; a newer event supersedes them. */
+    enqueue_hmi_command(&cmd, false);
 }
 
 static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
@@ -168,6 +188,10 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             cmd.status.power_output = s->power_output;
             cmd.status.elapsed_ms = s->elapsed_ms;
             cmd.status.total_ms = s->total_ms;
+            cmd.status.stage_index = s->stage_index;
+            cmd.status.total_active_stages = s->total_active_stages;
+            cmd.status.phase = s->phase;
+            cmd.status.stage_remaining_ms = s->stage_remaining_ms;
         }
         break;
 
@@ -178,6 +202,10 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
             const coordinator_error_data_t* err = event_data;
             cmd.error.error_code = err->error_code;
             cmd.error.esp_error = err->esp_error_code;
+            cmd.error.temperature_c = err->temperature_c;
+            cmd.error.setpoint_c = err->setpoint_c;
+            cmd.error.stage_index = err->stage_index;
+            cmd.error.fault_elapsed_ms = err->fault_elapsed_ms;
         }
         break;
 
@@ -187,7 +215,9 @@ static void coordinator_event_bridge(void* handler_arg, esp_event_base_t base,
         return;
     }
 
-    xQueueSend(s_cmd_queue, &cmd, 0);
+    /* Keep lifecycle and error events ahead of telemetry and allow the HMI
+     * task a short window to drain a full queue before reporting loss. */
+    enqueue_hmi_command(&cmd, cmd.type != HMI_CMD_STATUS_UPDATE);
 }
 
 /* ── Coordinator task ──────────────────────────────────────────────── */
@@ -320,7 +350,11 @@ static void hmi_coordinator_task(void* arg)
                 cmd.status.total_ms,
                 cmd.status.current_temperature,
                 cmd.status.target_temperature,
-                cmd.status.power_output);
+                cmd.status.power_output,
+                cmd.status.stage_index,
+                cmd.status.total_active_stages,
+                cmd.status.phase,
+                cmd.status.stage_remaining_ms);
             break;
 
         case HMI_CMD_PROFILE_STARTED:
@@ -345,7 +379,9 @@ static void hmi_coordinator_task(void* arg)
 
         case HMI_CMD_PROFILE_ERROR:
             nextion_event_handle_profile_error(
-                cmd.error.error_code, cmd.error.esp_error);
+                cmd.error.error_code, cmd.error.esp_error,
+                cmd.error.temperature_c, cmd.error.setpoint_c,
+                cmd.error.stage_index, cmd.error.fault_elapsed_ms);
             break;
 
         default:

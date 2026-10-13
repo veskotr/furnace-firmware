@@ -21,11 +21,18 @@ void nextion_update_main_status(void);
 void nextion_event_handle_temp_update(float temperature, bool valid);
 void nextion_event_handle_status_update(uint32_t elapsed_ms, uint32_t total_ms,
                                        float current_temp, float target_temp,
-                                       float power_output);
+                                       float power_output,
+                                       int8_t stage_index, int8_t total_stages,
+                                       uint8_t phase,
+                                       uint32_t stage_remaining_ms);
 void nextion_event_handle_profile_started(void);
 void nextion_event_handle_profile_paused(void);
 void nextion_event_handle_profile_resumed(void);
 void nextion_event_handle_profile_stopped(void);
 void nextion_event_handle_profile_completed(void);
 void nextion_event_handle_profile_error(coordinator_error_code_t code,
-                                        esp_err_t esp_err);
+                                        esp_err_t esp_err,
+                                        float temperature_c,
+                                        float setpoint_c,
+                                        int8_t stage_index,
+                                        uint32_t fault_elapsed_ms);

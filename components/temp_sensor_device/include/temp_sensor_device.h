@@ -2,6 +2,7 @@
 
 #include "device_manager.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 
 typedef enum
 {
@@ -22,6 +23,11 @@ esp_err_t temp_sensor_create(temp_sensor_device_t** device);
 esp_err_t temp_sensor_set_device_state(const temp_sensor_device_t* device, device_state_t new_state);
 
 esp_err_t temp_sensor_read_device(const temp_sensor_device_t* device, void* data_out);
+
+uint16_t temp_sensor_get_id(const temp_sensor_device_t* device);
+
+TickType_t temp_sensor_get_last_update_tick(const temp_sensor_device_t* device);
+bool temp_sensor_has_successful_sample(const temp_sensor_device_t* device);
 
 esp_err_t temp_sensor_write_device(const temp_sensor_device_t* device, const device_write_cmd_t* cmd);
 

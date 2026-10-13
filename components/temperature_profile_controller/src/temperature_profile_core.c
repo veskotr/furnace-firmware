@@ -4,6 +4,21 @@
 #include <math.h>
 #include <string.h>
 
+/* Fallback in case this component is built against an sdkconfig that predates
+ * the ramp soft-landing knob (e.g. before the next menuconfig regen). 6 C
+ * matches the Kconfig default, so behaviour is identical whether or not the
+ * symbol is present; 0 would disable the soft-landing (pure linear ramp). */
+#ifndef CONFIG_COORDINATOR_RAMP_EASE_BAND_C
+#define CONFIG_COORDINATOR_RAMP_EASE_BAND_C 6
+#endif
+
+/* Dedicated, tighter tolerance (tenths C) for the HEATING->HOLDING hand-over,
+ * kept separate from the shared whole-degree NEXTION_TEMP_TOLERANCE_C. Fallback
+ * matches the Kconfig default so behaviour is identical before a menuconfig regen. */
+#ifndef CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10
+#define CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10 5
+#endif
+
 static const char *TAG = "TEMP_PROFILE_CONTROLLER";
 
 typedef struct {
@@ -178,6 +193,59 @@ static stage_phase_t detect_stage_phase(float start_temp, float target_temp, flo
 }
 
 /**
+ * @brief Soft-landing shape for the final approach of a heating ramp.
+ *
+ * A pure linear ramp commands a constant rise rate right up to the target, then
+ * the setpoint goes flat the instant we hand over to the HOLDING stage. At that
+ * corner the chamber is still climbing at full ramp rate and the PID integrator
+ * is wound up for "climbing" power, so the chamber coasts past the target
+ * before the controller can back off — the classic ramp->hold overshoot, with
+ * a slow tail while the integrator unwinds.
+ *
+ * This eases the LAST @p ease_band_c degrees of the ramp: the commanded rate is
+ * tapered smoothly to zero as the setpoint reaches the target, so the heater is
+ * already near hold power (and the integrator already unwound) by the time the
+ * setpoint goes flat. The ease segment takes twice the linear time for its
+ * temperature band, extending the overall ramp by one linear band duration.
+ * This is required to avoid briefly exceeding the configured ramp rate while
+ * still entering the ease segment at that rate.
+ *
+ *     q(u) = q0 + band/span * (2u - u^2)
+ *
+ * where u is the normalised ease time. The linear portion and ease segment are
+ * C1-continuous at the seam, q is monotonic on [0,1], and the commanded rate
+ * never exceeds the configured ramp rate. Unlike the previous cubic, the
+ * planned arrival time is intentionally extended to account for the slower tail.
+ *
+ * @param frac        elapsed/planned ramp fraction, already clamped to [0,1].
+ * @param span        target - start in deg C (> 0 for a heating ramp).
+ * @param ease_band_c degrees over which to taper; 0 disables (pure linear).
+ * @return normalised setpoint position in [0,1] (caller does start + span*q).
+ */
+static float ramp_ease_position(float frac, float span, float ease_band_c)
+{
+    if (ease_band_c <= 0.0f || span <= 0.0f) {
+        return frac;                       /* easing disabled -> linear ramp */
+    }
+
+    /* Clamp the band to the whole ramp so a short span (band >= span) just
+     * eases the entire climb. The ease duration is twice the linear duration
+     * for the band, so the total time is proportional to span + band. */
+    const float band = ease_band_c < span ? ease_band_c : span;
+    const float total_span = span + band;
+    const float ease_start_time = (span - band) / total_span;
+    const float ease_time_width = (2.0f * band) / total_span;
+
+    if (frac <= ease_start_time) {
+        return frac * total_span / span;   /* still on the linear segment */
+    }
+
+    const float u = (frac - ease_start_time) / ease_time_width;
+    const float ease_start_position = (span - band) / span;
+    return ease_start_position + (band / span) * (2.0f * u - u * u);
+}
+
+/**
  * @brief Advance to the next stage (or cooldown if no more stages).
  */
 static void advance_stage(float current_temp, profile_tick_result_t *result)
@@ -199,14 +267,42 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
     const program_draft_t *prog = g_temp_profile_controller_ctx->program;
     const program_stage_t *stage = &prog->stages[idx];
 
-    s_tick.stage_index      = idx;
-    s_tick.stage_elapsed_ms = 0;
-    s_tick.stage_planned_ms = (uint32_t)stage->t_min * 60U * 1000U;
-    s_tick.stage_start_temp = current_temp;  /* Start from ACTUAL temperature */
+    s_tick.stage_index       = idx;
+    s_tick.stage_elapsed_ms  = 0;
+    s_tick.stage_start_temp  = current_temp;  /* Start from ACTUAL temperature */
     s_tick.stage_target_temp = (float)stage->target_t_c;
 
     const float tolerance = (float)CONFIG_NEXTION_TEMP_TOLERANCE_C;
     s_tick.phase = detect_stage_phase(current_temp, s_tick.stage_target_temp, tolerance);
+
+    /* Compute stage_planned_ms:
+     *
+     * For a HEATING stage with a configured rate (delta_t_per_min_x10 > 0),
+     * derive the ramp duration from the ACTUAL start temperature and the
+     * configured °C/min. This is the critical bit — t_min was baked in at
+     * program-edit time against an *assumed* start temp (the previous
+     * stage's target, or 0 for stage 1), so using t_min directly would
+     * stretch the same wall-clock duration across a different temperature
+     * span and silently change the rate.
+     *
+     *     planned_ms = |target − start| / rate(°C/min)  × 60_000 ms/min
+     *                = |target − start| × 600_000 / delta_t_per_min_x10
+     *
+     * HOLDING stages: keep t_min, it IS the dwell duration.
+     * COOLING stages (and any stage with no rate set): fall back to t_min. */
+    if (s_tick.phase == STAGE_PHASE_HEATING && stage->delta_t_per_min_x10 > 0) {
+        float diff_c = s_tick.stage_target_temp - current_temp;
+        if (diff_c < 0.0f) diff_c = -diff_c;
+        const float ease_band_c = (float)CONFIG_COORDINATOR_RAMP_EASE_BAND_C;
+        const float bounded_ease_band_c = ease_band_c < diff_c ? ease_band_c : diff_c;
+        const float base_ramp_ms_f = (diff_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        const float ease_extension_ms_f =
+            (bounded_ease_band_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        const float planned_ms_f = base_ramp_ms_f + ease_extension_ms_f;
+        s_tick.stage_planned_ms = (uint32_t)planned_ms_f;
+    } else {
+        s_tick.stage_planned_ms = (uint32_t)stage->t_min * 60U * 1000U;
+    }
 
     result->stage_changed = true;
 
@@ -214,8 +310,10 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
                             (s_tick.phase == STAGE_PHASE_HOLDING)  ? "HOLDING" :
                             (s_tick.phase == STAGE_PHASE_COOLING)  ? "COOLING" : "??";
 
-    LOGGER_LOG_INFO(TAG, "Stage %d started [%s]: %.1f C → %d C over %d min",
-                    idx + 1, phase_str, current_temp, stage->target_t_c, stage->t_min);
+    LOGGER_LOG_INFO(TAG, "Stage %d started [%s]: %.1f C → %d C, rate x10 = %d, planned %lu ms",
+                    idx + 1, phase_str, current_temp, stage->target_t_c,
+                    stage->delta_t_per_min_x10,
+                    (unsigned long)s_tick.stage_planned_ms);
 }
 
 profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
@@ -235,6 +333,8 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     result->stage_changed       = false;
     result->profile_complete    = false;
     result->threshold_violation = false;
+    result->stage_elapsed_ms    = 0;
+    result->stage_planned_ms    = 0;
 
     /* First call: build stage list and enter first stage */
     if (!s_tick.initialized) {
@@ -252,6 +352,10 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     }
 
     const float tolerance = (float)CONFIG_NEXTION_TEMP_TOLERANCE_C;
+    /* Tighter, dedicated tolerance for the HEATING->HOLDING hand-over only, so
+     * the chamber tracks the eased ramp almost to target and arrives gently.
+     * The shared `tolerance` above still drives cooling advance + phase detect. */
+    const float handover_tol = (float)CONFIG_COORDINATOR_HANDOVER_TOLERANCE_X10 / 10.0f;
     const float overshoot_threshold = (float)CONFIG_COORDINATOR_OVERSHOOT_THRESHOLD_C;
 
     /* ── Handle cooldown phase ────────────────────────────────────── */
@@ -301,15 +405,21 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
         if (s_tick.stage_planned_ms > 0) {
             float frac = (float)s_tick.stage_elapsed_ms / (float)s_tick.stage_planned_ms;
             if (frac > 1.0f) frac = 1.0f;
-            setpoint = s_tick.stage_start_temp
-                     + (target - s_tick.stage_start_temp) * frac;
+            /* Soft-land the final approach: taper the ramp rate to zero as we
+             * reach the target so the chamber isn't still climbing at full rate
+             * when we hand over to HOLDING (which it would coast past). A band
+             * of 0 reduces this to the original linear ramp. */
+            const float span = target - s_tick.stage_start_temp;
+            const float shaped = ramp_ease_position(
+                frac, span, (float)CONFIG_COORDINATOR_RAMP_EASE_BAND_C);
+            setpoint = s_tick.stage_start_temp + span * shaped;
         } else {
             setpoint = target;
         }
 
-        if (current_temp >= target - tolerance) {
+        if (current_temp >= target - handover_tol) {
             LOGGER_LOG_INFO(TAG, "Stage %d [HEATING]: target reached (%.1f C >= %.1f C), advancing",
-                            s_tick.stage_index + 1, current_temp, target - tolerance);
+                            s_tick.stage_index + 1, current_temp, target - handover_tol);
             advance_stage(current_temp, result);
             if (s_tick.phase == STAGE_PHASE_COOLDOWN) {
                 setpoint = 0.0f;
@@ -378,6 +488,8 @@ profile_controller_error_t profile_tick(uint32_t elapsed_since_last_ms,
     result->current_stage_index = s_tick.stage_index;
     result->phase = s_tick.phase;
     result->setpoint = setpoint;
+    result->stage_elapsed_ms = s_tick.stage_elapsed_ms;
+    result->stage_planned_ms = s_tick.stage_planned_ms;
 
     /* ── Overshoot threshold check ─────────────────────────────────── */
     if (s_tick.phase != STAGE_PHASE_COOLDOWN &&

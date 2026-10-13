@@ -1,11 +1,20 @@
 menu "Heater Controller"
-    config HEATER_CONTROLLER_GPIO
+    config HEATER_CONTACTOR_GPIO_PIN
         int "GPIO Pin"
-        default 25
+        default 22
+
+    config HEATER_SSR_GPIO_PIN
+        int "GPIO Pin"
+        default 21
 
     config HEATER_WINDOW_SIZE_MS
         int "Heater Window Size (ms)"
-        default 10000
+        default 5000
+        help
+            Time-proportioning window for the SSR. With a zero-cross AC SSR
+            (e.g. Autonics SRH3-1430) 1000 ms is comfortable. For a mechanical
+            relay/contactor used for PWM, set this much higher (e.g. 10000 ms)
+            to avoid wearing out the contacts.
 
     config HEATER_CONTROLLER_TASK_NAME
         string "Heater Controller Task Name"

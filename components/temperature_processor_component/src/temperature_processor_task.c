@@ -44,21 +44,29 @@ static void temp_process_task(void* args)
 
     temp_processor_context_t* ctx = (temp_processor_context_t*)args;
 
-    while (ctx->processor_running)
+    while (atomic_load_explicit(&ctx->processor_running, memory_order_acquire))
     {
         uint8_t samples_count = 0;
 
         read_temp_sensors(ctx, &samples_count);
 
-        if (samples_count == 0)
-        {
-            LOGGER_LOG_WARN(TAG, "No temperature samples available for processing");
-            continue;
-        }
-
         float average_temperature = 0.0f;
-        esp_err_t result = process_temperature_samples(
-            ctx, samples_count, &average_temperature);
+        esp_err_t result = samples_count == 0
+                               ? ESP_ERR_NOT_FOUND
+                               : process_temperature_samples(ctx, samples_count, &average_temperature);
+
+        const uint8_t fresh_count = samples_count;
+        const TickType_t now = xTaskGetTickCount();
+        const uint8_t minimum_valid = ctx->number_of_temp_sensors > 2
+                                           ? (uint8_t)(ctx->number_of_temp_sensors - 2)
+                                           : 1;
+        temperature_processor_sample_t sample = {
+            .average_temperature = average_temperature,
+            .sample_tick = now,
+            .valid_sensor_count = fresh_count,
+            .total_sensor_count = ctx->number_of_temp_sensors,
+            .valid = result == ESP_OK && fresh_count >= minimum_valid,
+        };
 
         if (result != ESP_OK)
         {
@@ -77,15 +85,20 @@ static void temp_process_task(void* args)
             LOGGER_LOG_INFO(TAG, "Processed average temperature: %.2f C", average_temperature);
         }
 
-        CHECK_ERR_LOG(post_temp_processor_event(average_temperature),
-                      "Failed to post temp process data");
+        if (sample.valid)
+        {
+            CHECK_ERR_LOG(post_temp_processor_event(average_temperature),
+                          "Failed to post temp process data");
+        }
+        CHECK_ERR_LOG(post_temp_processor_validity_event(&sample),
+                      "Failed to post temp validity data");
         event_manager_post_health(HEALTH_MONITOR_EVENT_HEARTBEAT, &health_monitor_data);
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
 
     LOGGER_LOG_INFO(TAG, "Temperature processor task exiting");
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
-    ctx->task_handle = NULL;
 }
 
 esp_err_t start_temp_processor_task(temp_processor_context_t* ctx)
@@ -119,7 +132,7 @@ esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx)
         return ESP_OK;
     }
 
-    ctx->processor_running = false;
+    atomic_store_explicit(&ctx->processor_running, false, memory_order_release);
     if (ctx->task_handle != NULL)
     {
         xTaskNotifyGive(ctx->task_handle);
@@ -131,6 +144,7 @@ esp_err_t stop_temp_processor_task(temp_processor_context_t* ctx)
 
 static void read_temp_sensors(temp_processor_context_t* ctx, uint8_t* number_of_samples)
 {
+    const TickType_t now = xTaskGetTickCount();
     for (uint8_t i = 0; i < ctx->number_of_temp_sensors; i++)
     {
         const temp_sensor_device_t* temp_sensor_device = ctx->temp_sensor_devices[i];
@@ -146,7 +160,21 @@ static void read_temp_sensors(temp_processor_context_t* ctx, uint8_t* number_of_
             continue;
         }
 
-        (*number_of_samples)++;
-        LOGGER_LOG_DEBUG(TAG, "Read temperature %.2f C from sensor device at index %d", ctx->temperatures_buffer[i], i);
+        if (!temp_sensor_has_successful_sample(temp_sensor_device) ||
+            (now - temp_sensor_get_last_update_tick(temp_sensor_device)) >
+                pdMS_TO_TICKS(CONFIG_COORDINATOR_SENSOR_AGGREGATE_STALE_TIMEOUT_MS))
+        {
+            LOGGER_LOG_WARN(TAG, "Ignoring stale temperature from sensor device at index %d", i);
+            continue;
+        }
+
+        /* Compact successful samples so a failed earlier sensor cannot leave a
+         * stale slot inside the aggregate. */
+        if (*number_of_samples != i)
+        {
+            ctx->temperatures_buffer[*number_of_samples] = ctx->temperatures_buffer[i];
+        }
+        ++(*number_of_samples);
+        LOGGER_LOG_DEBUG(TAG, "Read temperature %.2f C from sensor device at index %d", ctx->temperatures_buffer[*number_of_samples - 1], i);
     }
 }

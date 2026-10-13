@@ -2,6 +2,9 @@
 
 #include "heating_program_validation.h"
 
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,8 +18,10 @@ bool parse_int(const char *text, int *out_value)
     }
 
     char *endptr = NULL;
+    errno = 0;
     long value = strtol(text, &endptr, 10);
-    if (*endptr != '\0') {
+    if (errno == ERANGE || *endptr != '\0' ||
+        value < (long)INT_MIN || value > (long)INT_MAX) {
         return false;
     }
 
@@ -42,9 +47,14 @@ bool parse_decimal_x10(const char *text, int *out_value_x10)
         ptr++;
     }
 
-    int whole = 0;
-    while (*ptr >= '0' && *ptr <= '9') { 
-        whole = whole * 10 + (*ptr - '0');
+    const int64_t max_magnitude = (int64_t)INT_MAX + (sign < 0 ? 1 : 0);
+    int64_t whole = 0;
+    while (*ptr >= '0' && *ptr <= '9') {
+        int digit = *ptr - '0';
+        if (whole > (max_magnitude - digit) / 10) {
+            return false;
+        }
+        whole = whole * 10 + digit;
         ptr++;
     }
 
@@ -64,7 +74,18 @@ bool parse_decimal_x10(const char *text, int *out_value_x10)
         return false;
     }
 
-    *out_value_x10 = sign * (whole * 10 + frac);
+    int64_t magnitude = whole * 10 + frac;
+    if (magnitude > max_magnitude) {
+        return false;
+    }
+
+    if (sign < 0) {
+        *out_value_x10 = magnitude == (int64_t)INT_MAX + 1
+            ? INT_MIN
+            : -(int)magnitude;
+    } else {
+        *out_value_x10 = (int)magnitude;
+    }
     return true;
 }
 
