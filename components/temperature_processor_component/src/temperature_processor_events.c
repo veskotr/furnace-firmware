@@ -27,6 +27,17 @@ esp_err_t post_temp_processor_event(float average_temperature)
     return ESP_OK;
 }
 
+esp_err_t post_temp_processor_validity_event(const temperature_processor_sample_t* sample)
+{
+    if (sample == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return event_manager_post_blocking(TEMP_PROCESSOR_EVENT,
+                                       PROCESS_TEMPERATURE_VALIDITY_EVENT_DATA,
+                                       (void*)sample, sizeof(*sample));
+}
+
 esp_err_t post_processing_error(furnace_error_t furnace_error)
 {
     CHECK_ERR_LOG_RET(event_manager_post_blocking(FURNACE_ERROR_EVENT,

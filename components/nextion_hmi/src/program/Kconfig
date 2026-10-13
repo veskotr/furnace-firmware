@@ -31,6 +31,10 @@ menu "Operational Limits"
         int "Operational time override value (hours)"
         depends on NEXTION_OP_TIME_OVERRIDE_ENABLE
         default 0
+        range 0 1193046
+        help
+            Validated service-hours correction. The upper bound keeps the
+            seconds conversion within uint32_t (UINT32_MAX / 3600).
 
     config NEXTION_MAX_OPERATIONAL_TIME_MIN
         int "Maximum total program time (minutes)"

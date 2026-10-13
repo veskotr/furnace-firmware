@@ -29,7 +29,7 @@ static void device_manager_task(void *args)
 
     TickType_t next_wake_time = xTaskGetTickCount();
 
-    while (ctx->running)
+    while (atomic_load(&ctx->running))
     {
         next_wake_time += period;
 
@@ -76,18 +76,18 @@ static void device_manager_task(void *args)
             next_wake_time = now;
     }
     LOGGER_LOG_INFO(TAG, "Device manager task stopping");
-    ctx->task_handle = NULL;
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
 }
 
 esp_err_t init_device_manager_task(device_manager_context_t *ctx)
 {
-    if (ctx->running)
+    if (atomic_load(&ctx->running))
     {
         return ESP_OK;
     }
 
-    ctx->running = true;
+    atomic_store(&ctx->running, true);
 
     CHECK_ERR_LOG_CALL_RET(xTaskCreate(
                                device_manager_task,
@@ -98,7 +98,7 @@ esp_err_t init_device_manager_task(device_manager_context_t *ctx)
                                &ctx->task_handle) == pdPASS
                                ? ESP_OK
                                : ESP_FAIL,
-                           ctx->running = false,
+                           atomic_store(&ctx->running, false),
                            "Failed to create device manager task");
 
     event_manager_post_health(HEALTH_MONITOR_EVENT_REGISTER, &health_monitor_data);
@@ -108,15 +108,21 @@ esp_err_t init_device_manager_task(device_manager_context_t *ctx)
 
 esp_err_t stop_device_manager_task(device_manager_context_t *ctx)
 {
-    if (!ctx->running)
+    if (!atomic_load(&ctx->running))
     {
         return ESP_OK;
     }
 
-    ctx->running = false;
-    if (ctx->task_handle != NULL)
+    const TaskHandle_t task_handle = ctx->task_handle;
+    atomic_store(&ctx->running, false);
+    if (task_handle != NULL)
     {
-        xTaskNotifyGive(ctx->task_handle);
+        xTaskNotifyGive(task_handle);
+        if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        ctx->task_handle = NULL;
     }
 
     return ESP_OK;

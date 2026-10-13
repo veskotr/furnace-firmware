@@ -22,6 +22,29 @@ static const task_config_t commands_dispatcher_task_config = {
     .task_priority = CONFIG_COMMANDS_DISPATCHER_TASK_PRIORITY,
 };
 
+esp_err_t commands_dispatcher_execute_command(const commands_dispatcher_ctx_t* ctx,
+                                              const command_t* command)
+{
+    if (ctx == NULL || command == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (command->target >= CONFIG_COMMANDS_DISPATCHER_MAX_HANDLERS)
+    {
+        LOGGER_LOG_ERROR(TAG, "Invalid command target: %d", command->target);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const handler_entry_t* handler_entry = &ctx->command_handlers[command->target];
+    if (!handler_entry->registered || handler_entry->handler == NULL)
+    {
+        LOGGER_LOG_WARN(TAG, "No registered handler for command target: %d", command->target);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    return handler_entry->handler(handler_entry->handler_arg, &command->data);
+}
 
 static void commands_dispatcher_task(void* args)
 {
@@ -30,7 +53,7 @@ static void commands_dispatcher_task(void* args)
     const commands_dispatcher_ctx_t* ctx = (commands_dispatcher_ctx_t*)args;
     command_t received_command;
 
-    while (ctx->dispatcher_running)
+    while (atomic_load_explicit(&ctx->dispatcher_running, memory_order_acquire))
     {
         // Wait for a command with a finite timeout so we can send heartbeats
         // Note: if the command handlers can take a long time to execute, we may want to move the heartbeat posting inside the handler execution
@@ -40,30 +63,11 @@ static void commands_dispatcher_task(void* args)
         if (xQueueReceive(ctx->command_queue, &received_command, pdMS_TO_TICKS(2000)) == pdTRUE)
         {
             LOGGER_LOG_DEBUG(TAG, "Received command for target: %d", received_command.target);
-
-            // Dispatch command to the appropriate handler
-            if (received_command.target < CONFIG_COMMANDS_DISPATCHER_MAX_HANDLERS)
+            const esp_err_t err = commands_dispatcher_execute_command(ctx, &received_command);
+            if (err != ESP_OK)
             {
-                const handler_entry_t* handler_entry = &ctx->command_handlers[received_command.target];
-                if (handler_entry->registered && handler_entry->handler != NULL)
-                {
-                    const esp_err_t err = handler_entry->handler(
-                        handler_entry->handler_arg,
-                        &received_command.data);
-                    if (err != ESP_OK)
-                    {
-                        LOGGER_LOG_ERROR(TAG, "Command handler for target %d failed with error: %d",
-                                         received_command.target, err);
-                    }
-                }
-                else
-                {
-                    LOGGER_LOG_WARN(TAG, "No registered handler for command target: %d", received_command.target);
-                }
-            }
-            else
-            {
-                LOGGER_LOG_ERROR(TAG, "Invalid command target: %d", received_command.target);
+                LOGGER_LOG_ERROR(TAG, "Command handler for target %d failed with error: %d",
+                                 received_command.target, err);
             }
         }
 
@@ -71,6 +75,7 @@ static void commands_dispatcher_task(void* args)
     }
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task stopping");
+    xSemaphoreGive(ctx->exit_semaphore);
     vTaskDelete(NULL);
 }
 
@@ -107,20 +112,15 @@ esp_err_t shutdown_task(commands_dispatcher_ctx_t* ctx)
         return ESP_OK;
     }
 
-    ctx->dispatcher_running = false;
+    atomic_store_explicit(&ctx->dispatcher_running, false, memory_order_release);
 
-    // Wait for the task to exit
-    const TickType_t wait_ticks = pdMS_TO_TICKS(1000);
-    const TickType_t start_tick = xTaskGetTickCount();
-    while (ctx->dispatcher_task_handle != NULL)
+    if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
     {
-        if ((xTaskGetTickCount() - start_tick) > wait_ticks)
-        {
-            LOGGER_LOG_ERROR(TAG, "Timeout waiting for Commands Dispatcher task to stop");
-            return ESP_ERR_TIMEOUT;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        LOGGER_LOG_ERROR(TAG, "Failed waiting for Commands Dispatcher task to stop");
+        return ESP_ERR_TIMEOUT;
     }
+
+    ctx->dispatcher_task_handle = NULL;
 
     LOGGER_LOG_INFO(TAG, "Commands Dispatcher task shutdown complete");
     return ESP_OK;

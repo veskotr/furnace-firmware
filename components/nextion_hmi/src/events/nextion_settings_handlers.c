@@ -6,6 +6,7 @@
 #include "nextion_storage_internal.h"
 #include "nextion_ui_internal.h"
 #include "heating_program_models_internal.h"
+#include "heater_controller_component.h"
 #include "logger_component.h"
 #include "esp_system.h"
 
@@ -16,6 +17,18 @@
 #include <string.h>
 
 static const char *TAG = "nextion_settings";
+
+static bool inhibit_heater_before_reset(void)
+{
+    const esp_err_t err = heater_controller_set_control_inhibit(true);
+    if (err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Reset refused: failed to inhibit heater output: %s",
+                         esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
 
 void handle_settings_init(void)
 {
@@ -187,6 +200,11 @@ void handle_restart(void)
 {
     LOGGER_LOG_INFO(TAG, "Restart requested");
 
+    if (!inhibit_heater_before_reset())
+    {
+        return;
+    }
+
     /* Buttonless loading overlay so the user gets feedback during the brief
      * window before the panel resets. Not paired with a hide — the Nextion
      * reset below clears it as the panel reboots, and esp_restart() never
@@ -222,6 +240,11 @@ void handle_factory_reset_request(void)
 void handle_factory_reset_confirm(void)
 {
     LOGGER_LOG_INFO(TAG, "Factory reset confirmed — deleting all programs");
+
+    if (!inhibit_heater_before_reset())
+    {
+        return;
+    }
 
     /* Hide the dialog */
     nextion_send_cmd("vis confirmBdy,0");

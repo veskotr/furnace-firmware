@@ -3,6 +3,7 @@
 #include "coordinator_component_internal.h"
 #include "utils.h"
 #include "sdkconfig.h"
+#include "heater_controller_component.h"
 
 static const char* TAG = "COORDINATOR_CORE";
 
@@ -26,6 +27,40 @@ esp_err_t init_coordinator(void)
     }
 
     g_coordinator_ctx->has_program = false;
+    g_coordinator_ctx->temperature_mutex = xSemaphoreCreateMutex();
+    if (g_coordinator_ctx->temperature_mutex == NULL)
+    {
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    g_coordinator_ctx->target_update_mutex = xSemaphoreCreateMutex();
+    if (g_coordinator_ctx->target_update_mutex == NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    g_coordinator_ctx->exit_semaphore = xSemaphoreCreateBinary();
+    if (g_coordinator_ctx->exit_semaphore == NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->target_update_mutex);
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        free(g_coordinator_ctx);
+        g_coordinator_ctx = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    atomic_init(&g_coordinator_ctx->sensor_data_inhibited, true);
+    atomic_init(&g_coordinator_ctx->sensor_data_expired, true);
+    CHECK_ERR_LOG_RET(heater_controller_set_sensor_data_inhibit(true),
+                      "Failed to establish startup sensor-data inhibit");
+
+    CHECK_ERR_LOG_CALL_RET(init_sensor_data_expiry_timer(g_coordinator_ctx),
+                           stop_coordinator(),
+                           "Failed to create sensor-data expiry timer");
 
     // Initialize Coordinator Events
     CHECK_ERR_LOG_RET(init_coordinator_events(g_coordinator_ctx),
@@ -50,7 +85,7 @@ esp_err_t coordinator_list_heating_profiles(void)
 
 esp_err_t stop_coordinator(void)
 {
-    if (g_coordinator_ctx == NULL || !g_coordinator_ctx->running)
+    if (g_coordinator_ctx == NULL)
     {
         return ESP_OK;
     }
@@ -58,9 +93,27 @@ esp_err_t stop_coordinator(void)
     CHECK_ERR_LOG_RET(shutdown_coordinator_events(g_coordinator_ctx),
                       "Failed to shutdown coordinator events");
 
+    CHECK_ERR_LOG_RET(shutdown_sensor_data_expiry_timer(g_coordinator_ctx),
+                      "Failed to shutdown sensor-data expiry timer");
+
     CHECK_ERR_LOG_RET(stop_heating_profile(g_coordinator_ctx),
                       "Failed to stop heating profile");
 
+    if (g_coordinator_ctx->temperature_mutex != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->temperature_mutex);
+        g_coordinator_ctx->temperature_mutex = NULL;
+    }
+    if (g_coordinator_ctx->target_update_mutex != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->target_update_mutex);
+        g_coordinator_ctx->target_update_mutex = NULL;
+    }
+    if (g_coordinator_ctx->exit_semaphore != NULL)
+    {
+        vSemaphoreDelete(g_coordinator_ctx->exit_semaphore);
+        g_coordinator_ctx->exit_semaphore = NULL;
+    }
     free(g_coordinator_ctx);
     g_coordinator_ctx = NULL;
 

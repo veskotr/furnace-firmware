@@ -7,6 +7,7 @@
 
 void program_models_init(void);
 void program_draft_clear(void);
+void program_draft_replace(const program_draft_t *draft);
 void program_draft_set_name(const char *name);
 bool program_draft_set_stage(uint8_t stage_number,
                              int t_min,

@@ -15,6 +15,10 @@ static void* master_handle;
 esp_err_t modbus_master_init(const modbus_config_t* config)
 {
     LOGGER_LOG_INFO(TAG, "Modbus transport initialized");
+    if (master_handle != NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (config == NULL)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid transport config");
@@ -79,6 +83,7 @@ esp_err_t modbus_master_shutdown(void)
                       "Failed to stop Modbus master");
     CHECK_ERR_LOG_RET(mbc_master_delete(master_handle),
                       "Failed to delete Modbus master");
+    master_handle = NULL;
 
     LOGGER_LOG_INFO(TAG, "Modbus transport shutdown complete");
     return ESP_OK;
@@ -122,6 +127,11 @@ esp_err_t modbus_master_send_request_raw(uint8_t slave_addr,
                                          void* data)
 
 {
+    if (master_handle == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     mb_param_request_t request = {
         .slave_addr = slave_addr,
         .command = command,

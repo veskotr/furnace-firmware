@@ -9,6 +9,7 @@
 #include "event_registry.h"
 #include "furnace_error_types.h"
 #include "error_manager.h"
+#include "heater_controller_component.h"
 
 #include <stdatomic.h>
 #include <string.h>
@@ -111,7 +112,7 @@ static void post_status_update(const coordinator_ctx_t *ctx,
     }
 
     coordinator_status_data_t status = {
-        .current_temperature = ctx->current_temperature,
+        .current_temperature = coordinator_get_current_temperature(ctx),
         .target_temperature  = tick->setpoint,
         .power_output        = power_output,
         .elapsed_ms          = ctx->heating_task_state.current_time_elapsed_ms,
@@ -201,6 +202,16 @@ static void kill_heater(void)
     send_heater_command(COMMAND_TYPE_HEATER_SET_POWER, 0.0f);
 }
 
+static void set_control_inhibit(const bool inhibited)
+{
+    const esp_err_t err = heater_controller_set_control_inhibit(inhibited);
+    if (err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to set heater control inhibit=%d: %s",
+                         inhibited, esp_err_to_name(err));
+    }
+}
+
 /**
  * @brief Pause the program on a recoverable run-time fault (stall / hold drift).
  *
@@ -217,13 +228,14 @@ static void enter_fault_pause(coordinator_ctx_t *ctx,
 {
     ctx->paused = true;
     ctx->heating_task_state.is_paused = true;
+    set_control_inhibit(true);
     kill_heater();
     pid_controller_reset();
 
     coordinator_error_data_t err = {
         .error_code       = code,
         .esp_error_code   = ESP_FAIL,
-        .temperature_c    = ctx->current_temperature,
+        .temperature_c    = coordinator_get_current_temperature(ctx),
         .setpoint_c       = tick->setpoint,
         .stage_index      = active_stage_ordinal(ctx, tick->current_stage_index),
         .fault_elapsed_ms = fault_elapsed_ms,
@@ -237,13 +249,24 @@ static void enter_fault_pause(coordinator_ctx_t *ctx,
 
 static void apply_pending_target_update(coordinator_ctx_t *ctx)
 {
-    if (!atomic_exchange(&ctx->target_update.pending, false)) {
+    if (ctx->target_update_mutex == NULL ||
+        xSemaphoreTake(ctx->target_update_mutex, portMAX_DELAY) != pdTRUE)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to lock manual-target mailbox");
         return;
     }
 
-    int new_target    = ctx->target_update.target_t_c;
-    int new_delta_x10 = ctx->target_update.delta_t_per_min_x10;
-    float cur_temp    = ctx->current_temperature;
+    const bool has_update = ctx->target_update.pending;
+    const int new_target = ctx->target_update.target_t_c;
+    const int new_delta_x10 = ctx->target_update.delta_t_per_min_x10;
+    ctx->target_update.pending = false;
+    xSemaphoreGive(ctx->target_update_mutex);
+
+    if (!has_update) {
+        return;
+    }
+
+    float cur_temp    = coordinator_get_current_temperature(ctx);
 
     int abs_diff = new_target > (int)cur_temp
                  ? new_target - (int)cur_temp
@@ -270,8 +293,9 @@ static void apply_pending_target_update(coordinator_ctx_t *ctx)
 static void handle_profile_completion(coordinator_ctx_t *ctx)
 {
     LOGGER_LOG_INFO(TAG, "Profile complete (profile_tick): temp %.1f C",
-                    ctx->current_temperature);
+                    coordinator_get_current_temperature(ctx));
 
+    set_control_inhibit(true);
     kill_heater();
 
     ctx->heating_task_state.is_completed = true;
@@ -289,7 +313,7 @@ static void heater_controller_task(void* args)
     profile_tick_result_t tick_result = {0};
 
     /* Stall detection state — tracks expected vs actual temp rise during HEATING */
-    float  stall_start_temp     = ctx->current_temperature;
+    float  stall_start_temp     = coordinator_get_current_temperature(ctx);
     float  stall_start_setpoint = 0.0f;
     uint32_t stall_elapsed_ms   = 0;
     bool   stall_tracking       = false;
@@ -301,6 +325,18 @@ static void heater_controller_task(void* args)
     while (ctx->running)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (atomic_load_explicit(&ctx->sensor_data_expired, memory_order_acquire))
+        {
+            /* The expiry timer has already directly de-energized the heater.
+             * Finish the coordinator state transition before any profile/PID
+             * work can publish another demand. */
+            if (!ctx->paused)
+            {
+                CHECK_ERR_LOG(pause_heating_profile(ctx),
+                              "Failed to pause profile after sensor-data expiry");
+            }
+            continue;
+        }
         uint32_t last_update_duration = 0;
         if (!ctx->paused)
         {
@@ -321,7 +357,7 @@ static void heater_controller_task(void* args)
 
         const profile_controller_error_t err = profile_tick(
             last_update_duration,
-            ctx->current_temperature,
+            coordinator_get_current_temperature(ctx),
             &tick_result);
         ctx->heating_task_state.target_temperature = tick_result.setpoint;
 
@@ -335,6 +371,7 @@ static void heater_controller_task(void* args)
         {
             LOGGER_LOG_ERROR(TAG, "EMERGENCY STOP: temperature overshoot threshold exceeded!");
 
+            set_control_inhibit(true);
             kill_heater();
 
             /* Post critical furnace error */
@@ -396,7 +433,7 @@ static void heater_controller_task(void* args)
         if (tick_result.phase == STAGE_PHASE_HEATING) {
             if (!stall_tracking || tick_result.stage_changed) {
                 /* (Re)start tracking window */
-                stall_start_temp     = ctx->current_temperature;
+                stall_start_temp     = coordinator_get_current_temperature(ctx);
                 stall_start_setpoint = tick_result.setpoint;
                 stall_elapsed_ms     = 0;
                 stall_tracking       = true;
@@ -405,8 +442,8 @@ static void heater_controller_task(void* args)
 
                 if (stall_elapsed_ms >= CONFIG_COORDINATOR_STALL_CHECK_MS) {
                     float expected_rise = tick_result.setpoint - stall_start_setpoint;
-                    float actual_rise   = ctx->current_temperature - stall_start_temp;
-                    float lag           = tick_result.setpoint - ctx->current_temperature;
+                    float actual_rise   = coordinator_get_current_temperature(ctx) - stall_start_temp;
+                    float lag           = tick_result.setpoint - coordinator_get_current_temperature(ctx);
                     const float rate_fraction =
                         (float)CONFIG_COORDINATOR_STALL_RATE_FRACTION_PCT / 100.0f;
 
@@ -434,7 +471,7 @@ static void heater_controller_task(void* args)
                         continue;
                     } else {
                         /* Window passed (or we're ahead of setpoint) — reset. */
-                        stall_start_temp     = ctx->current_temperature;
+                        stall_start_temp     = coordinator_get_current_temperature(ctx);
                         stall_start_setpoint = tick_result.setpoint;
                         stall_elapsed_ms     = 0;
                     }
@@ -446,7 +483,7 @@ static void heater_controller_task(void* args)
 
         /* ── Hold-band deviation during HOLDING ─────────────────────── */
         if (tick_result.phase == STAGE_PHASE_HOLDING) {
-            float dev = ctx->current_temperature - tick_result.setpoint;
+            float dev = coordinator_get_current_temperature(ctx) - tick_result.setpoint;
             if (dev < 0.0f) dev = -dev;
 
             if (dev > (float)CONFIG_COORDINATOR_HOLD_BAND_C) {
@@ -486,7 +523,7 @@ static void heater_controller_task(void* args)
 
             const float dt_seconds = (float)last_update_duration / 1000.0f;
             power_output = pid_controller_compute(tick_result.setpoint,
-                                                  ctx->current_temperature,
+                                                  coordinator_get_current_temperature(ctx),
                                                   dt_seconds);
 
             if (tick_result.stage_changed) {
@@ -507,7 +544,6 @@ static void heater_controller_task(void* args)
 
     LOGGER_LOG_INFO(TAG, "Temperature monitor task exiting");
     stop_heating_profile(ctx);
-    ctx->task_handle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -603,7 +639,7 @@ static void init_heating_task_state(coordinator_ctx_t *ctx,
     ctx->heating_task_state.current_time_elapsed_ms = 0;
     ctx->heating_task_state.estimated_total_duration_ms = stages_ms;
     ctx->heating_task_state.heating_stages_duration_ms = stages_ms;
-    ctx->heating_task_state.current_temperature = ctx->current_temperature;
+    ctx->heating_task_state.current_temperature = coordinator_get_current_temperature(ctx);
     ctx->heating_task_state.heating_element_on = false;
     ctx->heating_task_state.fan_on = false;
 
@@ -624,12 +660,36 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* A zero-initialized coordinator temperature is not a measurement. Do not
+     * load a profile or queue heater commands until the processor has supplied
+     * at least one accepted post-boot temperature event. The aggregate lease
+     * is checked below and remains enforced during the run by its expiry
+     * timer. */
+    if (!atomic_load_explicit(&ctx->has_valid_temperature, memory_order_acquire))
+    {
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: no valid temperature sample received");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (atomic_load_explicit(&ctx->sensor_data_inhibited, memory_order_acquire))
+    {
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: sensor recovery is not complete");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!coordinator_sensor_data_is_fresh(ctx))
+    {
+        coordinator_inhibit_for_sensor_data_expiry(ctx);
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: temperature aggregate has expired");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     memcpy(&ctx->run_program, program, sizeof(ctx->run_program));
     ctx->has_program = true;
     const program_draft_t *prog = &ctx->run_program;
 
     uint32_t stages_ms = 0;
-    uint32_t total_ms = calculate_program_duration_ms(prog, ctx->current_temperature,
+    uint32_t total_ms = calculate_program_duration_ms(prog, coordinator_get_current_temperature(ctx),
                                                      cooldown_rate_x10, &stages_ms);
 
     init_heating_task_state(ctx, total_ms, stages_ms);
@@ -643,7 +703,7 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
 
     const temp_profile_config_t temp_profile_config = {
         .program = prog,
-        .initial_temperature = ctx->current_temperature,
+        .initial_temperature = coordinator_get_current_temperature(ctx),
         .cooldown_rate_x10 = cooldown_rate_x10
     };
 
@@ -656,9 +716,6 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
                          err);
         return ESP_FAIL;
     }
-
-    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
-    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
 
     /* Set running BEFORE task creation — the new task checks ctx->running
      * in its while-loop condition and may be scheduled before we return. */
@@ -684,13 +741,35 @@ esp_err_t start_heating_profile(coordinator_ctx_t* ctx, const program_draft_t *p
         .name = "pid_tick"
     };
     esp_err_t timer_err = esp_timer_create(&timer_args, &ctx->pid_tick_timer);
-    if (timer_err == ESP_OK) {
-        esp_timer_start_periodic(ctx->pid_tick_timer,
-                                 (uint64_t)CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS * 1000ULL);
-        LOGGER_LOG_INFO(TAG, "PID tick timer started (%d ms)", CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS);
-    } else {
+    if (timer_err != ESP_OK)
+    {
         LOGGER_LOG_ERROR(TAG, "Failed to create PID tick timer: %s", esp_err_to_name(timer_err));
+        stop_heating_profile(ctx);
+        return timer_err;
     }
+
+    timer_err = esp_timer_start_periodic(ctx->pid_tick_timer,
+                                         (uint64_t)CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS * 1000ULL);
+    if (timer_err != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Failed to start PID tick timer: %s", esp_err_to_name(timer_err));
+        stop_heating_profile(ctx);
+        return timer_err;
+    }
+
+    LOGGER_LOG_INFO(TAG, "PID tick timer started (%d ms)", CONFIG_COORDINATOR_PID_TICK_INTERVAL_MS);
+
+    /* Do not authorize the heater until the control task and its timer exist.
+     * If either resource failed, no heater-start command has been submitted. */
+    if (heater_controller_set_control_inhibit(false) != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Refusing profile start: heater control inhibit could not be released");
+        stop_heating_profile(ctx);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
+    send_heater_command(COMMAND_TYPE_HEATER_START, 0.0f);
 
     LOGGER_LOG_INFO(TAG, "Coordinator task initialized");
 
@@ -710,6 +789,8 @@ esp_err_t pause_heating_profile(coordinator_ctx_t* ctx)
 
     ctx->paused = true;
     ctx->heating_task_state.is_paused = true;
+
+    set_control_inhibit(true);
 
     /* Drop the SSR immediately and clear the target so the heater task
      * doesn't keep PWM-ing the last non-zero power level through the pause. */
@@ -737,13 +818,19 @@ esp_err_t resume_heating_profile(coordinator_ctx_t* ctx)
 
     /* Update the current temperature snapshot so the first PID tick
      * after resume uses the real measured value. */
-    ctx->heating_task_state.current_temperature = ctx->current_temperature;
+    ctx->heating_task_state.current_temperature = coordinator_get_current_temperature(ctx);
+
+    if (heater_controller_set_control_inhibit(false) != ESP_OK)
+    {
+        LOGGER_LOG_ERROR(TAG, "Heating profile resume rejected: heater control inhibit remains active");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     ctx->paused = false;
     ctx->heating_task_state.is_paused = false;
 
     LOGGER_LOG_INFO(TAG, "Heating profile resumed (temp=%.1f C)",
-                    ctx->current_temperature);
+                    coordinator_get_current_temperature(ctx));
 
     return ESP_OK;
 }
@@ -762,6 +849,9 @@ esp_err_t get_current_heating_profile(const coordinator_ctx_t* ctx)
 
 esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
 {
+    const TaskHandle_t task_handle = ctx->task_handle;
+    const bool called_from_control_task = task_handle == xTaskGetCurrentTaskHandle();
+
     /* Always clean up timer and profile — the task may have self-exited
      * (profile complete / emergency stop) with ctx->running already false. */
     if (ctx->pid_tick_timer != NULL)
@@ -785,11 +875,28 @@ esp_err_t stop_heating_profile(coordinator_ctx_t *ctx)
     /* Also clear the loop-gating flag so the next start isn't born paused. */
     ctx->paused = false;
 
-    kill_heater();
+    set_control_inhibit(true);
+    /* Stop must remain queue-independent for both the external command
+     * handler and the worker self-exit path.  The dispatcher queue may be
+     * full before the join begins, and the direct control inhibit above
+     * already clears the target and de-energizes the SSR and contactor. */
+    pid_controller_reset();
     shutdown_profile_controller();
 
-    send_heater_command(COMMAND_TYPE_HEATER_CLEAR, 0.0f);
-    send_heater_command(COMMAND_TYPE_HEATER_STOP, 0.0f);
+    if (task_handle != NULL)
+    {
+        if (called_from_control_task)
+        {
+            /* The worker must acknowledge before self-deleting, but cannot
+             * wait on its own exit semaphore. */
+            xSemaphoreGive(ctx->exit_semaphore);
+        }
+        else if (xSemaphoreTake(ctx->exit_semaphore, portMAX_DELAY) != pdTRUE)
+        {
+            return ESP_ERR_TIMEOUT;
+        }
+        ctx->task_handle = NULL;
+    }
 
     LOGGER_LOG_INFO(TAG, "Coordinator task shutdown complete");
 

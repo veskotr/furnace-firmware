@@ -7,6 +7,7 @@
 #include "furnace_error_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <stdatomic.h>
 
 static const bool HEATER_ON = true;
 static const bool HEATER_OFF = false;
@@ -27,12 +28,20 @@ typedef struct
     // Target power level (0.0 to 1.0) — latest commanded value.
     float target_power_level;
 
+    /* Protected by power_mutex. Once latched because an SSR GPIO operation
+     * failed, this component must not authorize another heater-on operation
+     * until the controller is restarted. */
+    bool output_inhibited;
+    bool sensor_data_inhibited;
+    bool control_inhibited;
+
     // Task running flag
-    volatile bool task_running;
+    atomic_bool task_running;
 
     bool initialized;
 
     SemaphoreHandle_t power_mutex;
+    SemaphoreHandle_t exit_semaphore;
 
 } heater_controller_context_t;
 
@@ -50,6 +59,10 @@ esp_err_t shutdown_heater_controller_task(heater_controller_context_t* ctx);
 esp_err_t init_heater_controller();
 esp_err_t set_heater_target_power_level(heater_controller_context_t* ctx, float power_level);
 esp_err_t clear_heater_target_power_level(heater_controller_context_t* ctx);
+bool heater_output_is_inhibited(heater_controller_context_t* ctx);
+esp_err_t heater_controller_set_sensor_data_inhibit_for_context(heater_controller_context_t* ctx, bool inhibited);
+esp_err_t heater_controller_set_control_inhibit_for_context(heater_controller_context_t* ctx, bool inhibited);
+void heater_controller_handle_ssr_failure(heater_controller_context_t* ctx, esp_err_t ssr_err);
 esp_err_t toggle_heater(bool state);
 esp_err_t shutdown_heater_controller();
 

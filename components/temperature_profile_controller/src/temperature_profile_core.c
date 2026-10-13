@@ -205,15 +205,17 @@ static stage_phase_t detect_stage_phase(float start_temp, float target_temp, flo
  * This eases the LAST @p ease_band_c degrees of the ramp: the commanded rate is
  * tapered smoothly to zero as the setpoint reaches the target, so the heater is
  * already near hold power (and the integrator already unwound) by the time the
- * setpoint goes flat. It is a C1-continuous cubic-Hermite blend on the
- * normalised ramp position:
+ * setpoint goes flat. The ease segment takes twice the linear time for its
+ * temperature band, extending the overall ramp by one linear band duration.
+ * This is required to avoid briefly exceeding the configured ramp rate while
+ * still entering the ease segment at that rate.
  *
- *     q(u) = f0 + w*(u + u^2 - u^3),   u = (frac - f0)/w,   w = 1 - f0
+ *     q(u) = q0 + band/span * (2u - u^2)
  *
- * which matches the linear position AND slope at the seam f0 (no rate kink) and
- * reaches the target (q = 1) with zero slope. q is monotonic on [0,1], so the
- * setpoint never steps backwards, and q(1) = 1 keeps the planned arrival time
- * unchanged — only the shape of the final approach changes.
+ * where u is the normalised ease time. The linear portion and ease segment are
+ * C1-continuous at the seam, q is monotonic on [0,1], and the commanded rate
+ * never exceeds the configured ramp rate. Unlike the previous cubic, the
+ * planned arrival time is intentionally extended to account for the slower tail.
  *
  * @param frac        elapsed/planned ramp fraction, already clamped to [0,1].
  * @param span        target - start in deg C (> 0 for a heating ramp).
@@ -226,18 +228,21 @@ static float ramp_ease_position(float frac, float span, float ease_band_c)
         return frac;                       /* easing disabled -> linear ramp */
     }
 
-    /* Where (as a ramp fraction) the ease begins. Clamp the band to the whole
-     * ramp so a short span (band >= span) just eases the entire climb. */
-    float w = ease_band_c / span;          /* width of the ease zone, = 1 - f0 */
-    if (w > 1.0f) w = 1.0f;
-    const float f0 = 1.0f - w;             /* seam: linear below, ease above */
+    /* Clamp the band to the whole ramp so a short span (band >= span) just
+     * eases the entire climb. The ease duration is twice the linear duration
+     * for the band, so the total time is proportional to span + band. */
+    const float band = ease_band_c < span ? ease_band_c : span;
+    const float total_span = span + band;
+    const float ease_start_time = (span - band) / total_span;
+    const float ease_time_width = (2.0f * band) / total_span;
 
-    if (frac <= f0) {
-        return frac;                       /* still on the linear segment */
+    if (frac <= ease_start_time) {
+        return frac * total_span / span;   /* still on the linear segment */
     }
 
-    const float u = (frac - f0) / w;       /* 0..1 across the ease zone */
-    return f0 + w * (u + u * u - u * u * u);
+    const float u = (frac - ease_start_time) / ease_time_width;
+    const float ease_start_position = (span - band) / span;
+    return ease_start_position + (band / span) * (2.0f * u - u * u);
 }
 
 /**
@@ -288,7 +293,12 @@ static void advance_stage(float current_temp, profile_tick_result_t *result)
     if (s_tick.phase == STAGE_PHASE_HEATING && stage->delta_t_per_min_x10 > 0) {
         float diff_c = s_tick.stage_target_temp - current_temp;
         if (diff_c < 0.0f) diff_c = -diff_c;
-        const float planned_ms_f = (diff_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        const float ease_band_c = (float)CONFIG_COORDINATOR_RAMP_EASE_BAND_C;
+        const float bounded_ease_band_c = ease_band_c < diff_c ? ease_band_c : diff_c;
+        const float base_ramp_ms_f = (diff_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        const float ease_extension_ms_f =
+            (bounded_ease_band_c * 600000.0f) / (float)stage->delta_t_per_min_x10;
+        const float planned_ms_f = base_ramp_ms_f + ease_extension_ms_f;
         s_tick.stage_planned_ms = (uint32_t)planned_ms_f;
     } else {
         s_tick.stage_planned_ms = (uint32_t)stage->t_min * 60U * 1000U;

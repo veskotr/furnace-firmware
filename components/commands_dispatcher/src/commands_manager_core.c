@@ -9,7 +9,8 @@ commands_dispatcher_ctx_t* commands_dispatcher_ctx = NULL;
 esp_err_t commands_dispatcher_init(void)
 {
     // Initialize any resources needed for command dispatching
-    if (commands_dispatcher_ctx && commands_dispatcher_ctx->dispatcher_running)
+    if (commands_dispatcher_ctx &&
+        atomic_load_explicit(&commands_dispatcher_ctx->dispatcher_running, memory_order_acquire))
     {
         return ESP_ERR_INVALID_STATE;
     }
@@ -40,6 +41,17 @@ esp_err_t commands_dispatcher_init(void)
         }
     }
 
+    if (commands_dispatcher_ctx->exit_semaphore == NULL)
+    {
+        commands_dispatcher_ctx->exit_semaphore = xSemaphoreCreateBinary();
+        if (commands_dispatcher_ctx->exit_semaphore == NULL)
+        {
+            LOGGER_LOG_ERROR(TAG, "Failed to create commands dispatcher exit semaphore");
+            err = ESP_ERR_NO_MEM;
+            goto fail;
+        }
+    }
+
     err = init_command_handlers(commands_dispatcher_ctx);
     if (err != ESP_OK)
     {
@@ -47,7 +59,7 @@ esp_err_t commands_dispatcher_init(void)
         goto fail;
     }
 
-    commands_dispatcher_ctx->dispatcher_running = true;
+    atomic_init(&commands_dispatcher_ctx->dispatcher_running, true);
     err = init_task(commands_dispatcher_ctx);
     if (err != ESP_OK)
     {
@@ -64,7 +76,8 @@ fail:
 
 esp_err_t commands_dispatcher_dispatch_command(command_t* command)
 {
-    if (commands_dispatcher_ctx == NULL || !commands_dispatcher_ctx->dispatcher_running)
+    if (commands_dispatcher_ctx == NULL ||
+        !atomic_load_explicit(&commands_dispatcher_ctx->dispatcher_running, memory_order_acquire))
     {
         LOGGER_LOG_ERROR(TAG, "Commands Dispatcher not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -74,6 +87,16 @@ esp_err_t commands_dispatcher_dispatch_command(command_t* command)
     {
         LOGGER_LOG_ERROR(TAG, "Invalid command argument");
         return ESP_ERR_INVALID_ARG;
+    }
+
+    /* A handler may submit a follow-up command (for example, coordinator
+     * pause/stop issuing heater-off commands).  The dispatcher task is the
+     * only queue consumer, so queuing from that task can self-deadlock when
+     * the bounded queue is full.  Execute re-entrant submissions directly;
+     * external callers continue to use the queue. */
+    if (commands_dispatcher_ctx->dispatcher_task_handle == xTaskGetCurrentTaskHandle())
+    {
+        return commands_dispatcher_execute_command(commands_dispatcher_ctx, command);
     }
 
     if (xQueueSend(commands_dispatcher_ctx->command_queue, command, portMAX_DELAY) != pdPASS)
@@ -95,12 +118,12 @@ esp_err_t commands_dispatcher_shutdown(void)
 
     esp_err_t err = ESP_OK;
 
-    if (commands_dispatcher_ctx->dispatcher_running)
+    if (atomic_load_explicit(&commands_dispatcher_ctx->dispatcher_running, memory_order_acquire))
     {
         if (shutdown_task(commands_dispatcher_ctx) != ESP_OK)
         {
             LOGGER_LOG_ERROR(TAG, "Failed to shutdown dispatcher task");
-            err = ESP_FAIL;
+            return ESP_FAIL;
         }
     }
 
@@ -114,6 +137,12 @@ esp_err_t commands_dispatcher_shutdown(void)
     {
         vQueueDelete(commands_dispatcher_ctx->command_queue);
         commands_dispatcher_ctx->command_queue = NULL;
+    }
+
+    if (commands_dispatcher_ctx->exit_semaphore)
+    {
+        vSemaphoreDelete(commands_dispatcher_ctx->exit_semaphore);
+        commands_dispatcher_ctx->exit_semaphore = NULL;
     }
 
     free(commands_dispatcher_ctx);

@@ -9,6 +9,8 @@
 #include "sdkconfig.h"
 #include "esp_err.h"
 #include "stdbool.h"
+#include "freertos/semphr.h"
+#include <stdatomic.h>
 
 typedef enum
 {
@@ -36,7 +38,8 @@ typedef struct
     device_t devices[CONFIG_DEVICE_MANAGER_MAX_DEVICES];
     TaskHandle_t task_handle;
     uint8_t count;
-    bool running;
+    atomic_bool running;
+    SemaphoreHandle_t exit_semaphore;
 } device_manager_context_t;
 
 extern device_manager_context_t* g_device_manager_context;
