@@ -12,7 +12,7 @@ Require bug/feature ID, failure-before and pass-after behavior, affected interfa
 ## Workflow
 
 1. Classify the test: host unit, target unit, mocked integration, device bench, powered-controller, or powered-furnace.
-2. Choose the lowest layer that preserves the defect/acceptance mechanism; define inputs, oracle, timing tolerance, and cleanup.
+2. Choose the lowest layer that preserves the defect/acceptance mechanism; define inputs, oracle, timing tolerance, and cleanup. Do not encode an answer to a `deferred` T-entry (`docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md`) in a test oracle; ask the user, or mark the oracle provisional.
 3. Add seams/mocks only when they do not alter production behavior or obscure ownership.
 4. Implement deterministic normal, boundary, and failure cases; include race scheduling/fault injection where applicable.
 5. Run the exact test, capture result, and state what it does not prove.

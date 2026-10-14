@@ -12,7 +12,7 @@ Require a bug ID/report explicitly marked `ready-to-fix`, current trigger eviden
 ## Workflow
 
 1. Revalidate that the bug still exists in current source and reproduce/fail the regression oracle where practical.
-2. Trace affected ownership, concurrency, lifecycle, and physical-output consequences again before editing.
+2. Trace affected ownership, concurrency, lifecycle, and physical-output consequences again before editing. If the correct fix depends on a `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` (for example cooling-guard behavior, sensor-fault policy, manual mode), remind the user and ask before choosing the behavior.
 3. Implement the smallest coherent root fix; preserve current boundaries and fail-safe behavior.
 4. Check adjacent instances only when they violate the identical invariant.
 5. Use `$create-firmware-regression-test`; document `$plan-hardware-validation` without claiming it ran.

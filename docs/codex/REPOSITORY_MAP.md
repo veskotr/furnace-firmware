@@ -1,6 +1,6 @@
 # Furnace firmware repository map
 
-Last source-mapped: 2026-07-15. Hardening-closeout review: `bc743ab` (feature baseline `6741c72`). Source and resolved build configuration are authoritative; update both this file and `repository-map.yaml` after architectural changes.
+Last source-mapped: 2026-07-15. Hardening-closeout review: `bc743ab` (feature baseline `6741c72`). Re-checked 2026-10-13 against `main` `d1b0fda` (rewrite-handoff audit): corrections are marked "(2026-10-13)". The full functional and behavioral mapping for the planned Zephyr rewrite is in [../handoff/README.md](../handoff/README.md). Source and resolved build configuration are authoritative; update both this file and `repository-map.yaml` after architectural changes.
 
 ## Repository shape
 
@@ -49,7 +49,7 @@ This mixed fail-fast/log-and-continue policy is safety-relevant because control 
 | Logger task, core 1 | `logger_core.c:logger_init` | Blocks on logger queue | Static queue/storage state |
 | Private event-loop task | `event_manager.c:event_manager_init` | Serialized event callbacks | Event payload contracts/subscription lifetime |
 | Command dispatcher | `commands_dispatcher_task.c:commands_dispatcher_task` | Queue receive, two-second timeout; re-entrant submissions execute inline | Sole consumer; coordinator stop performs no dispatcher submission, removing the confirmed F-055 queue-full join cycle; broader external-producer shutdown remains open |
-| Heater PWM task | `heater_controller_task.c:init_heater_controller_task` | Five-second default SSR window; task notification interrupts wait | Mutex-protected target; separate permanent SSR-failure and recoverable sensor-data inhibits |
+| Heater PWM task | `heater_controller_task.c:init_heater_controller_task` | Five-second default SSR window. (2026-10-13) Only shutdown notifies the task; demand is read once at window start (F-078); `HEATER_CLEAR` and inhibits drive the SSR low directly without waking it | Mutex-protected target; three inhibit reasons (permanent, sensor-data, control). The inhibit check and SSR-on write are not atomic (F-063) |
 | Coordinator control task | `coordinator_component_heater_controller.c:start_heating_profile` | PID timer plus sensor-expiry one-shot wakeups; pauses on invalid/expired aggregate | Profile, PID, mutex-protected temperature, recovery counter, and direct sensor-data inhibit; expiry timer enforces aggregate freshness (F-054) |
 | Device manager task | `device_manager_task.c:init_device_manager_task` | Periodic Modbus updates and notification-shortened wait | Device table/state/lifecycle |
 | Temperature processor task | `temperature_processor_task.c:init_temp_processor_task` | Device-update notification | Sensor array, sample buffer, context lifetime; normal shutdown does not destroy its registered devices (F-056) |
@@ -65,7 +65,7 @@ No application hardware ISR registration was found. The PID timer callback uses 
 
 | Primitive | Owner | Producers / readers | Consumer / writer | Failure/lifetime notes |
 | --- | --- | --- | --- | --- |
-| Private ESP event queue | `event_manager` | All event publishers | Private loop callbacks | Blocking wrapper can wait forever; unsubscribe before context destruction |
+| Private ESP event queue | `event_manager` | All event publishers | Private loop callbacks | Blocking wrapper can wait forever; unsubscribe before context destruction. (2026-10-13) `toggle_heater` and every health heartbeat post with `portMAX_DELAY` to bases that have no production subscriber, and event-loop callbacks post back into this queue (F-062) |
 | Dispatcher `command_queue` | `commands_dispatcher` | HMI, coordinator, other callers | Sole dispatcher task | External submissions use `portMAX_DELAY`; dispatcher-task self-submissions execute inline; coordinator self-exit skips final queue submissions so F-055's confirmed join cycle is removed |
 | Logger queue | `logger_component` | Logging macros/callers | Logger task | 100 ms producer timeout then drop; no shutdown path |
 | HMI command queue | `nextion_hmi` coordinator | Event bridges, RX/UI | HMI coordinator task | Lifecycle/error bridges prioritize critical commands with bounded wait and logging; telemetry remains best-effort and transfer buffer is bounded |
@@ -78,7 +78,19 @@ No application hardware ISR registration was found. The PID timer callback uses 
 | Legacy ring mutex/event group | `temperature_monitor_component` | Legacy task/processors | Legacy only | Compiled but not initialized |
 | Task notifications | heater/coordinator/device/temp/health | Timers, stop functions, callbacks | Respective task | Notification is wakeup, not a complete join protocol |
 
-No application counting/binary semaphore or explicit spinlock was found.
+No application counting/binary semaphore or explicit spinlock was found. (2026-10-13 correction) Binary semaphores are used as worker exit acknowledgements in the dispatcher, heater, coordinator, device manager and temperature processor.
+
+### Event subscriptions (2026-10-13)
+
+| Event base / ID | Publishers | Production subscribers |
+| --- | --- | --- |
+| `TEMP_PROCESSOR_EVENT` / `PROCESS_TEMPERATURE_EVENT_DATA` (float, only when valid) | temperature processor | coordinator, fan controller, HMI bridge |
+| `TEMP_PROCESSOR_EVENT` / `PROCESS_TEMPERATURE_VALIDITY_EVENT_DATA` (snapshot, always) | temperature processor | coordinator only (`ESP_EVENT_ANY_ID`); fan via `ANY_ID` ignores it |
+| `DEVICE_MANAGER_EVENT` / `DEVICE_MANAGER_UPDATED_EVENT` | device manager (once per poll pass) | temperature processor |
+| `COORDINATOR_EVENT` / all IDs | coordinator (status, lifecycle, errors) | fan controller, HMI bridge |
+| `HEATER_CONTROLLER_EVENT` / `HEATER_TOGGLED` | `toggle_heater` (every SSR write, unbounded) | **none** |
+| `HEALTH_MONITOR_EVENT` / heartbeat, register | dispatcher, heater, coordinator, device manager, processor, HMI tasks (unbounded) | **none** (health monitor not started) |
+| `FURNACE_ERROR_EVENT` | heater SSR failure, coordinator overshoot, processor, device manager | **none** (F-035) |
 
 ## Major modules
 
@@ -98,14 +110,14 @@ No application counting/binary semaphore or explicit spinlock was found.
 | `nextion_hmi` | UART protocol, UI events, program model, panel storage | `CONFIG_NEXTION_HMI_ENABLED` gates startup and the HMI source set; enabled builds use RX/coordinator tasks, queues, UART/program mutexes; persistent program-name registry; verified delete postcondition; complete-read/atomic-draft load path; bounded packet-NAK and temporary-file replacement save paths; exact destructive-command routing | UART1 TX32/RX33, panel SD/FileStream, NVS | Many submodules/global flags; bounded critical-event loss, registry/filesystem divergence, and final rename/power-loss storage risk remain |
 | `fan_controller_component` | Auto/program fan policy | Event-loop-owned static state | Fan GPIO19 | No airflow feedback/interlock; program fan intent split from coordinator fields |
 | `run_indicator` | Test-only program state indication; excluded from production | Task and event-written mode when explicitly enabled | No production link or GPIO; configured indicator GPIO only after collision guard | Re-enablement requires mailbox synchronization, schematic-approved pin, and hardware validation |
-| `logger_component` | Async ESP logging, LittleFS/RTC crash records, CLI | Queue/task, ring/files/mutex | Core 1, LittleFS `/crash_dumps`, RTC memory | Drops under pressure; furnace-error events not integrated |
+| `logger_component` | Async ESP logging, LittleFS/RTC crash records, CLI | Queue/task, ring/files/mutex | Core 1, LittleFS `/crash_dumps`, RTC memory | Drops under pressure; furnace-error events not integrated. (2026-10-13) `logger_store_full_log` has no caller; the RTC snapshot runs only on `esp_restart()` (F-068); the producer waits up to 100 ms (F-074); needs the `storage` partition that the tracked config lacks (F-067) |
 | `error_manager` | Error descriptor lookup | Static descriptor table | Common errors | No descriptor registrations found; not an active mitigation path; unified furnace-error mitigation is deferred to the future fault manager |
 | `health_monitor` | Heartbeat table and task watchdog | Event table, health task | ESP task WDT | Disabled; watchdog/startup ordering and direct heater mitigation are deferred to the future fault-manager architecture |
 | `gpio_master_driver` | Serialized GPIO setup/set | Global mutex | ESP GPIO | Pin ownership is not validated across components |
 | `spi_master_component` | Serialized SPI wrapper | Global bus/mutex | ESP SPI | Primarily legacy/inactive |
 | `heating_program_validation` | Program bounds/shape validation | Pure validation | Common profile types | Confirm every entry path invokes it |
 | `debug_console` | UART0 console/commands | Task/global state | UART0 | Shutdown lacks join; operational only |
-| `transmitter_diagnostics`, `time_component` | Diagnostic dump/time utilities | Optional/static | UART/time | Diagnostics not active at startup |
+| `transmitter_diagnostics`, `time_component` | Diagnostic dump/time utilities | Optional/static | UART/time | Diagnostics not active at startup (linked by `main`, `transmitter_diagnostics_auto_init` commented out). (2026-10-13) `time_component` has a Kconfig and CMake file but **no sources** |
 
 ## End-to-end flows
 
@@ -120,6 +132,12 @@ Key debt: physical-read success, cache age, validity, contributing sensor identi
 Nextion run handler → coordinator command in dispatcher queue → `start_heating_profile` resets PID, loads profile, queues heater clear/start, creates control task and periodic timer → timer notifies control task → `profile_tick` calculates phase/eased heating setpoint and handover → PID computes 0..1 demand (optional feedforward) → coordinator queues heater set-power → dispatcher invokes heater handler → PWM task windows SSR output. Sustained hold deviation or a ramp-stall condition posts enriched error data and pauses through the same queued `kill_heater` path.
 
 Received sensor invalidity and one-shot aggregate expiry call the heater component's direct recoverable inhibit, which forces SSR/contactor off before coordinator pause; stop uses the same queue-independent direct inhibit (F-055). F-003 remains open.
+
+(2026-10-13) Further facts:
+
+- A sensor-caused pause posts no `PROFILE_PAUSED` or error event (F-059), and the profile never auto-resumes after recovery (F-060).
+- An overshoot emergency stop posts `PROFILE_COMPLETED` (F-058) and also trips on programmed COOLING stages (F-057).
+- The direct inhibit path still logs before the GPIO write and posts an unbounded `HEATER_TOGGLED` event before `stop_heater()` (F-062, F-074).
 
 ### Physical outputs
 
@@ -153,6 +171,8 @@ IDF_PATH=/home/vesko/.espressif/v5.5.4/esp-idf cmake --build build -j2
 ```
 
 The working tree with the current hardening corrections built successfully against `bc743ab` with the resolved `sdkconfig`: application `0x63cb0` bytes (61% free of the smallest 1 MiB app partition). The same configuration is tracked as `sdkconfig.defaults`, including overshoot 30 C, stall check 180 s, PID Kd 0, fan thresholds 35/32 C, feedforward disabled, and service-time override disabled. A clean ESP-IDF configuration using only that defaults file also completed successfully; a separate defaults-only build remains future evidence.
+
+(2026-10-13 correction) That configuration came from the hardening reviewer's machine and is **not** the field-tuned build. The field build (untracked local `sdkconfig`) uses 8 MB flash, `partitions.csv` with the LittleFS `storage` partition, Kp 100, Kd 30, output max 95 %, feedforward on (80 C → 8 %, 150 C → 12 %), overshoot 20 C, stall 300 s and fan 43/41 C. A clean build from the tracked file has no `storage` partition (F-067). See [../handoff/05-CONFIGURATION-CATALOG.md](../handoff/05-CONFIGURATION-CATALOG.md).
 
 No project host test suite or ESP-IDF unit-test component was found. Flashing, device bench, powered-controller, and powered-furnace work require explicit authorization and a validation plan.
 

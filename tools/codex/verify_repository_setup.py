@@ -57,6 +57,19 @@ REQUIRED_FILES = {
     "docs/templates/feature-proposal.md",
     "docs/templates/architectural-decision-record.md",
     "docs/templates/change-validation-report.md",
+    "docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md",
+}
+
+DEFERRED_REGISTER = "docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md"
+# Entry points that must carry the remind-and-ask rule for deferred topics.
+DEFERRED_RULE_SKILLS = {
+    "orient-furnace-repository",
+    "analyze-firmware-impact",
+    "decide-furnace-architecture",
+    "implement-furnace-feature",
+    "fix-furnace-defect",
+    "create-firmware-regression-test",
+    "maintain-furnace-docs-map",
 }
 
 FORBIDDEN_SCAFFOLD = re.compile(r"\b(TODO|TBD|FIXME|PLACEHOLDER)\s*[:\]]", re.IGNORECASE)
@@ -184,6 +197,17 @@ def main() -> int:
     ):
         if not (ROOT / relative).is_file():
             fail(errors, f"mapped source path missing: {relative}")
+
+    agents_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8") if (ROOT / "AGENTS.md").is_file() else ""
+    if DEFERRED_REGISTER not in agents_text:
+        fail(errors, f"AGENTS.md must state the remind-and-ask rule referencing {DEFERRED_REGISTER}")
+    for name in sorted(DEFERRED_RULE_SKILLS):
+        skill_path = skill_dir / name / "SKILL.md"
+        if skill_path.is_file() and DEFERRED_REGISTER not in skill_path.read_text(encoding="utf-8"):
+            fail(errors, f"skill {name} must reference the deferred-topic register")
+    for path in agent_dir.glob("*.toml"):
+        if DEFERRED_REGISTER not in path.read_text(encoding="utf-8"):
+            fail(errors, f"agent {path.stem} must reference the deferred-topic register")
 
     validate_links(errors)
 

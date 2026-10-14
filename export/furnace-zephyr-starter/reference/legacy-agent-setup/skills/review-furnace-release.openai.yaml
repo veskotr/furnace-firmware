@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Furnace Release"
+  short_description: "Validate scope, evidence, build, and release risk"
+  default_prompt: "Use $review-furnace-release to produce a change validation and release-readiness verdict."

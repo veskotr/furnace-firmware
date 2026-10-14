@@ -2,6 +2,8 @@
 
 Date: 2026-07-15. Scope: read-only static architecture, safety, concurrency, lifecycle, integration, control, persistence, and configuration analysis. No hardware was operated. Line numbers are navigation hints; symbols/current source are authoritative.
 
+Revision 2026-10-13 (rewrite-handoff audit against `d1b0fda`): added F-057 to F-080 and correction notes on F-001 and F-049. Earlier entries are otherwise unchanged. The lessons and first tests for every open item are in [../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md](../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md).
+
 Categories: **confirmed defect** has a reachable source-level failure; **highly likely defect** has strong evidence with one runtime/config dependency; **possible defect** needs more evidence; **design weakness**, **maintainability issue**, **missing test**, and **unresolved question** are not claimed defects.
 
 ## Priority summary
@@ -26,6 +28,12 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 | 17 | F-023 | source fix implemented; validation pending | high operational/safety access | Repeated NAKs now abort storage transfer instead of blocking the sole HMI worker |
 | 18 | F-024 | source fix implemented; validation pending | high persistence/control | Program replacement now uses a completed temporary file; final rename power-loss behavior remains unverified |
 | 19 | F-049–F-052 | mixed below | medium/high | Persistence, release configuration, and test backlog |
+| — | F-062 | confirmed rule violation; deadlock highly likely latent | high safety/concurrency | Unbounded event posts on inhibit and actuator paths; the event loop can block on its own queue and skip contactor-off (added 2026-10-13) |
+| — | F-063 | confirmed defect | high safety | Actuator inhibit check and SSR-on write are not atomic; SSR can be re-asserted for up to one window after an inhibit (added 2026-10-13) |
+| — | F-057/F-058 | confirmed defects | high control/operator | Overshoot guard aborts programmed cooling steps; over-temperature abort is reported as COMPLETED (added 2026-10-13) |
+| — | F-059/F-060 | confirmed defect / divergence | high operator | Sensor-loss pause is invisible; documented auto-resume is unreachable (added 2026-10-13) |
+| — | F-067 | confirmed configuration defect | high operational | Tracked `sdkconfig.defaults` is not the field build; wrong flash size and no `storage` partition (added 2026-10-13) |
+| — | F-061, F-064–F-066, F-068–F-080 | mixed below | low–medium | Added 2026-10-13; see "Findings added 2026-10-13" |
 
 ## Safety and control findings
 
@@ -51,6 +59,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Evidence:** sensor devices record successful-read ticks; the processor compacts fresh samples and publishes a validity snapshot; coordinator invalid snapshots directly set heater sensor-data inhibit and pause the profile; a coordinator-owned one-shot timer now expires each accepted aggregate at the configured age deadline and directly asserts the same heater inhibit before waking the control task; three consecutive valid aggregates release only that recoverable inhibit and resume the profile.
 - **Residual risk:** quorum is temporarily derived as sensor-count-minus-two; expiry timing, GPIO polarity, electrical isolation, and physical output latency remain unverified. F-003 remains a separate in-flight PID race.
 - **Validation:** [BUG-001-temperature-freshness.md](BUG-001-temperature-freshness.md), [CHANGE-VALIDATION-F001-PHASE-A.md](CHANGE-VALIDATION-F001-PHASE-A.md), [CHANGE-VALIDATION-F001-PHASE-B.md](CHANGE-VALIDATION-F001-PHASE-B.md), [BUG-054-temperature-update-silence.md](BUG-054-temperature-update-silence.md), and [CHANGE-VALIDATION-F054.md](CHANGE-VALIDATION-F054.md).
+- **Correction (2026-10-13):** "release only that recoverable inhibit and resume the profile" is not what the code does. The inhibit is released, but the profile never auto-resumes, because every pause also asserts the temporary control inhibit (F-003) and the resume branch requires no inhibit at all. See F-060. Sensor-loss pauses are also not reported to the operator (F-059).
 
 ### F-002 — Dispatcher self-deadlock can precede heater-off
 
@@ -356,6 +365,7 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Impact:** fresh configurations, upgraded local configurations, and claimed field tuning can run materially different control and guard behavior. The successful build validates only the retained local configuration, not the changed defaults.
 - **Source/configuration correction:** added the complete resolved configuration as `sdkconfig.defaults`; new configurations now have a version-controlled baseline for all ESP-IDF and project options.
 - **Residual risk:** Kconfig help/default text and tuning documentation still need reconciliation with the chosen production baseline; effective-symbol/build verification and field/bench evidence remain pending.
+- **Correction (2026-10-13):** the tracked file was copied from the hardening reviewer's local configuration, **not** from the field-tuned build. The field build (untracked local `sdkconfig`, 2026-06-05) differs in 32 project symbols and in flash size and partition table. The values listed above (overshoot 30 C, stall 180 s, Kd 0, fan 35/32 C, feedforward disabled) are not the field-validated values. See F-067 and [../handoff/05-CONFIGURATION-CATALOG.md](../handoff/05-CONFIGURATION-CATALOG.md).
 
 ### F-050 — Operational-time service override can wrap and misreport persistence
 
@@ -379,6 +389,157 @@ Categories: **confirmed defect** has a reachable source-level failure; **highly 
 - **Evidence:** PID now rejects non-finite input/state/output, resets, and returns zero; the heater setter clears a non-finite command and the PWM reader treats a non-finite stored target as zero. `ms9024_read_float` already rejects decoded NaN/Inf and out-of-range values, so the remaining normal-path risk is lower than originally stated.
 - **Residual risk:** finite-but-stale values and cross-task temperature ownership remain F-001/F-021; zero demand still follows the existing output command path.
 - **Validation:** [BUG-053-nonfinite-control-input.md](BUG-053-nonfinite-control-input.md) and [CHANGE-VALIDATION-F53.md](CHANGE-VALIDATION-F53.md).
+
+## Findings added 2026-10-13 (rewrite-handoff audit, baseline `d1b0fda`)
+
+Static source and configuration review; nothing executed or reproduced on hardware. Lessons and first tests are in [../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md](../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md). Status of every entry: **open, not corrected**.
+
+### F-057 — Overshoot guard aborts programmed cooling stages
+
+- **Category/confidence:** confirmed defect (source trace) / high.
+- **Evidence:** cooling stages are valid (`heating_program_validation.c:281`, `:387`); the COOLING branch sets `setpoint = target` (`temperature_profile_core.c:464-470`); the overshoot test excludes only COOLDOWN/COMPLETE (`:494-503`).
+- **Trigger/impact:** any cooling step larger than `COORDINATOR_OVERSHOOT_THRESHOLD_C` trips the emergency stop on its first tick. The run aborts (heater off) and is reported as completed (F-058).
+- **Direction:** phase-aware guard reference; a separate absolute limit (F-077).
+
+### F-058 — Over-temperature emergency stop is reported as normal completion
+
+- **Category/confidence:** confirmed defect / high.
+- **Evidence:** `coordinator_component_heater_controller.c:370-391` posts `FURNACE_ERROR_EVENT` (no subscriber, F-035) then `COORDINATOR_EVENT_PROFILE_COMPLETED`; `nextion_run_handlers.c:464-469` displays "Completed".
+- **Impact:** the operator and quality record show a finished cure for an over-temperature abort.
+- **Direction:** distinct ABORTED outcome with cause.
+
+### F-059 — Sensor-loss pause is invisible to the operator
+
+- **Category/confidence:** confirmed defect / high.
+- **Evidence:** the invalid/expired paths pause without posting `PROFILE_PAUSED` or an error (`coordinator_component_events.c:165-176`, `:186-192`; `coordinator_component_heater_controller.c:328-339`). The HMI subscribes only to the float event (`hmi_coordinator.c:410-414`), which is posted only when valid (`temperature_processor_task.c:86-90`).
+- **Impact:** the panel shows "Running" with frozen temperature and elapsed time while heating is stopped.
+
+### F-060 — Automatic resume after sensor recovery is unreachable
+
+- **Category/confidence:** confirmed behavior/documentation divergence / high.
+- **Evidence:** `pause_heating_profile` asserts the control inhibit (`coordinator_component_heater_controller.c:793`); the resume condition `!heater_controller_output_is_inhibited()` (`coordinator_component_events.c:221`) includes `control_inhibited`.
+- **Impact:** fail-safe, but combined with F-059 a silent indefinite stall. ADR-0002, F-001, the F-001/F-054 hardware plan and the `COORDINATOR_SENSOR_AUTO_RECOVERY` help describe auto-resume.
+- **Direction:** decide the policy; encode it in one state machine.
+
+### F-061 — Operator resume during sensor-data inhibit advances profile time without heat
+
+- **Category/confidence:** possible defect / medium.
+- **Evidence:** `resume_heating_profile` releases only the control inhibit. If `sensor_data_expired` was already cleared by a fresh sample before the recovery count completes (or permanently with `COORDINATOR_SENSOR_AUTO_RECOVERY=n`), `profile_tick` runs while the heater rejects all demand.
+
+### F-062 — Unbounded event posting on safety and real-time paths; event-loop self-block
+
+- **Category/confidence:** confirmed violation of the sole-consumer rule; deadlock highly likely latent (requires event-queue saturation) / high.
+- **Evidence:**
+  - `toggle_heater` posts `HEATER_CONTROLLER_HEATER_TOGGLED` with `portMAX_DELAY` after each SSR write (`heater_controller.c:35-40`); no subscriber exists for `HEATER_CONTROLLER_EVENT`.
+  - Health heartbeats use `portMAX_DELAY` and have no subscriber while the health monitor is disabled.
+  - The coordinator temperature callback runs on the event-loop task and reaches `toggle_heater`, which posts to the same loop, and `kill_heater`, which uses an unbounded dispatcher send.
+- **Interleaving:** with a full event queue the loop writes SSR low and blocks before `stop_heater()`. The heater PWM task can block right after an SSR-on write. The expiry callback on the shared `esp_timer` task writes SSR low and then blocks, wedging all `esp_timer` callbacks. Final state: contactor on and three system tasks wedged, unwatched by the task watchdog (F-036).
+
+### F-063 — Actuator check-then-act race re-asserts the SSR after an inhibit
+
+- **Category/confidence:** confirmed defect (dual-core reachable) / high.
+- **Evidence:** `heater_controller_task.c:43-48` checks `heater_output_is_inhibited` and then calls `toggle_heater(HEATER_ON)` outside the lock; inhibit setters do not notify the PWM task.
+- **Impact:** SSR control asserted for up to one window (5 s) after the inhibit returned; the contactor is open if electrically in series.
+
+### F-064 — Manual mode turns the heater off on reaching target
+
+- **Category/confidence:** confirmed by source trace (not field-observed) / high.
+- **Evidence:** one-stage program (`nextion_manual_handlers.c:99-150`); the HEATING advance (`temperature_profile_core.c:420-429`) enters COOLDOWN when no stage follows (`:255-263`).
+
+### F-065 — Manual live retarget exceeds the requested ramp rate
+
+- **Category/confidence:** confirmed (math) / medium.
+- **Evidence:** `apply_pending_target_update` plans `|Δ|/rate` without the ease-band extension (`coordinator_component_heater_controller.c:271-284`), so the effective rate is (S+b)/S × requested.
+
+### F-066 — MS9024 repair table writes a wrong value
+
+- **Category/confidence:** confirmed, dormant (no in-tree caller).
+- **Evidence:** `ms9024.c:382` reg 129 = 282; the healthy capture shows 265 (`ms9024_healthy_registers.txt`); reg 26 is omitted; regs 107–129 appear unit-specific.
+
+### F-067 — Tracked configuration differs from the field build
+
+- **Category/confidence:** confirmed by file comparison / high.
+- **Evidence:** `sdkconfig.defaults` versus the local `sdkconfig`: 2 MB versus 8 MB flash; single-app versus `partitions.csv` (no LittleFS `storage`, so `logger_init_storage` fails); 32 differing project symbols including PID Kp/Kd/out-max, feedforward, overshoot, stall window, fan thresholds. See [../handoff/05-CONFIGURATION-CATALOG.md](../handoff/05-CONFIGURATION-CATALOG.md).
+
+### F-068 — Critical-error log capture is not wired
+
+- **Category/confidence:** confirmed defect / high.
+- **Evidence:** `logger_store_full_log` (`logger_storage.c:107`) has no caller. `panic_capture` is an `esp_register_shutdown_handler` (`:90`), so it runs only on `esp_restart()`, not on panic, watchdog or brownout. `error_code` is never assigned (`:318`); timestamps are 0.
+
+### F-069 — `-0.0f` sentinel comparison also matches `+0.0f`
+
+- **Category/confidence:** confirmed, low.
+- **Evidence:** `coordinator_component_events.c:255`.
+
+### F-070 — Fan Max/Silent mode is not applied
+
+- **Category/confidence:** confirmed feature gap, low.
+- **Evidence:** `nextion_manual_handlers.c:284-294` stores and displays it; TODO; no consumer.
+
+### F-071 — Sensor cache and device table are unsynchronized across tasks
+
+- **Category/confidence:** possible defect / medium.
+- **Evidence:** `temp_sensor_update` (device-manager task) writes the value, tick and flag that `read_temp_sensors` (processor task) reads; `device_t.state` and slots are mutated without locks.
+
+### F-072 — Coordinator run state is driven from four execution contexts
+
+- **Category/confidence:** possible defect / medium.
+- **Evidence:** the plain `running`, `paused`, `heating_task_state` and `task_handle` fields are used by the dispatcher, control, event-loop (`coordinator_component_events.c:221-224`) and `esp_timer` tasks. Event-loop resume can release the control inhibit after a concurrent stop.
+
+### F-073 — Boot NVS erase fallback destroys service hours
+
+- **Category/confidence:** design weakness / medium.
+- **Evidence:** `main.c:31-36` erases all NVS on `NO_FREE_PAGES` or `NEW_VERSION_FOUND`, losing `op_time_s`, preferences and the program registry. A partition change (F-067) is a trigger.
+
+### F-074 — Logging on real-time and safety paths; high volume
+
+- **Category/confidence:** design weakness / medium-high.
+- **Evidence:** `logger_send` waits up to 100 ms; `toggle_heater` logs before the GPIO write (`heater_controller.c:35`); INFO logs every PID tick, MS9024 decode and device update; project `LOG_LEVEL=4`; the logger task priority (4) is below its producers.
+
+### F-075 — Documentation and rule drift
+
+- **Category/confidence:** maintainability / high.
+- **Evidence:**
+  - `components/AGENTS.md` forbids source globs, but every component uses `file(GLOB …)`.
+  - The YAML map was stale.
+  - Kconfig help contradicts used values.
+  - `pid_values.md` is inconsistent.
+  - The `time_component` has no sources.
+  - Comments are misleading.
+  - Build evidence is not reproducible.
+- **Detail:** [../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md](../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md) §C.
+
+### F-076 — Domain model, limits, operating hours and program library are owned by the Nextion component
+
+- **Category/confidence:** design weakness / high.
+- **Evidence:** `core_types.h:21-23` uses `CONFIG_NEXTION_PROGRAMS_PAGE_*`; validation and profile use `CONFIG_NEXTION_*`; operating hours are counted in `nextion_run_tick`; programs are stored on the panel SD.
+
+### F-077 — No absolute or always-on over-temperature supervision
+
+- **Category/confidence:** design weakness / high.
+- **Evidence:** the only over-temperature check is setpoint-relative inside a running, non-paused profile (`temperature_profile_core.c:494-503`).
+
+### F-078 — Actuator samples demand once per window
+
+- **Category/confidence:** design weakness / high.
+- **Evidence:** `heater_controller_task.c:43` reads the target at window start only; PID runs every 1 s with a 5 s window; `HEATER_CLEAR` does not wake the task.
+
+### F-079 — Minor latent defects
+
+- **Category/confidence:** confirmed, low.
+- **Evidence:**
+  - Format-string UB at `temperature_processor_task.c:73` and `modbus_master_core.c:44`.
+  - Dead idempotency guard at `temperature_processor_core.c:9,22`.
+  - No bound on the processor sensor count against `TEMP_SENSORS_MAX_SENSORS` and the buffer.
+  - Wrap-unsafe tick comparison in `device_manager_task.c`.
+  - TODO stubs.
+  - The ISR-context comment on `pid_tick_timer_cb`.
+
+### F-080 — Stage kind is inferred from measured temperature
+
+- **Category/confidence:** confirmed behavior; design decision needed / medium.
+- **Evidence:** `advance_stage` (`temperature_profile_core.c:275-305`).
+- **Effects:** a ramp starting within 2 C of its target becomes a hold of the ramp's `t_min`; a hold stage starting more than 2 C below target becomes a slow ramp that is skipped on arrival.
 
 ## Missing tests
 

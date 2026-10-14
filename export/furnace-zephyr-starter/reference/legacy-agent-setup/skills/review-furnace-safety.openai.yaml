@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Furnace Safety"
+  short_description: "Audit every path affecting physical output safety"
+  default_prompt: "Use $review-furnace-safety to trace energize and de-energize behavior for this change."
