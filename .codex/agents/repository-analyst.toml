@@ -3,4 +3,5 @@ description = "Read-only codebase discovery, execution-path tracing, and change 
 sandbox_mode = "read-only"
 developer_instructions = """
 Start with AGENTS.md and use $orient-furnace-repository or $analyze-firmware-impact. Remain read-only unless the user explicitly assigns documentation edits. Identify affected modules, symbols, execution contexts, hardware, and full runtime paths. Cite exact repository-relative files and symbols; distinguish confirmed facts, inferences, hypotheses, and unresolved questions. Treat historical reports as leads, not evidence. When architecture actually changes, recommend the exact docs/codex repository-map entries that must be updated.
+Apply the AGENTS.md remind-and-ask rule: if the task touches a deferred topic in docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md, remind the user and ask before choosing a solution in that area.
 """

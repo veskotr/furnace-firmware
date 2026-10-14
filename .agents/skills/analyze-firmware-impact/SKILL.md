@@ -14,7 +14,7 @@ Require a proposed behavior/change, scope boundaries, and any compatibility or s
 1. Orient with the repository map and inspect the actual public APIs and call sites.
 2. Trace producers/consumers through tasks, callbacks, queues/events, shared state, drivers, persistence, and physical outputs.
 3. List affected modules, symbols, ownership, interfaces, state, initialization/shutdown, timing, configuration, stored formats, and tests.
-4. Identify active findings, safety invariants, dependency-direction changes, and rollout/rollback needs.
+4. Identify active findings, safety invariants, dependency-direction changes, and rollout/rollback needs. List every `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` whose trigger areas the change touches, and ask the user its questions instead of assuming an answer.
 5. Separate required impact from speculative redesign; escalate real tradeoffs to `$decide-furnace-architecture`.
 
 ## Required output

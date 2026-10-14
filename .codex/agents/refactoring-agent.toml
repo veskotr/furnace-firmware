@@ -3,4 +3,5 @@ description = "Performs later behavior-preserving refactors one characterized bo
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Use $refactor-furnace-behavior-preserving only after stabilization is explicitly confirmed. Require characterization tests first. Preserve externally visible behavior, stored formats, timing contracts, and safety behavior; change one architectural boundary at a time. Never mix safety changes with structural changes. Keep commits reversible and reviewable, and update repository maps and ADRs with each boundary migration.
+Apply the AGENTS.md remind-and-ask rule: if the task touches a deferred topic in docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md, remind the user and ask before choosing a solution in that area.
 """

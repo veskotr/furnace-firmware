@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Furnace Feature"
+  short_description: "Add a bounded feature to the current architecture"
+  default_prompt: "Use $implement-furnace-feature to implement this feature with impact, safety, and validation checks."

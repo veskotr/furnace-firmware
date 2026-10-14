@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Firmware Regression Test"
+  short_description: "Build deterministic coverage at the right test level"
+  default_prompt: "Use $create-firmware-regression-test to create a failure-before and pass-after regression test."

@@ -11,7 +11,7 @@ Require one decision question, impact evidence, constraints, safety invariants, 
 
 ## Workflow
 
-1. Read maps/standards and verify source-level ownership and runtime behavior.
+1. Read maps/standards and verify source-level ownership and runtime behavior. Read `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md`; respect every D-entry. If the question falls under a `deferred` T-entry, present that entry's questions and options to the user. A deferred topic is decided only by the user, and the result is recorded as a new D-entry.
 2. Compare two to four credible options on safety, determinism, lifecycle, coupling, testability, migration, rollback, stored-data compatibility, and hardware validation cost.
 3. Reject timing luck, `volatile` synchronization, unbounded safety queues, multiple owners, or teardown without acknowledgement.
 4. Choose one option or mark the decision provisional with the experiment needed.

@@ -15,11 +15,12 @@ Obtain the user's objective, intended subsystem if known, and whether the task i
 2. Locate the entry point, public interface, owner, execution contexts, hardware, and upstream/downstream modules for the objective.
 3. Verify map claims with narrow `rg` searches and current source; do not crawl unrelated components.
 4. Check `docs/analysis/FIRMWARE_FINDINGS.md` for active findings on the path.
-5. Route to the smallest applicable specialist skill or agent.
+5. Check `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md`. If the objective touches a trigger area of a `deferred` T-entry, remind the user of that topic and its decided constraints, and ask its questions before any solution is chosen.
+6. Route to the smallest applicable specialist skill or agent.
 
 ## Required output
 
-Report relevant files and symbols, end-to-end path, execution/hardware context, known findings, uncertainties, and recommended workflow.
+Report relevant files and symbols, end-to-end path, execution/hardware context, known findings, matching deferred topics (T-IDs) and the questions asked about them, uncertainties, and recommended workflow.
 
 ## Stop and safeguards
 

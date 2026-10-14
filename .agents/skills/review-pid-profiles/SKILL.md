@@ -23,4 +23,4 @@ Provide unit/timing table, transition table, safety-gate trace, evidence-backed 
 
 ## Stop and safeguards
 
-Stop before changing PID constants, hardware limits, or profiles without explicit authority and measurement evidence. Do not tune from static inspection, feed invalid input to prove safety, edit code during review, or call simulation physical validation. Update findings/maps when authorized.
+Stop before changing PID constants, hardware limits, or profiles without explicit authority and measurement evidence. Do not tune from static inspection, feed invalid input to prove safety, edit code during review, or call simulation physical validation. Update findings/maps when authorized. When a recommendation falls under a `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` (for example cooling guard T-04, sensor-fault policy T-05, absolute limit T-10), state the open topic and ask the user instead of prescribing the answer.
