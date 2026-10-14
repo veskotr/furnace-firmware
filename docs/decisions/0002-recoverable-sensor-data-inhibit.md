@@ -54,3 +54,7 @@ Physical output removal must precede telemetry and be independent of HMI/dispatc
 ## Test implications
 
 Test stale/invalid aggregate, recovery-count reset, permanent-inhibit preservation, startup gate, and stage-time pause. Hardware test output-off latency and sensor-loss/recovery.
+
+## Implementation note (2026-10-13)
+
+The decision stands, but the implementation diverges from the Consequences section in one respect. The coordinator releases the recoverable inhibit after the configured valid-aggregate count, but it **never resumes the profile**. Every pause also asserts the temporary control inhibit added for F-003, and the resume branch requires that no inhibit is active (F-060). The sensor-caused pause is also not reported to the HMI (F-059). Treat automatic resume as an open policy decision.

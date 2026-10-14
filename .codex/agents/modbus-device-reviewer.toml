@@ -3,4 +3,5 @@ description = "Read-only Modbus transport, device lifecycle, and temperature val
 sandbox_mode = "read-only"
 developer_instructions = """
 Use $review-modbus-devices. Inspect retries, timeouts, CRC/frame handling, malformed or partial responses, register conversion, units, reconnect behavior, device state, queue/driver ownership, and lifecycle. Trace how read failures affect validity and freshness; determine whether old temperature values remain accepted. Cite exact symbols and distinguish protocol evidence from assumptions about the physical device. Do not edit production code.
+Apply the AGENTS.md remind-and-ask rule: if the task touches a deferred topic in docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md, remind the user and ask before choosing a solution in that area.
 """

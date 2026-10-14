@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Modbus and Devices"
+  short_description: "Audit RTU transport, devices, and stale data"
+  default_prompt: "Use $review-modbus-devices to trace this Modbus/device behavior through temperature validity."

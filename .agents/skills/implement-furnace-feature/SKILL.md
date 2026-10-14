@@ -11,7 +11,7 @@ Require an objective, scope/non-goals, acceptance criteria, and hardware permiss
 
 ## Workflow
 
-1. Use `$analyze-firmware-impact`; identify known findings, safety/timing effects, owners, and asynchronous contracts.
+1. Use `$analyze-firmware-impact`; identify known findings, safety/timing effects, owners, and asynchronous contracts. If the feature touches a `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md`, remind the user and get the answer before implementing that part.
 2. Define acceptance and failure behavior, state changes, interfaces, rollout, and fallback.
 3. Follow existing boundaries unless an authorized ADR changes them; resolve lasting tradeoffs with `$decide-furnace-architecture`.
 4. Implement the smallest coherent feature, checking creation/error/cleanup paths and preserving safe defaults.

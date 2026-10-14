@@ -13,7 +13,7 @@ Require the verified code/config change, affected source symbols, build/test evi
 
 1. Compare current source/config with `REPOSITORY_MAP.md`, `repository-map.yaml`, `AGENTS.md`, findings, templates, and affected skill/agent references.
 2. Update only durable navigation, ownership, execution, hardware, workflow, and command facts; keep prose concise.
-3. Preserve finding/ADR history and mark supersession/status instead of deleting evidence.
+3. Preserve finding/ADR history and mark supersession/status instead of deleting evidence. When the user answers a deferred topic, add a dated D-entry to `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md`, mark the T-entry `resolved → D-xx`, and update the documents it affects.
 4. Keep Markdown and YAML views consistent and links repository-relative.
 5. Run `python3 tools/codex/verify_repository_setup.py`, link checks, and relevant Codex config validation.
 

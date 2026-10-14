@@ -23,4 +23,4 @@ Report protocol/device flow, ownership, exact evidence, retry/timeout behavior, 
 
 ## Stop and safeguards
 
-Stop when a missing datasheet/library guarantee blocks a conclusion. Do not treat a cached numeric value as valid, write device registers during review, invent protocol behavior, claim mocks prove wiring, or edit production code. Update findings/maps when authorized; verify conversions against primary device documentation when available.
+Stop when a missing datasheet/library guarantee blocks a conclusion. Do not treat a cached numeric value as valid, write device registers during review, invent protocol behavior, claim mocks prove wiring, or edit production code. Update findings/maps when authorized; verify conversions against primary device documentation when available. When a recommendation falls under a `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` (for example cooling guard T-04, sensor-fault policy T-05, absolute limit T-10), state the open topic and ask the user instead of prescribing the answer.

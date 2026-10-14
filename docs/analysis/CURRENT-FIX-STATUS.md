@@ -51,6 +51,28 @@ Scope: source changes currently present on the working branch; no powered hardwa
 | F-055 | Source fix implemented, regression validation pending | Coordinator stop submits no dispatcher-backed heater commands; direct control inhibit is the output-off path for both external STOP and worker self-exit | Queue-full stop/restart regression; broader producer shutdown contract remains open |
 | F-056 | Source fix implemented, regression validation pending | Normal temperature-processor shutdown now destroys its registered sensor devices after worker acknowledgement and before context free | Stop/reinit count/pool regression; device-manager mutation synchronization remains to be characterized |
 
+## Added 2026-10-13 (rewrite-handoff audit, `d1b0fda`)
+
+No source changes were made for these findings. They are recorded as **open** and carried into the rewrite through [../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md](../handoff/06-KNOWN-DEFECTS-AND-MISTAKES.md).
+
+| Finding | Current source status | Still open |
+| --- | --- | --- |
+| F-057 | Open: overshoot guard evaluates COOLING against the lower target | Phase-aware guard; absolute limit |
+| F-058 | Open: over-temperature abort posts COMPLETED | Distinct abort outcome and operator message |
+| F-059 | Open: sensor-loss pause emits no paused or error event | Operator-visible sensor state |
+| F-060 | Open: auto-resume unreachable; ADR-0002 and F-001 text disagree | Policy decision |
+| F-061 | Open (possible) | Refuse resume under a non-control inhibit |
+| F-062 | Open: unbounded posts on inhibit and actuator paths; unsubscribed events | Non-blocking telemetry; contactor-off before any publish |
+| F-063 | Open: actuator check-then-act race | Atomic authorize+write; wake on inhibit |
+| F-064 | Open: manual mode enters cooldown on arrival | Manual-mode design |
+| F-065 | Open: manual retarget rate inflation | Shared ramp planner |
+| F-066 | Open (dormant): repair table reg 129 = 282 | Remove or correct; per-unit procedure |
+| F-067 | Open: tracked config is not the field build | Single tracked variant config |
+| F-068 | Open: crash capture not wired | Wire to real reset causes |
+| F-069 … F-080 | Open | See findings register |
+
+**F-001 / F-049 corrections:** see the correction notes in [FIRMWARE_FINDINGS.md](FIRMWARE_FINDINGS.md). The F-001 row above ("pause/recovery") does not include automatic resume (F-060). The F-049 baseline is not the field configuration (F-067).
+
 ## Important clarification: F-001 Phase B
 
 F-001 Phase B and its F-054 closeout are present in source under the current architecture. The approved contract is in [ADR-0002](../decisions/0002-recoverable-sensor-data-inhibit.md). The implementation uses a separate validity event so existing HMI/fan float-event consumers are unchanged; a separate coordinator timer now expires that aggregate when no later event arrives.

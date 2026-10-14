@@ -23,4 +23,4 @@ Produce safety invariants checked, energize/de-energize path inventory, evidence
 
 ## Stop and safeguards
 
-Stop and flag a release blocker when an output-off path is unproven. Do not infer fail-safe polarity/interlocks, equate logging with mitigation, edit production code during review, energize hardware, or call compilation a safety test. Update findings and maps only when authorized; verify against exact current symbols.
+Stop and flag a release blocker when an output-off path is unproven. Do not infer fail-safe polarity/interlocks, equate logging with mitigation, edit production code during review, energize hardware, or call compilation a safety test. Update findings and maps only when authorized; verify against exact current symbols. When a recommendation falls under a `deferred` T-entry in `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` (for example cooling guard T-04, sensor-fault policy T-05, absolute limit T-10), state the open topic and ask the user instead of prescribing the answer.

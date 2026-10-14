@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review FreeRTOS Concurrency"
+  short_description: "Audit tasks, races, locks, queues, and lifetimes"
+  default_prompt: "Use $review-freertos-concurrency to review ownership and interleavings in this subsystem."

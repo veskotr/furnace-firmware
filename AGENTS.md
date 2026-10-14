@@ -8,6 +8,18 @@ Use `$orient-furnace-repository` and read `docs/codex/REPOSITORY_MAP.md`, `docs/
 
 Harden and standardize the current ESP-IDF/FreeRTOS architecture. Do not perform broad reorganization, module renames, framework replacement, or behavior-changing cleanup unless explicitly authorized. Behavior-preserving refactoring is a later phase and requires characterization coverage.
 
+## Successor project and deferred topics
+
+A Zephyr, test-driven successor project is planned. In it the controller is the sole authority, and the display is a remote GUI over a custom protocol. Its knowledge base is `docs/handoff/` (tied to this repository). The self-contained version to copy into the new repository is `export/furnace-zephyr-starter/`; keep the two consistent when either changes.
+
+**Remind-and-ask rule:** `docs/handoff/10-DECISIONS-AND-DEFERRED-TOPICS.md` lists the decisions made (D-xx) and the topics deliberately postponed (T-xx), each with trigger areas.
+
+- Before planning, designing, reviewing or changing anything, check whether the task touches a trigger area of a `deferred` T-entry.
+- If it does, stop before choosing a solution in that area. Remind the user of the topic and the constraints already decided, and ask the listed questions.
+- Never decide a deferred topic silently, and never treat a missing answer as permission.
+- Record each answer as a new D-entry, mark the T-entry resolved, and update the affected documents.
+- The successor project must copy the register and this rule.
+
 ## Workflow routing
 
 - Discovery/impact: `$orient-furnace-repository`, `$analyze-firmware-impact`

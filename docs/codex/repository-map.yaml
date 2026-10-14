@@ -1,6 +1,9 @@
 schema_version: 1
 mapped_date: 2026-07-15
 reviewed_commit: bc743ab
+rechecked_date: 2026-10-13
+rechecked_commit: d1b0fda
+handoff: docs/handoff/README.md
 platform: {framework: ESP-IDF, language: C, rtos: FreeRTOS, target: ESP32}
 entry_points:
   build: CMakeLists.txt
@@ -13,19 +16,18 @@ codex:
   verification: tools/codex/verify_repository_setup.py
 startup:
   - debug_console_init
-  - nvs_flash_init
+  - {name: nvs_flash_init, note: "erases all NVS on NO_FREE_PAGES/NEW_VERSION_FOUND (F-073)"}
   - logger_init
   - event_manager_init
   - event_registry_init
   - commands_dispatcher_init
   - init_heater_controller_component
-  - init_coordinator
+  - {name: init_coordinator, note: "asserts recoverable sensor-data inhibit at boot"}
   - modbus_master_init
-  - run_indicator_init
   - fan_controller_init
   - {name: nextion_hmi_init, conditional: CONFIG_NEXTION_HMI_ENABLED}
   - device_manager_init
-  - init_temp_processor
+  - {name: init_temp_processor, args: 5, note: "after a fixed 2 s delay; creates 5 sensors with 2 s of delays each"}
 tasks:
   active:
     - {name: debug_console, owner: debug_console, source: components/debug_console/src/debug_console.c}
@@ -38,28 +40,43 @@ tasks:
     - {name: temperature_processor, owner: temperature_processor_component, source: components/temperature_processor_component/src/temperature_processor_task.c}
     - {name: hmi_coordinator, owner: nextion_hmi, source: components/nextion_hmi/src/coordinator/hmi_coordinator.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
     - {name: nextion_rx, owner: nextion_hmi, source: components/nextion_hmi/src/transport/nextion_rx_task.c, conditional: CONFIG_NEXTION_HMI_ENABLED}
-    - {name: run_indicator, owner: run_indicator, source: components/run_indicator/src/run_indicator.c, conditional: enabled_with_valid_noncolliding_gpio}
-  inactive: [health_monitor, temperature_monitor_component, transmitter_diagnostics]
+  inactive:
+    - {name: health_monitor, reason: "init commented out in main.c (F-036)"}
+    - {name: transmitter_diagnostics, reason: "linked; transmitter_diagnostics_auto_init commented out"}
+    - {name: run_indicator, reason: "test-only component excluded from production build (F-016)"}
+    - {name: temperature_monitor_component, reason: "legacy SPI/MAX31865; excluded from ESP-IDF discovery (F-037)"}
+  empty_components: [time_component]
 callbacks:
-  event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, run_indicator_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
+  event_loop: [coordinator_temperature, temperature_device_update, fan_temperature, fan_coordinator, hmi_temperature_bridge, hmi_coordinator_bridge]
   command_dispatcher: [heater_command_handler, coordinator_command_handler]
-  timers: [{name: pid_tick_timer_cb, dispatch: ESP_TIMER_TASK}]
+  timers:
+    - {name: pid_tick_timer_cb, dispatch: ESP_TIMER_TASK, owner: coordinator, lifetime: profile_run}
+    - {name: sensor_data_expiry_timer_cb, dispatch: ESP_TIMER_TASK, owner: coordinator, lifetime: coordinator, action: "direct sensor-data inhibit"}
   application_hardware_isrs: []
+events:
+  - {base: TEMP_PROCESSOR_EVENT, id: PROCESS_TEMPERATURE_EVENT_DATA, payload: float, posted: "only when aggregate valid", subscribers: [coordinator, fan_controller, nextion_hmi]}
+  - {base: TEMP_PROCESSOR_EVENT, id: PROCESS_TEMPERATURE_VALIDITY_EVENT_DATA, payload: temperature_processor_sample_t, posted: always, subscribers: [coordinator]}
+  - {base: DEVICE_MANAGER_EVENT, id: DEVICE_MANAGER_UPDATED_EVENT, payload: none, subscribers: [temperature_processor]}
+  - {base: COORDINATOR_EVENT, id: all, subscribers: [fan_controller, nextion_hmi]}
+  - {base: HEATER_CONTROLLER_EVENT, id: HEATER_TOGGLED, posted: "every SSR write, portMAX_DELAY", subscribers: []}
+  - {base: HEALTH_MONITOR_EVENT, id: [HEARTBEAT, REGISTER], posted: "portMAX_DELAY", subscribers: []}
+  - {base: FURNACE_ERROR_EVENT, id: 0, subscribers: []}
 primitives:
   queues: [event_manager_private_queue, command_dispatcher_queue, logger_queue, hmi_command_queue]
-  mutexes: [heater_power_mutex, gpio_mutex, spi_mutex, logger_storage_mutex, nextion_uart_recursive_mutex, program_model_recursive_mutex, legacy_temperature_ring_mutex]
-  event_groups: [legacy_temperature_processor_event_group]
-  notifications: [heater_pwm, coordinator_control, device_manager, temperature_processor, health_monitor]
+  mutexes: [heater_power_mutex, gpio_mutex, coordinator_temperature_mutex, coordinator_target_update_mutex, logger_storage_mutex, nextion_uart_recursive_mutex, program_model_recursive_mutex]
+  binary_semaphores: [dispatcher_exit, heater_exit, coordinator_exit, device_manager_exit, temperature_processor_exit]
+  legacy_only: [spi_mutex, legacy_temperature_ring_mutex, legacy_temperature_processor_event_group]
+  notifications: [heater_pwm (shutdown only), coordinator_control, device_manager, temperature_processor]
 pipelines:
   temperature: [MS9024, modbus_master, temp_sensor_device_cache, device_manager, temperature_processor, TEMP_PROCESSOR_EVENT, coordinator_and_fan_and_hmi]
   control: [nextion_hmi, commands_dispatcher, coordinator, temperature_profile_controller_eased_handover, pid_component_optional_feedforward, commands_dispatcher, heater_controller, contactor_and_ssr]
-  persistence: [nextion_program_model, NVS_user_prefs, nextion_panel_SD]
+  persistence: [nextion_program_model, NVS_user_prefs, NVS_prog_registry, nextion_panel_SD, littlefs_crash_dumps]
 hardware_defaults:
   contactor_gpio: 22
   ssr_gpio: 21
   fan_gpio: 19
   run_indicator_gpio: -1
-  modbus: {uart: 2, tx_gpio: 27, rx_gpio: 26, de_gpio: 25, baud: 9600}
+  modbus: {uart: 2, tx_gpio: 27, rx_gpio: 26, de_gpio: 25, baud: 9600, response_timeout_ms: 300, sensor_addresses: "1..5"}
   nextion: {uart: 1, tx_gpio: 32, rx_gpio: 33, baud: 115200}
 safety_invariants: docs/codex/ENGINEERING_STANDARDS.md
 findings: docs/analysis/FIRMWARE_FINDINGS.md
@@ -82,17 +99,31 @@ build:
       fan_auto_off_c: 32
       pid_feedforward_enabled: false
       op_time_override_enabled: false
-    caveat: "These retained local values differ from new Kconfig defaults; no tracked sdkconfig defaults were found."
+    caveat: "This reviewer configuration is tracked as sdkconfig.defaults, but it is NOT the field-tuned build (F-067)."
+  field_build_configuration:
+    source: "untracked local sdkconfig, 2026-06-05"
+    flash_size: 8MB
+    partition_table: partitions.csv (nvs 128K, factory 2M, littlefs storage 5.8M)
+    pid: {kp: 100, ki: 1, kd: 30, output_max_pct: 95, feedforward: true, ff_low: "80C -> 8%", ff_high: "150C -> 12% (uncalibrated)"}
+    guards: {overshoot_c: 20, stall_check_ms: 300000, hold_band_c: 4, hold_violation_ms: 300000}
+    fan: {auto_on_c: 43, auto_off_c: 41}
+    detail: docs/handoff/05-CONFIGURATION-CATALOG.md
 known_architecture_debt:
   - sensor-data inhibit is direct at the heater boundary; GPIO latency and polarity still need hardware validation
   - validity/freshness event is implemented; a coordinator-owned one-shot timer directly asserts sensor-data inhibit when the update stream stops (F-054); regression and powered validation, per-board sensor mapping, and quorum remain future work
-  - global mutable coordinator state spans tasks and callbacks
-  - worker acknowledgements exist on key stop paths; coordinator worker self-exit avoids the confirmed full-queue shutdown cycle (F-055), while temperature-processor shutdown still leaves registered devices active (F-056)
-  - furnace error events have no production subscriber
-  - run indicator is disabled by default and refuses invalid or contactor-colliding GPIOs
-  - temporary control inhibit now protects pause/stop/completion from stale queued output; later generation-based command validation remains deferred
-  - source Kconfig defaults and resolved deployed configuration lack a tracked compatibility contract
-  - profile soft-landing is cubic while HMI graph projection remains linear
+  - sensor-caused pause is not reported to the HMI (F-059) and never auto-resumes after recovery (F-060)
+  - global mutable coordinator state spans dispatcher, control, event-loop and esp_timer contexts (F-072)
+  - worker acknowledgements exist on key stop paths (F-006..F-012, F-055); temperature-processor shutdown destroys its devices (F-056); device table and sensor cache remain unsynchronized (F-071)
+  - furnace error events have no production subscriber (F-035); overshoot abort is reported as PROFILE_COMPLETED (F-058)
+  - inhibit and actuator paths post unbounded events to unsubscribed bases and log before GPIO writes (F-062, F-074)
+  - heater PWM inhibit check and SSR-on write are not atomic (F-063); demand sampled once per window (F-078)
+  - run indicator is excluded from production and refuses invalid or contactor-colliding GPIOs when built for test
+  - temporary control inhibit protects pause/stop/completion from stale queued output; generation-based command validation remains deferred (F-003)
+  - tracked sdkconfig.defaults exists but differs from the field build, including partition table and flash size (F-049, F-067)
+  - profile soft-landing is a quadratic ease-out (F-048) while HMI graph projection remains linear; manual retarget bypasses the ease extension (F-065)
+  - overshoot guard is evaluated in COOLING against the lower target (F-057); no absolute or idle over-temperature supervision (F-077)
   - heater local inhibit handles SSR GPIO failure; central fault state and HMI handling are deferred by ADR-0001
-  - PID/heater now reject non-finite values; F-003 in-flight publication and broader coordinator state ownership remain unresolved
+  - PID/heater reject non-finite values (F-053)
   - coordinator blocks profile start until configured sensor recovery, rejects an expired aggregate at start, and pauses on received invalid/stale or timer-expired aggregates (F-054); regression and powered validation remain pending
+  - program model, limits, operating-hours counter and program library are owned by the Nextion component (F-076)
+  - crash-log capture on critical error is not wired (F-068)
